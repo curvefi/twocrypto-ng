@@ -1,0 +1,23 @@
+# linting:
+black
+flake8
+isort
+mamushi
+pip-tools
+pre-commit
+
+# testing:
+eip712
+eth_account
+ipython
+hypothesis
+pytest
+pytest-xdist
+pytest-forked
+pytest-repeat
+pdbpp
+hypothesis>=6.68.1
+
+# vyper and dev framework:
+git+https://github.com/vyperlang/titanoboa@c1d741c26b34798ec1620859c7f3d8f42416e4be
+vyper>=0.3.9
