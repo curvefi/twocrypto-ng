@@ -3,7 +3,7 @@ import pytest
 
 from tests.utils.tokens import mint_for_testing
 
-INITIAL_PRICES = [10**18, 47500 * 10**18, 1500 * 10**18]
+INITIAL_PRICES = [10**18, 1500 * 10**18]  # price relative to coin_id = 0
 
 
 def _get_deposit_amounts(amount_per_token_usd, initial_prices, coins):
@@ -47,16 +47,16 @@ def _crypto_swap_with_deposit(
 def params():
 
     return {
-        "A": 135 * 3**3 * 10000,
-        "gamma": int(7e-5 * 1e18),
-        "mid_fee": int(4e-4 * 1e10),
-        "out_fee": int(4e-3 * 1e10),
-        "allowed_extra_profit": 2 * 10**12,
-        "fee_gamma": int(0.01 * 1e18),
-        "adjustment_step": int(0.0015 * 1e18),
+        "A": 400000,
+        "gamma": 145000000000000,
+        "mid_fee": 26000000,
+        "out_fee": 45000000,
+        "allowed_extra_profit": 2000000000000,
+        "fee_gamma": 230000000000000,
+        "adjustment_step": 146000000000000,
         "ma_time": 866,  # # 600 seconds//math.log(2)
         "xcp_ma_time": 62324,  # 12 hours//math.log(2)
-        "initial_prices": INITIAL_PRICES[1:],
+        "initial_prices": INITIAL_PRICES,
     }
 
 
@@ -65,16 +65,15 @@ def swap(
     tricrypto_factory,
     amm_interface,
     coins,
-    weth,
     params,
     deployer,
 ):
+
     with boa.env.prank(deployer):
         swap = tricrypto_factory.deploy_pool(
-            "Curve.fi USDC-BTC-ETH",
-            "USDCBTCETH",
+            "Curve.fi USD<>WETH",
+            "USD<>WETH",
             [coin.address for coin in coins],
-            weth,
             0,  # <-------- 0th implementation index
             params["A"],
             params["gamma"],
@@ -84,7 +83,7 @@ def swap(
             params["allowed_extra_profit"],
             params["adjustment_step"],
             params["ma_time"],  # <--- no admin_fee needed
-            params["initial_prices"],
+            params["initial_prices"][1],
         )
 
     return amm_interface.at(swap)
@@ -94,28 +93,29 @@ def swap(
 def swap_multiprecision(
     tricrypto_factory,
     amm_interface,
-    tricrypto_coins,
+    stgusdc,
     deployer,
     weth,
 ):
 
+    # STG/USDC pool params (on deployment)
     _params = {
-        "A": 1707629,
-        "gamma": 11809167828997,
-        "mid_fee": 3000000,
-        "out_fee": 30000000,
+        "A": 400000,
+        "gamma": 72500000000000,
+        "mid_fee": 26000000,
+        "out_fee": 45000000,
         "allowed_extra_profit": 2000000000000,
-        "fee_gamma": 500000000000000,
-        "adjustment_step": 490000000000000,
-        "ma_time": 600,
-        "initial_prices": [21894513622432734092261, 1546874643304938916307],
+        "fee_gamma": 230000000000000,
+        "adjustment_step": 146000000000000,
+        "ma_time": 866,
+        "initial_prices": 500000000000000000,
     }
 
     with boa.env.prank(deployer):
         swap = tricrypto_factory.deploy_pool(
-            "Curve.fi USDT<>WBTC<>ETH",
-            "tricrypto3",
-            [coin.address for coin in tricrypto_coins],
+            "Curve.fi STG/USDC",
+            "STGUSDC",
+            [coin.address for coin in stgusdc],
             weth,
             0,
             _params["A"],
@@ -130,34 +130,6 @@ def swap_multiprecision(
         )
 
     return amm_interface.at(swap)
-
-
-@pytest.fixture(scope="module")
-def hyper_swap(
-    tricrypto_factory_experimental,
-    hyperamm_interface,
-    coins,
-    params,
-    deployer,
-):
-    with boa.env.prank(deployer):
-        swap = tricrypto_factory_experimental.deploy_pool(
-            "Curve.fi USDC-BTC-ETH",
-            "USDCBTCETH",
-            [coin.address for coin in coins],
-            0,  # <-------- 0th implementation index
-            params["A"],
-            params["gamma"],
-            params["mid_fee"],
-            params["out_fee"],
-            params["fee_gamma"],
-            params["allowed_extra_profit"],
-            params["adjustment_step"],
-            params["ma_time"],  # <--- no admin_fee needed
-            params["initial_prices"],
-        )
-
-    return hyperamm_interface.at(swap)
 
 
 @pytest.fixture(scope="module")

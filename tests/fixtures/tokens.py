@@ -21,9 +21,9 @@ def btc(deployer):
 
 
 @pytest.fixture(scope="module")
-def wbtc(deployer):
+def stg(deployer):
     with boa.env.prank(deployer):
-        return boa.load("contracts/mocks/ERC20Mock.vy", "BTC", "BTC", 8)
+        return boa.load("contracts/mocks/ERC20Mock.vy", "STG", "STG", 18)
 
 
 @pytest.fixture(scope="module")
@@ -45,13 +45,13 @@ def dai(deployer):
 
 
 @pytest.fixture(scope="module")
-def coins(usd, btc, weth):
-    yield [usd, btc, weth]
+def coins(usd, weth):
+    yield [usd, weth]
 
 
 @pytest.fixture(scope="module")
-def twocrypto_coins(usdt, wbtc, weth):
-    yield [usdt, weth]
+def stgusdc(usdt, weth):
+    yield [stg, usdc]
 
 
 @pytest.fixture(scope="module")

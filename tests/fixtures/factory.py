@@ -33,7 +33,7 @@ def amm_implementation(deployer, amm_interface):
 @pytest.fixture(scope="module")
 def views_contract(deployer):
     with boa.env.prank(deployer):
-        return boa.load("contracts/main/CurveCryptoViews3Optimized.vy")
+        return boa.load("contracts/main/CurveCryptoViews2Optimized.vy")
 
 
 @pytest.fixture(scope="module")
@@ -48,7 +48,7 @@ def tricrypto_factory(
 ):
     with boa.env.prank(deployer):
         factory = boa.load(
-            "contracts/main/CurveTricryptoFactory.vy",
+            "contracts/main/CurveTwocryptoFactory.vy",
             fee_receiver,
             owner,
         )
@@ -58,33 +58,5 @@ def tricrypto_factory(
         factory.set_gauge_implementation(gauge_implementation)
         factory.set_views_implementation(views_contract)
         factory.set_math_implementation(math_contract)
-
-    return factory
-
-
-@pytest.fixture(scope="module")
-def tricrypto_factory_experimental(
-    deployer,
-    fee_receiver,
-    owner,
-    hyperamm_implementation,
-    gauge_implementation,
-    math_experimental_contract,
-    views_contract,
-    weth,
-):
-    with boa.env.prank(deployer):
-        factory = boa.load(
-            "contracts/main/CurveTricryptoFactory.vy",
-            fee_receiver,
-            owner,
-            weth,
-        )
-
-    with boa.env.prank(owner):
-        factory.set_pool_implementation(hyperamm_implementation, 0)
-        factory.set_gauge_implementation(gauge_implementation)
-        factory.set_views_implementation(views_contract)
-        factory.set_math_implementation(math_experimental_contract)
 
     return factory
