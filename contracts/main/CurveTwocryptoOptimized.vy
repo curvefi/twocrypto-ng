@@ -177,8 +177,8 @@ last_admin_fee_claim_timestamp: uint256
 MIN_RAMP_TIME: constant(uint256) = 86400
 MIN_ADMIN_FEE_CLAIM_INTERVAL: constant(uint256) = 86400
 
-MIN_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER / 100
-MAX_A: constant(uint256) = 1000 * A_MULTIPLIER * N_COINS**N_COINS
+MIN_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER / 10
+MAX_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER * 100000
 MAX_A_CHANGE: constant(uint256) = 10
 MIN_GAMMA: constant(uint256) = 10**10
 MAX_GAMMA: constant(uint256) = 5 * 10**16

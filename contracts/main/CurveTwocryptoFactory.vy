@@ -18,7 +18,6 @@ event TwocryptoPoolDeployed:
     pool: address
     name: String[64]
     symbol: String[32]
-    weth: address
     coins: address[N_COINS]
     math: address
     salt: bytes32
@@ -130,7 +129,6 @@ def deploy_pool(
     _name: String[64],
     _symbol: String[32],
     _coins: address[N_COINS],
-    _weth: address,
     implementation_id: uint256,
     A: uint256,
     gamma: uint256,
@@ -208,7 +206,6 @@ def deploy_pool(
         _symbol,
         _coins,
         _math_implementation,
-        _weth,
         _salt,
         precisions,
         packed_A_gamma,
@@ -233,7 +230,6 @@ def deploy_pool(
         pool,
         _name,
         _symbol,
-        _weth,
         _coins,
         _math_implementation,
         _salt,
