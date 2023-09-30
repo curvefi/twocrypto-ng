@@ -1,14 +1,16 @@
 import boa
 
 
-def test_A_gamma(swap, params):
+def test_A_gamma(swap, math_contract, params):
+
+    breakpoint()
 
     A = swap.A()
     gamma = swap.gamma()
 
     assert A == params["A"]
     assert gamma == params["gamma"]
-    
+
 
 def test_revert_ramp_A_gamma(swap, factory_admin):
 
