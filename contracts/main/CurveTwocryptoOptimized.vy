@@ -135,7 +135,7 @@ cached_price_oracle: uint256  # <------- Price target given by moving average.
 cached_xcp_oracle: uint256  # <----------- EMA of totalSupply * virtual_price.
 
 last_prices: uint256
-last_prices_timestamp: public(uint256)
+last_timestamp: public(uint256[2])    # idx 0 is for prices, idx 1 is for xcp.
 last_xcp: public(uint256)
 xcp_ma_time: public(uint256)
 
@@ -151,6 +151,9 @@ future_A_gamma_time: public(uint256)  # <------ Time when ramping is finished.
 #                                                            and not set to 0.
 
 balances: public(uint256[N_COINS])
+spot_wallet_balances: public(HashMap[address, uint256[N_COINS]])  # <---- Spot
+#         Wallet is a hashmap that stores balances for users, should they wish
+#        to not do ERC20 token transfers immediately out of the pool contract.
 D: public(uint256)
 xcp_profit: public(uint256)
 xcp_profit_a: public(uint256)  # <--- Full profit at last claim of admin fees.
@@ -246,7 +249,7 @@ def __init__(
     self.cached_price_scale = initial_price
     self.cached_price_oracle = initial_price
     self.last_prices = initial_price
-    self.last_prices_timestamp = block.timestamp
+    self.last_timestamp = [block.timestamp, block.timestamp]
     self.xcp_profit_a = 10**18
     self.xcp_ma_time = 62324  # <--------- 12 hours default on contract start.
 
@@ -349,6 +352,81 @@ def _transfer_out(_coin_idx: uint256, _amount: uint256, receiver: address):
     )
 
 
+# ------------- Token transfers in and out involving Spot Wallets ------------
+# NOTE: EXPERIMENTAL
+
+@internal
+def _transfer_to_spot_wallet(_coin_idx: uint256, _amount: uint256, _account: address):
+
+    account_balance: uint256[N_COINS] = self.spot_wallet_balances[_account]
+
+    # Adjust balances before handling transfers:
+    self.balances[_coin_idx] -= _amount
+    account_balance[_coin_idx] += _amount
+    self.spot_wallet_balances[_account] = account_balance
+
+
+@internal
+def _transfer_from_spot_wallet(_coin_idx: uint256, _amount: uint256, _account: address):
+
+    account_balance: uint256[N_COINS] = self.spot_wallet_balances[_account]
+
+    # Adjust balances before handling transfers:
+    self.balances[_coin_idx] += _amount
+    account_balance[_coin_idx] -= _amount
+    self.spot_wallet_balances[_account] = account_balance
+
+
+@external
+@nonreentrant('lock')
+def deposit_to_spot_wallet(_amounts: uint256[N_COINS], _account: address):
+
+    # Adjust balances before handling transfers
+    account_balance: uint256[N_COINS] = self.spot_wallet_balances[_account]
+
+    # Transfer out of spot wallet
+    coin_balance: uint256 = 0
+    for i in range(N_COINS):
+
+        if _amounts[i] > 0:
+
+            coin_balance = ERC20(coins[i]).balanceOf(self)
+
+            assert ERC20(coins[i]).transferFrom(
+                _account,
+                self,
+                _amounts[i],
+                default_return_value=True
+            )
+
+            account_balance[i] += ERC20(coins[i]).balanceOf(self) - coin_balance
+
+    # Update spot wallet account balances
+    self.spot_wallet_balances[_account] = account_balance
+
+
+@external
+@nonreentrant('lock')
+def withdraw_from_spot_wallet(_amounts: uint256[N_COINS], _account: address):
+
+    # Adjust balances before handling transfers
+    account_balance: uint256[N_COINS] = self.spot_wallet_balances[_account]
+    account_balance[0] -= _amounts[0]
+    account_balance[1] -= _amounts[1]
+    self.spot_wallet_balances[_account] = account_balance
+
+    # Transfer out of spot wallet
+    for i in range(N_COINS):
+
+        if _amounts[i] > 0:
+
+            assert ERC20(coins[i]).transfer(
+                _account,
+                _amounts[i],
+                default_return_value=True
+            )
+
+
 # -------------------------- AMM Main Functions ------------------------------
 
 
@@ -370,15 +448,30 @@ def exchange(
     @param receiver Address to send the output coin to. Default is msg.sender
     @return uint256 Amount of tokens at index j received by the `receiver
     """
-    return self._exchange(
+    # _transfer_in updates self.balances here:
+    dx_received: uint256 = self._transfer_in(
+        i,
+        dx,
         msg.sender,
+        False
+    )
+
+    # No ERC20 token transfers occur here:
+    out: uint256[3] = self._exchange(
         i,
         j,
-        dx,
+        dx_received,
         min_dy,
-        receiver,
-        False,
     )
+
+    # _transfer_out updates self.balances here. Update to state occurs before
+    # external calls:
+    self._transfer_out(j, out[0], receiver)
+
+    # log:
+    log TokenExchange(msg.sender, i, dx_received, j, out[0], out[1], out[2])
+
+    return out[0]
 
 
 @external
@@ -404,15 +497,109 @@ def exchange_received(
     @param receiver Address to send the output coin to
     @return uint256 Amount of tokens at index j received by the `receiver`
     """
-    return self._exchange(
+    # _transfer_in updates self.balances here:
+    dx_received: uint256 = self._transfer_in(
+        i,
+        dx,
         msg.sender,
+        True  # <---- expect_optimistic_transfer is set to True here.
+    )
+
+    # No ERC20 token transfers occur here:
+    out: uint256[3] = self._exchange(
         i,
         j,
-        dx,
+        dx_received,
         min_dy,
-        receiver,
-        True,
     )
+
+    # _transfer_out updates self.balances here. Update to state occurs before
+    # external calls:
+    self._transfer_out(j, out[0], receiver)
+
+    # log:
+    log TokenExchange(msg.sender, i, dx_received, j, out[0], out[1], out[2])
+
+    return out[0]
+
+
+# NOTE: EXPERIMENTAL
+@external
+@nonreentrant('lock')
+def exchange_received_split(
+    i: uint256,
+    j: uint256,
+    dx: uint256,
+    min_dy: uint256,
+    split: uint256[2],
+    receiver: address,
+    use_spot_balance: bool,
+    expect_optimistic_transfer: bool
+) -> uint256:
+    """
+    @notice Exchange: but user must transfer dx amount of coin[i] tokens to pool first.
+            Pool will not call transferFrom and will only check if a surplus of
+            coins[i] is greater than or equal to `dx`.
+            User also needs to specify a `split` to decide what amount of dy_out goes
+            to receiver address and what amount stays in the sender's spot wallet.
+    @dev Use-case is to reduce the number of redundant ERC20 token
+         transfers in zaps. Primarily for dex-aggregators/arbitrageurs/searchers,
+         and helps reduce the total number of ERC20 tokens per arb transaction to
+         2: arbitrageur can withdraw profits at a later time and do not need to hedge
+         atomically (which is expensive).
+         Note for users: please transfer + exchange_received in 1 tx.
+    @param i Index value for the input coin
+    @param j Index value for the output coin
+    @param dx Amount of input coin being swapped in
+    @param min_dy Minimum amount of output coin to receive
+    @param split
+    @param receiver Address to send the output coin to
+    @param use_spot_balance
+    @param expect_optimistic_transfer
+    @return uint256 Amount of tokens at index j received by the `receiver`
+    """
+    # _transfer_in updates self.balances here:
+    dx_received: uint256 = 0
+    if not use_spot_balance:
+        # Two cases:
+        # 1. expect_optimistic_transfer is set to True. Use case: flashswap from
+        #    another AMM, set this twocrypto-ng pool as receiver.
+        # 2. pool calls ERC20(coins[i]).transferFrom(msg.sender, self, dx)
+        dx_received = self._transfer_in(
+            i,
+            dx,
+            msg.sender,
+            expect_optimistic_transfer
+        )
+    else:
+        # Only use balances in msg.sender's spot wallet account:
+        self._transfer_from_spot_wallet(i, dx, msg.sender)
+        dx_received = dx
+
+    # No ERC20 token transfers occur here:
+    out: uint256[3] = self._exchange(
+        i,
+        j,
+        dx_received,
+        min_dy,
+    )
+
+    assert split[0] + split[1] == out[0]  # dev: requested split is greater than calculated dy
+
+    # Difference between calculated dy and requested out amount is what stays
+    # in the spot wallet. To make this a fully spot_wallet swap, set split[0] to 0.
+    if split[1] > 0:
+        self._transfer_to_spot_wallet(j, split[1], msg.sender)
+
+    # _transfer_out updates self.balances here. Update to state occurs before
+    # external calls:
+    if split[0] > 0:
+        self._transfer_out(j, split[0], receiver)
+
+    # log:
+    log TokenExchange(msg.sender, i, dx_received, j, out[0], out[1], out[2])
+
+    return out[0]
 
 
 @external
@@ -600,6 +787,35 @@ def remove_liquidity(
 
     log RemoveLiquidity(msg.sender, withdraw_amounts, total_supply - _amount)
 
+    # --------------------------- Upkeep xcp oracle --------------------------
+
+    # Update xcp since liquidity was removed:
+    xp: uint256[N_COINS] = self.xp(self.balances, self.cached_price_scale)
+    self.last_xcp = isqrt(xp[0] * xp[1] / 10**18)
+
+    last_timestamp: uint256[2] = self.last_timestamp
+    if last_timestamp[1] < block.timestamp:
+
+        cached_xcp_oracle: uint256 = self.cached_xcp_oracle
+        alpha: uint256 = MATH.wad_exp(
+            -convert(
+                unsafe_div(
+                    (block.timestamp - last_timestamp[1]) * 10**18,
+                    self.xcp_ma_time  # <---------- xcp ma time has is longer.
+                ),
+                int256,
+            )
+        )
+
+        self.cached_xcp_oracle = unsafe_div(
+            self.last_xcp * (10**18 - alpha) + cached_xcp_oracle * alpha,
+            10**18
+        )
+        last_timestamp[1] = block.timestamp
+
+        # Pack and store timestamps:
+        self.last_timestamp = last_timestamp
+
     return withdraw_amounts
 
 
@@ -698,17 +914,14 @@ def _unpack(_packed: uint256) -> uint256[3]:
 
 @internal
 def _exchange(
-    sender: address,
     i: uint256,
     j: uint256,
-    dx: uint256,
+    dx_received: uint256,
     min_dy: uint256,
-    receiver: address,
-    expect_optimistic_transfer: bool,
-) -> uint256:
+) -> uint256[3]:
 
     assert i != j  # dev: coin index out of range
-    assert dx > 0  # dev: do not exchange 0 coins
+    assert dx_received > 0  # dev: do not exchange 0 coins
 
     A_gamma: uint256[2] = self._A_gamma()
     xp: uint256[N_COINS] = self.balances
@@ -716,16 +929,6 @@ def _exchange(
 
     y: uint256 = xp[j]  # <----------------- if j > N_COINS, this will revert.
     x0: uint256 = xp[i]  # <--------------- if i > N_COINS, this will  revert.
-
-    ########################## TRANSFER IN <-------
-
-    # _transfer_in updates self.balances here:
-    dx_received: uint256 = self._transfer_in(
-        i,
-        dx,
-        sender,
-        expect_optimistic_transfer  # <---- If True, pool expects dx tokens to
-    )  #                                                    be transferred in.
 
     xp[i] = x0 + dx_received
 
@@ -779,17 +982,7 @@ def _exchange(
 
     price_scale = self.tweak_price(A_gamma, xp, 0, y_out[1])
 
-    # --------------------------- Do Transfers out ---------------------------
-
-    ########################## -------> TRANSFER OUT
-
-    # _transfer_out updates self.balances here. Update to state occurs before
-    # external calls:
-    self._transfer_out(j, dy, receiver)
-
-    log TokenExchange(sender, i, dx_received, j, dy, fee, price_scale)
-
-    return dy
+    return [dy, fee, price_scale]
 
 
 @internal
@@ -825,8 +1018,9 @@ def tweak_price(
 
     # ----------------------- Update Oracles if needed -----------------------
 
-    last_timestamp: uint256 = self.last_prices_timestamp
-    if last_timestamp < block.timestamp:  # 0th index is for price_oracle.
+    last_timestamp: uint256[2] = self.last_timestamp
+    alpha: uint256 = 0
+    if last_timestamp[0] < block.timestamp:  # 0th index is for price_oracle.
 
         #   The moving average price oracle is calculated using the last_price
         #      of the trade at the previous block, and the price oracle logged
@@ -834,10 +1028,10 @@ def tweak_price(
 
         # ------------------ Calculate moving average params -----------------
 
-        alpha: uint256 = MATH.wad_exp(
+        alpha = MATH.wad_exp(
             -convert(
                 unsafe_div(
-                    (block.timestamp - last_timestamp) * 10**18,
+                    (block.timestamp - last_timestamp[0]) * 10**18,
                     rebalancing_params[2]  # <----------------------- ma_time.
                 ),
                 int256,
@@ -855,14 +1049,17 @@ def tweak_price(
         )
 
         self.cached_price_oracle = price_oracle
+        last_timestamp[0] = block.timestamp
 
-        # ------------------------------------------------- Update xcp oracle.
+    # ----------------------------------------------------- Update xcp oracle.
+
+    if last_timestamp[1] < block.timestamp:
 
         cached_xcp_oracle: uint256 = self.cached_xcp_oracle
         alpha = MATH.wad_exp(
             -convert(
                 unsafe_div(
-                    (block.timestamp - last_timestamp) * 10**18,
+                    (block.timestamp - last_timestamp[1]) * 10**18,
                     self.xcp_ma_time  # <---------- xcp ma time has is longer.
                 ),
                 int256,
@@ -875,7 +1072,9 @@ def tweak_price(
         )
 
         # Pack and store timestamps:
-        self.last_prices_timestamp = block.timestamp
+        last_timestamp[1] = block.timestamp
+
+    self.last_timestamp = last_timestamp
 
     #  `price_oracle` is used further on to calculate its vector distance from
     # price_scale. This distance is used to calculate the amount of adjustment
@@ -1547,7 +1746,7 @@ def price_oracle() -> uint256:
     """
     price_oracle: uint256 = self.cached_price_oracle
     price_scale: uint256 = self.cached_price_scale
-    last_prices_timestamp: uint256 = self.last_prices_timestamp
+    last_prices_timestamp: uint256 = self.last_timestamp[0]
 
     if last_prices_timestamp < block.timestamp:  # <------------ Update moving
         #                                                   average if needed.
@@ -1585,7 +1784,7 @@ def xcp_oracle() -> uint256:
     @return uint256 Oracle value of xcp.
     """
 
-    last_prices_timestamp: uint256 = self.last_prices_timestamp
+    last_prices_timestamp: uint256 = self.last_timestamp[1]
     cached_xcp_oracle: uint256 = self.cached_xcp_oracle
 
     if last_prices_timestamp < block.timestamp:
