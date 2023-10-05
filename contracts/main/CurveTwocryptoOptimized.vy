@@ -552,10 +552,15 @@ def exchange_received_split(
     @param j Index value for the output coin
     @param dx Amount of input coin being swapped in
     @param min_dy Minimum amount of output coin to receive
-    @param split
+    @param split Array of output amounts that are handled by the pool. There are two
+                 elements in the array: index 0 is the amount of coin[j] sent out to
+                 `receiver`. The rest goes into msg.sender's spot wallet balances.
     @param receiver Address to send the output coin to
-    @param use_spot_balance
-    @param expect_optimistic_transfer
+    @param use_spot_balance If True, do not do ERC20 token transfers and only use
+                            tokens in user's spot wallet account.
+    @param expect_optimistic_transfer If True: user needs to do a transfer into the pool
+                                      similar to exchange_received, and then call this
+                                      method.
     @return uint256 Amount of tokens at index j received by the `receiver`
     """
     # _transfer_in updates self.balances here:
