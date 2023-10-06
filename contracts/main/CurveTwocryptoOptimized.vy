@@ -529,11 +529,10 @@ def exchange_received(
 def exchange_received_split(
     i: uint256,
     j: uint256,
-    dx: uint256,
+    split_in: uint256[2],  # <---- sum of split_in is `dx` (amount_in)
     min_dy: uint256,
-    split: uint256[2],
+    split_out: uint256[2],
     receiver: address,
-    use_spot_balance: bool,
     expect_optimistic_transfer: bool
 ) -> uint256:
     """
@@ -550,9 +549,15 @@ def exchange_received_split(
          Note for users: please transfer + exchange_received in 1 tx.
     @param i Index value for the input coin
     @param j Index value for the output coin
-    @param dx Amount of input coin being swapped in
+    @param split_in Amount of input coin being swapped in.
+                    Index 0 is what is transferred in from outside the pool contract.
+                            This can occur using either transferFrom if expect_optimistic_transfer
+                            is set to False, else the pool contract expects user to transfer into
+                            the pool (in the same tx) and then call exchange_received_split (with
+                            expect_optimistic_transfer set to True).
+                    Index 1 is what is used from msg.sender's spot balance.
     @param min_dy Minimum amount of output coin to receive
-    @param split Array of output amounts that are handled by the pool. There are two
+    @param split_out Array of output amounts that are handled by the pool. There are two
                  elements in the array: index 0 is the amount of coin[j] sent out to
                  `receiver`. The rest goes into msg.sender's spot wallet balances.
     @param receiver Address to send the output coin to
@@ -565,21 +570,21 @@ def exchange_received_split(
     """
     # _transfer_in updates self.balances here:
     dx_received: uint256 = 0
-    if not use_spot_balance:
+    if split_in[0] > 0:
         # Two cases:
         # 1. expect_optimistic_transfer is set to True. Use case: flashswap from
         #    another AMM, set this twocrypto-ng pool as receiver.
         # 2. pool calls ERC20(coins[i]).transferFrom(msg.sender, self, dx)
         dx_received = self._transfer_in(
             i,
-            dx,
+            split_in[0],
             msg.sender,
             expect_optimistic_transfer
         )
-    else:
-        # Only use balances in msg.sender's spot wallet account:
-        self._transfer_from_spot_wallet(i, dx, msg.sender)
-        dx_received = dx
+
+    if split_in[1] > 0:
+        self._transfer_from_spot_wallet(i, split_in[1], msg.sender)
+        dx_received += split_in[1]
 
     # No ERC20 token transfers occur here:
     out: uint256[3] = self._exchange(
@@ -589,17 +594,17 @@ def exchange_received_split(
         min_dy,
     )
 
-    assert split[0] + split[1] == out[0]  # dev: requested split is greater than calculated dy
+    assert split_out[0] + split_out[1] == out[0]  # dev: requested split is greater than calculated dy
 
     # Difference between calculated dy and requested out amount is what stays
     # in the spot wallet. To make this a fully spot_wallet swap, set split[0] to 0.
-    if split[1] > 0:
-        self._transfer_to_spot_wallet(j, split[1], msg.sender)
+    if split_out[1] > 0:
+        self._transfer_to_spot_wallet(j, split_out[1], msg.sender)
 
     # _transfer_out updates self.balances here. Update to state occurs before
     # external calls:
-    if split[0] > 0:
-        self._transfer_out(j, split[0], receiver)
+    if split_out[0] > 0:
+        self._transfer_out(j, split_out[0], receiver)
 
     # log:
     log TokenExchange(msg.sender, i, dx_received, j, out[0], out[1], out[2])
