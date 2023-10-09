@@ -8,12 +8,27 @@ from tests.utils.tokens import mint_for_testing
 SETTINGS = {"max_examples": 100, "deadline": None}
 
 
+def test_exchange_reverts(user, views_contract, swap_with_deposit):
+
+    with boa.reverts():
+        views_contract.get_dy(0, 2, 10**6, swap_with_deposit)
+
+    with boa.reverts():
+        views_contract.get_dy(2, 1, 10**6, swap_with_deposit)
+
+    with boa.reverts():
+        swap_with_deposit.exchange(1, 3, 10**6, 0, sender=user)
+
+    with boa.reverts():
+        swap_with_deposit.exchange(2, 2, 10**6, 0, sender=user)
+
+
 @given(
     amount=strategy(
         "uint256", min_value=10**10, max_value=10**6 * 10**18
     ),  # Can be more than we have
-    i=strategy("uint", min_value=0, max_value=2),
-    j=strategy("uint", min_value=0, max_value=2),
+    i=strategy("uint", min_value=0, max_value=1),
+    j=strategy("uint", min_value=0, max_value=1),
 )
 @settings(**SETTINGS)
 def test_exchange_all(
@@ -26,47 +41,40 @@ def test_exchange_all(
     j,
 ):
 
-    if i == j or i > len(coins) - 1 or j > len(coins) - 1:
+    if i == j:
+        return
 
-        with boa.reverts():
-            views_contract.get_dy(i, j, 10**6, swap_with_deposit)
+    amount = amount * 10**18 // INITIAL_PRICES[i]
+    mint_for_testing(coins[i], user, amount)
 
-        with boa.reverts(), boa.env.prank(user):
-            swap_with_deposit.exchange(i, j, 10**6, 0)
+    calculated = views_contract.get_dy(i, j, amount, swap_with_deposit)
 
-    else:
+    measured_i = coins[i].balanceOf(user)
+    measured_j = coins[j].balanceOf(user)
+    d_balance_i = swap_with_deposit.balances(i)
+    d_balance_j = swap_with_deposit.balances(j)
 
-        amount = amount * 10**18 // INITIAL_PRICES[i]
-        mint_for_testing(coins[i], user, amount)
+    with boa.env.prank(user):
+        swap_with_deposit.exchange(i, j, amount, int(0.999 * calculated))
 
-        calculated = views_contract.get_dy(i, j, amount, swap_with_deposit)
+    measured_i -= coins[i].balanceOf(user)
+    measured_j = coins[j].balanceOf(user) - measured_j
+    d_balance_i = swap_with_deposit.balances(i) - d_balance_i
+    d_balance_j = swap_with_deposit.balances(j) - d_balance_j
 
-        measured_i = coins[i].balanceOf(user)
-        measured_j = coins[j].balanceOf(user)
-        d_balance_i = swap_with_deposit.balances(i)
-        d_balance_j = swap_with_deposit.balances(j)
+    assert amount == measured_i
+    assert calculated == measured_j
 
-        with boa.env.prank(user):
-            swap_with_deposit.exchange(i, j, amount, int(0.999 * calculated))
-
-        measured_i -= coins[i].balanceOf(user)
-        measured_j = coins[j].balanceOf(user) - measured_j
-        d_balance_i = swap_with_deposit.balances(i) - d_balance_i
-        d_balance_j = swap_with_deposit.balances(j) - d_balance_j
-
-        assert amount == measured_i
-        assert calculated == measured_j
-
-        assert d_balance_i == amount
-        assert -d_balance_j == measured_j
+    assert d_balance_i == amount
+    assert -d_balance_j == measured_j
 
 
 @given(
     amount=strategy(
         "uint256", min_value=10**10, max_value=10**6 * 10**18
     ),  # Can be more than we have
-    i=strategy("uint", min_value=0, max_value=2),
-    j=strategy("uint", min_value=0, max_value=2),
+    i=strategy("uint", min_value=0, max_value=1),
+    j=strategy("uint", min_value=0, max_value=1),
 )
 @settings(**SETTINGS)
 def test_exchange_received_success(
@@ -79,7 +87,7 @@ def test_exchange_received_success(
     j,
 ):
 
-    if i == j or i > len(coins) - 1 or j > len(coins) - 1:
+    if i == j:
         return
 
     amount = amount * 10**18 // INITIAL_PRICES[i]
@@ -94,7 +102,7 @@ def test_exchange_received_success(
 
     with boa.env.prank(user):
         coins[i].transfer(swap_with_deposit, amount)
-        swap_with_deposit.exchange_received(
+        out = swap_with_deposit.exchange_received(
             i, j, amount, int(0.999 * calculated), user
         )
 
@@ -104,19 +112,18 @@ def test_exchange_received_success(
     d_balance_j = swap_with_deposit.balances(j) - d_balance_j
 
     assert amount == measured_i
-    assert calculated == measured_j
+    assert calculated == measured_j == out
 
     assert d_balance_i == amount
-    assert -d_balance_j == measured_j
-    print("pass!")
+    assert -d_balance_j == measured_j == out
 
 
 @given(
     amount=strategy(
         "uint256", min_value=10**10, max_value=10**6 * 10**18
     ),  # Can be more than we have
-    i=strategy("uint", min_value=0, max_value=2),
-    j=strategy("uint", min_value=0, max_value=2),
+    i=strategy("uint", min_value=0, max_value=1),
+    j=strategy("uint", min_value=0, max_value=1),
 )
 @settings(**SETTINGS)
 def test_exchange_received_revert_on_no_transfer(
@@ -129,8 +136,7 @@ def test_exchange_received_revert_on_no_transfer(
     j,
 ):
 
-    if i == j or i > len(coins) or j > len(coins):
-
+    if i == j:
         return
 
     amount = amount * 10**18 // INITIAL_PRICES[i]

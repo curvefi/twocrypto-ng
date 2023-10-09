@@ -246,11 +246,10 @@ def _get_dy_nofee(
         xp[1] * price_scale * precisions[1] / PRECISION
     ]
 
-    y_out_newton: uint256 = math.newton_y(A, gamma, xp, D, j)
-    y_out: uint256 = math.get_y(A, gamma, xp, D, j)[0]
+    y_out: uint256[2] = math.get_y(A, gamma, xp, D, j)
 
-    dy: uint256 = xp[j] - y_out - 1
-    xp[j] = y_out
+    dy: uint256 = xp[j] - y_out[0] - 1
+    xp[j] = y_out[0]
     if j > 0:
         dy = dy * PRECISION / price_scale
     dy /= precisions[j]

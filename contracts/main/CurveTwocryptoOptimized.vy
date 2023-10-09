@@ -938,10 +938,7 @@ def _exchange(
     y: uint256 = xp[j]
     x0: uint256 = xp[i]
 
-    xp[i] = x0 + dx_received
-
     price_scale: uint256 = self.cached_price_scale
-
     xp = [
         xp[0] * PRECISIONS[0],
         unsafe_div(xp[1] * price_scale * PRECISIONS[1], PRECISION)
@@ -967,18 +964,16 @@ def _exchange(
     D: uint256 = self.D
     y_out: uint256[2] = MATH.get_y(A_gamma[0], A_gamma[1], xp, D, j)
     dy = xp[j] - y_out[0]
-    xp[j] = xp[j] - dy
-    dy = dy - 1
+    xp[j] -= dy
+    dy -= 1
 
     if j > 0:
         dy = dy * PRECISION / price_scale
-    dy = dy / PRECISIONS[j]
+    dy /= PRECISIONS[j]
 
     fee: uint256 = unsafe_div(self._fee(xp) * dy, 10**10)
-
     dy -= fee  # <--------------------- Subtract fee from the outgoing amount.
     assert dy >= min_dy, "Slippage"
-
     y -= dy
 
     y *= PRECISIONS[j]
@@ -1396,7 +1391,7 @@ def get_xcp(D: uint256, price_scale: uint256) -> uint256:
         D * PRECISION / (price_scale * N_COINS)
     ]
 
-    return isqrt(x[0] * x[1])  # <------------------- Geometric Mean.       # TODO: Check precision!
+    return isqrt(x[0] * x[1])  # <------------------- Geometric Mean.
 
 
 @view
