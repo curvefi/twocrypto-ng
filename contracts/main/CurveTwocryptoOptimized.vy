@@ -134,7 +134,7 @@ cached_price_scale: uint256  # <------------------------ Internal price scale.
 cached_price_oracle: uint256  # <------- Price target given by moving average.
 cached_xcp_oracle: uint256  # <----------- EMA of totalSupply * virtual_price.
 
-last_prices: uint256
+last_prices: public(uint256)
 last_timestamp: public(uint256[2])    # idx 0 is for prices, idx 1 is for xcp.
 last_xcp: public(uint256)
 xcp_ma_time: public(uint256)
@@ -152,8 +152,8 @@ future_A_gamma_time: public(uint256)  # <------ Time when ramping is finished.
 
 balances: public(uint256[N_COINS])
 spot_wallet_balances: public(HashMap[address, uint256[N_COINS]])  # <---- Spot
-#         Wallet is a hashmap that stores balances for users, should they wish
-#        to not do ERC20 token transfers immediately out of the pool contract.
+#         Wallet is a hashmap that stores coin balances for users. This cannot
+#                                                 be commingled with balances.
 D: public(uint256)
 xcp_profit: public(uint256)
 xcp_profit_a: public(uint256)  # <--- Full profit at last claim of admin fees.
@@ -546,7 +546,8 @@ def exchange_received_split(
          and helps reduce the total number of ERC20 tokens per arb transaction to
          2: arbitrageur can withdraw profits at a later time and do not need to hedge
          atomically (which is expensive).
-         Note for users: please transfer + exchange_received in 1 tx.
+         Note for users: please transfer + exchange_received_split in 1 tx if
+                         expect_optimistic_transfer is set to True.
     @param i Index value for the input coin
     @param j Index value for the output coin
     @param split_in Amount of input coin being swapped in.
@@ -560,15 +561,12 @@ def exchange_received_split(
     @param split_out Array of output amounts that are handled by the pool. There are two
                  elements in the array: index 0 is the amount of coin[j] sent out to
                  `receiver`. The rest goes into msg.sender's spot wallet balances.
-    @param receiver Address to send the output coin to
-    @param use_spot_balance If True, do not do ERC20 token transfers and only use
-                            tokens in user's spot wallet account.
+    @param receiver Address to send split_out[0] amount of the output coin to
     @param expect_optimistic_transfer If True: user needs to do a transfer into the pool
                                       similar to exchange_received, and then call this
                                       method.
     @return uint256 Amount of tokens at index j received by the `receiver`
     """
-    # _transfer_in updates self.balances here:
     dx_received: uint256 = 0
     if split_in[0] > 0:
         # Two cases:
@@ -659,11 +657,11 @@ def add_liquidity(
 
     xp = [
         xp[0] * PRECISIONS[0],
-        xp[1] * price_scale / PRECISION
+        xp[1] * price_scale * PRECISIONS[1] / PRECISION
     ]
     xp_old = [
         xp_old[0] * PRECISIONS[0],
-        xp_old[1] * price_scale / PRECISION
+        xp_old[1] * price_scale * PRECISIONS[1] / PRECISION
     ]
 
     for i in range(N_COINS):         # TODO: optimize
@@ -801,7 +799,7 @@ def remove_liquidity(
 
     # Update xcp since liquidity was removed:
     xp: uint256[N_COINS] = self.xp(self.balances, self.cached_price_scale)
-    self.last_xcp = isqrt(xp[0] * xp[1] / 10**18)
+    self.last_xcp = isqrt(xp[0] * xp[1])
 
     last_timestamp: uint256[2] = self.last_timestamp
     if last_timestamp[1] < block.timestamp:
@@ -937,8 +935,8 @@ def _exchange(
     xp: uint256[N_COINS] = self.balances
     dy: uint256 = 0
 
-    y: uint256 = xp[j]  # <----------------- if j > N_COINS, this will revert.
-    x0: uint256 = xp[i]  # <--------------- if i > N_COINS, this will  revert.
+    y: uint256 = xp[j]
+    x0: uint256 = xp[i]
 
     xp[i] = x0 + dx_received
 
@@ -1116,7 +1114,7 @@ def tweak_price(
 
     if old_virtual_price > 0:
 
-        xcp: uint256 = isqrt(xp[0] * xp[1] / 10**18)                               # TODO: Check precision!
+        xcp: uint256 = isqrt(xp[0] * xp[1])
         virtual_price = 10**18 * xcp / total_supply
 
         xcp_profit = unsafe_div(
@@ -1186,13 +1184,13 @@ def tweak_price(
             # ------------------------------------- Convert xp to real prices.
             xp = [
                 unsafe_div(D, N_COINS),
-                D * PRECISION / (N_COINS * p_new)                                   #  TODO: can use unsafediv?
+                D * PRECISION / (N_COINS * p_new)
             ]
 
             # ---------- Calculate new virtual_price using new xp and D. Reuse
             #              `old_virtual_price` (but it has new virtual_price).
             old_virtual_price = unsafe_div(
-                10**18 * isqrt(xp[0] * xp[1] / 10**18), total_supply                # TODO: can use unsafemath?
+                10**18 * isqrt(xp[0] * xp[1]), total_supply
             )  # <----- unsafe_div because we did safediv before (if vp>1e18)
 
             # ---------------------------- Proceed if we've got enough profit.
@@ -1258,7 +1256,8 @@ def _claim_admin_fees():
     vprice: uint256 = self.virtual_price
     price_scale: uint256 = self.cached_price_scale
     fee_receiver: address = factory.fee_receiver()
-    balances: uint256[N_COINS] = self.balances
+    balances: uint256[N_COINS] = self.balances  # <- since there's no gulping,
+    #             admin cannot commingle user spot balance with pool balances.
 
     #  Admin fees are calculated as follows.
     #      1. Calculate accrued profit since last claim. `xcp_profit`
@@ -1397,7 +1396,7 @@ def get_xcp(D: uint256, price_scale: uint256) -> uint256:
         D * PRECISION / (price_scale * N_COINS)
     ]
 
-    return isqrt(x[0] * x[1] / 10**18)  # <------------------- Geometric Mean.       # TODO: Check precision!
+    return isqrt(x[0] * x[1])  # <------------------- Geometric Mean.       # TODO: Check precision!
 
 
 @view
@@ -1725,7 +1724,7 @@ def lp_price() -> uint256:
             0th index
     @return uint256 LP price.
     """
-    return 2 * self.virtual_price * isqrt(self.cached_price_oracle) / 10**18                # TODO: Check precision.
+    return 2 * self.virtual_price * isqrt(self.cached_price_oracle) / 10**18
 
 
 @external

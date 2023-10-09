@@ -18,7 +18,11 @@ def _get_deposit_amounts(amount_per_token_usd, initial_prices, coins):
 
 
 def _crypto_swap_with_deposit(
-    coins, user, tricrypto_swap, initial_prices, dollar_amt_each_coin=10**6
+    coins,
+    user,
+    tricrypto_swap,
+    initial_prices,
+    dollar_amt_each_coin=int(1.5 * 10**6),
 ):
 
     # add 1M of each token to the pool
@@ -134,16 +138,11 @@ def swap_multiprecision(
 
 @pytest.fixture(scope="module")
 def swap_with_deposit(swap, coins, user):
-    yield _crypto_swap_with_deposit(coins, user, swap, INITIAL_PRICES)
-
-
-@pytest.fixture(scope="module")
-def hyper_swap_with_deposit(hyper_swap, coins, user):
-    yield _crypto_swap_with_deposit(coins, user, hyper_swap, INITIAL_PRICES)
+    return _crypto_swap_with_deposit(coins, user, swap, INITIAL_PRICES)
 
 
 @pytest.fixture(scope="module")
 def yuge_swap(swap, coins, user):
-    yield _crypto_swap_with_deposit(
+    return _crypto_swap_with_deposit(
         coins, user, swap, INITIAL_PRICES, dollar_amt_each_coin=10**10
     )
