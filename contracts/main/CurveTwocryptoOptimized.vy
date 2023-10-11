@@ -664,7 +664,7 @@ def add_liquidity(
         xp_old[1] * price_scale * PRECISIONS[1] / PRECISION
     ]
 
-    for i in range(N_COINS):         # TODO: optimize
+    for i in range(N_COINS):
         if amounts_received[i] > 0:
             amountsp[i] = xp[i] - xp_old[i]
 
