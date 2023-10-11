@@ -230,6 +230,7 @@ def get_y(
 ) -> uint256[2]:
 
     # Safety checks
+    print(_ANN, MIN_A, MAX_A)
     assert _ANN > MIN_A - 1 and _ANN < MAX_A + 1  # dev: unsafe values A
     assert _gamma > MIN_GAMMA - 1 and _gamma < MAX_GAMMA + 1  # dev: unsafe values gamma
     assert _D > 10**17 - 1 and _D < 10**15 * 10**18 + 1 # dev: unsafe values D

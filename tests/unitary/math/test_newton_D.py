@@ -40,9 +40,9 @@ def inv_target_decimal_n2(A, gamma, x, D):
 N_COINS = 2
 MAX_SAMPLES = 3000000  # Increase for fuzzing
 
-A_MUL = 10000 * 2**2
-MIN_A = int(0.01 * A_MUL)
-MAX_A = 1000 * A_MUL
+A_MUL = 10000
+MIN_A = int(N_COINS**N_COINS * A_MUL / 10)
+MAX_A = int(N_COINS**N_COINS * A_MUL * 100000)
 
 # gamma from 1e-8 up to 0.05
 MIN_GAMMA = 10**10
