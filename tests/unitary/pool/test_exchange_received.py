@@ -1,3 +1,4 @@
+# flake8: noqa
 import boa
 from boa.test import strategy
 from hypothesis import given, settings  # noqa
@@ -12,12 +13,8 @@ SETTINGS = {"max_examples": 100, "deadline": None}
     amount=strategy(
         "uint256", min_value=10**10, max_value=10**6 * 10**18
     ),
-    split_in=strategy(
-        "uint256", min_value=0, max_value=100
-    ),
-    split_out=strategy(
-        "uint256", min_value=0, max_value=100
-    ),
+    split_in=strategy("uint256", min_value=0, max_value=100),
+    split_out=strategy("uint256", min_value=0, max_value=100),
     i=strategy("uint", min_value=0, max_value=1),
     j=strategy("uint", min_value=0, max_value=1),
 )
@@ -31,6 +28,6 @@ def test_exchange_split(
     split_in,
     split_out,
     i,
-    j
+    j,
 ):
     pass
