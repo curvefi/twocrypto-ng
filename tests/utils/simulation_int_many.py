@@ -2,6 +2,8 @@
 # flake8: noqa
 import json
 
+from tests.unitary.math.misc import get_y_n2_dec
+
 A_MULTIPLIER = 10000
 
 
@@ -43,6 +45,8 @@ def newton_D(A, gamma, x, D0):
     x = sorted(x, reverse=True)
     N = len(x)
 
+    assert N == 2
+
     for i in range(255):
         D_prev = D
 
@@ -80,6 +84,8 @@ def newton_D(A, gamma, x, D0):
 
 def newton_y(A, gamma, x, D, i):
     N = len(x)
+
+    assert N == 2
 
     y = D // N
     K0_i = 10**18
@@ -128,7 +134,8 @@ def newton_y(A, gamma, x, D, i):
 
 
 def solve_x(A, gamma, x, D, i):
-    return newton_y(A, gamma, x, D, i)
+    return get_y_n2_dec(A, gamma, x, D, i)
+    # return newton_y(A, gamma, x, D, i)
 
 
 def solve_D(A, gamma, x):
