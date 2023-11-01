@@ -176,6 +176,7 @@ NOISE_FEE: constant(uint256) = 10**5  # <---------------------------- 0.1 BPS.
 # ----------------------- Admin params ---------------------------------------
 
 last_admin_fee_claim_timestamp: uint256
+admin_lp_virtual_balance: uint256
 
 MIN_RAMP_TIME: constant(uint256) = 86400
 MIN_ADMIN_FEE_CLAIM_INTERVAL: constant(uint256) = 86400
@@ -698,6 +699,7 @@ def add_liquidity(
         d_token -= d_token_fee
         token_supply += d_token
         self.mint(receiver, d_token)
+        self.admin_lp_virtual_balance += d_token_fee
 
         price_scale = self.tweak_price(A_gamma, xp, D, 0)
 
@@ -1269,13 +1271,16 @@ def _claim_admin_fees():
 
     # ------------------------------ Claim admin fees by minting admin's share
     #                                                of the pool in LP tokens.
-    admin_share: uint256 = 0
+
+    # This is the admin fee tokens claimed in self.add_liquidity. We add it to
+    # the LP token share that the admin needs to claim:
+    admin_share: uint256 = self.admin_lp_virtual_balance
     frac: uint256 = 0
     if fee_receiver != empty(address) and fees > 0:
 
         # -------------------------------- Calculate admin share to be minted.
         frac = vprice * 10**18 / (vprice - fees) - 10**18
-        admin_share = current_lp_token_supply * frac / 10**18
+        admin_share += current_lp_token_supply * frac / 10**18
 
         # ------ Subtract fees from profits that will be used for rebalancing.
         xcp_profit -= fees * 2
@@ -1294,6 +1299,9 @@ def _claim_admin_fees():
         return
 
     # ---------------------------- Update State ------------------------------
+
+    # Set admin virtual LP balances to zero because we claimed:
+    self.admin_lp_virtual_balance = 0
 
     self.xcp_profit = xcp_profit
     self.last_admin_fee_claim_timestamp = block.timestamp
