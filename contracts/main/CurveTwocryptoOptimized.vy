@@ -936,7 +936,7 @@ def _exchange(
     dy: uint256 = 0
 
     y: uint256 = xp[j]
-    x0: uint256 = xp[i]
+    x0: uint256 = xp[i] - dx_received  # old xp[i]
 
     price_scale: uint256 = self.cached_price_scale
     xp = [
