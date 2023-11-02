@@ -154,6 +154,8 @@ balances: public(uint256[N_COINS])
 spot_wallet_balances: public(HashMap[address, uint256[N_COINS]])  # <---- Spot
 #         Wallet is a hashmap that stores coin balances for users. This cannot
 #                                                 be commingled with balances.
+spot_portfolio: public(uint256[N_COINS])  # <--- A sum of all coin balances in
+#                                                            all spot wallets.
 D: public(uint256)
 xcp_profit: public(uint256)
 xcp_profit_a: public(uint256)  # <--- Full profit at last claim of admin fees.
@@ -296,7 +298,8 @@ def _transfer_in(
             This is only enabled for exchange_received.
     @return The amount of tokens received.
     """
-    coin_balance: uint256 = ERC20(coins[_coin_idx]).balanceOf(self)
+    # Subtract spot portfolio from coin balances:
+    coin_balance: uint256 = ERC20(coins[_coin_idx]).balanceOf(self) - self.spot_portfolio[_coin_idx]
 
     if expect_optimistic_transfer:  # Only enabled in exchange_received:
         # it expects the caller of exchange_received to have sent tokens to
@@ -384,26 +387,30 @@ def deposit_to_spot_wallet(_amounts: uint256[N_COINS], _account: address):
 
     # Adjust balances before handling transfers
     account_balance: uint256[N_COINS] = self.spot_wallet_balances[_account]
+    spot_portfolio: uint256[N_COINS] = self.spot_portfolio
 
     # Transfer out of spot wallet
     coin_balance: uint256 = 0
+    received_amount: uint256 = 0
     for i in range(N_COINS):
 
         if _amounts[i] > 0:
 
             coin_balance = ERC20(coins[i]).balanceOf(self)
-
             assert ERC20(coins[i]).transferFrom(
                 _account,
                 self,
                 _amounts[i],
                 default_return_value=True
             )
+            received_amount = ERC20(coins[i]).balanceOf(self) - coin_balance
 
-            account_balance[i] += ERC20(coins[i]).balanceOf(self) - coin_balance
+            account_balance[i] += received_amount
+            spot_portfolio[i] += received_amount
 
     # Update spot wallet account balances
     self.spot_wallet_balances[_account] = account_balance
+    self.spot_portfolio = spot_portfolio
 
 
 @external
@@ -412,9 +419,15 @@ def withdraw_from_spot_wallet(_amounts: uint256[N_COINS], _account: address):
 
     # Adjust balances before handling transfers
     account_balance: uint256[N_COINS] = self.spot_wallet_balances[_account]
-    account_balance[0] -= _amounts[0]
-    account_balance[1] -= _amounts[1]
+    spot_portfolio: uint256[N_COINS] = self.spot_portfolio
+
+    for i in range(N_COINS):
+        if _amounts[i] > 0:
+            account_balance[i] -= _amounts[i]
+            spot_portfolio[i] -= _amounts[i]
+
     self.spot_wallet_balances[_account] = account_balance
+    self.spot_portfolio = spot_portfolio
 
     # Transfer out of spot wallet
     for i in range(N_COINS):
