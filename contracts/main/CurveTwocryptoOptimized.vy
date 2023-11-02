@@ -699,7 +699,7 @@ def add_liquidity(
         d_token -= d_token_fee
         token_supply += d_token
         self.mint(receiver, d_token)
-        self.admin_lp_virtual_balance += d_token_fee
+        self.admin_lp_virtual_balance += unsafe_div(ADMIN_FEE * d_token_fee, 10**10)
 
         price_scale = self.tweak_price(A_gamma, xp, D, 0)
 
