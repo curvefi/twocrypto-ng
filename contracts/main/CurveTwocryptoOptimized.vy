@@ -383,10 +383,10 @@ def _transfer_from_spot_wallet(_coin_idx: uint256, _amount: uint256, _account: a
 
 @external
 @nonreentrant('lock')
-def deposit_to_spot_wallet(_amounts: uint256[N_COINS], _account: address):
+def deposit_to_spot_wallet(_amounts: uint256[N_COINS]):
 
     # Adjust balances before handling transfers
-    account_balance: uint256[N_COINS] = self.spot_wallet_balances[_account]
+    account_balance: uint256[N_COINS] = self.spot_wallet_balances[msg.sender]
     spot_portfolio: uint256[N_COINS] = self.spot_portfolio
 
     # Transfer out of spot wallet
@@ -398,7 +398,7 @@ def deposit_to_spot_wallet(_amounts: uint256[N_COINS], _account: address):
 
             coin_balance = ERC20(coins[i]).balanceOf(self)
             assert ERC20(coins[i]).transferFrom(
-                _account,
+                msg.sender,
                 self,
                 _amounts[i],
                 default_return_value=True
@@ -409,16 +409,16 @@ def deposit_to_spot_wallet(_amounts: uint256[N_COINS], _account: address):
             spot_portfolio[i] += received_amount
 
     # Update spot wallet account balances
-    self.spot_wallet_balances[_account] = account_balance
+    self.spot_wallet_balances[msg.sender] = account_balance
     self.spot_portfolio = spot_portfolio
 
 
 @external
 @nonreentrant('lock')
-def withdraw_from_spot_wallet(_amounts: uint256[N_COINS], _account: address):
+def withdraw_from_spot_wallet(_amounts: uint256[N_COINS]):
 
     # Adjust balances before handling transfers
-    account_balance: uint256[N_COINS] = self.spot_wallet_balances[_account]
+    account_balance: uint256[N_COINS] = self.spot_wallet_balances[msg.sender]
     spot_portfolio: uint256[N_COINS] = self.spot_portfolio
 
     for i in range(N_COINS):
@@ -426,7 +426,7 @@ def withdraw_from_spot_wallet(_amounts: uint256[N_COINS], _account: address):
             account_balance[i] -= _amounts[i]
             spot_portfolio[i] -= _amounts[i]
 
-    self.spot_wallet_balances[_account] = account_balance
+    self.spot_wallet_balances[msg.sender] = account_balance
     self.spot_portfolio = spot_portfolio
 
     # Transfer out of spot wallet
@@ -435,7 +435,7 @@ def withdraw_from_spot_wallet(_amounts: uint256[N_COINS], _account: address):
         if _amounts[i] > 0:
 
             assert ERC20(coins[i]).transfer(
-                _account,
+                msg.sender,
                 _amounts[i],
                 default_return_value=True
             )
