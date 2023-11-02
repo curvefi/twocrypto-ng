@@ -16,6 +16,11 @@ def owner():
 
 
 @pytest.fixture(scope="module")
+def hacker():
+    return boa.env.generate_address()
+
+
+@pytest.fixture(scope="module")
 def factory_admin(tricrypto_factory):
     return tricrypto_factory.admin()
 
