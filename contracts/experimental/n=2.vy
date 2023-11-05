@@ -20,9 +20,9 @@ def _newton_y(ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: 
     ANN = A * N**N
     """
     # Safety checks
-    # assert ANN > MIN_A - 1 and ANN < MAX_A + 1  # dev: unsafe values A
-    # assert gamma > MIN_GAMMA - 1 and gamma < MAX_GAMMA + 1  # dev: unsafe values gamma
-    # assert D > 10**17 - 1 and D < 10**15 * 10**18 + 1 # dev: unsafe values D
+    assert ANN > MIN_A - 1 and ANN < MAX_A + 1  # dev: unsafe values A
+    assert gamma > MIN_GAMMA - 1 and gamma < MAX_GAMMA + 1  # dev: unsafe values gamma
+    assert D > 10**17 - 1 and D < 10**15 * 10**18 + 1 # dev: unsafe values D
 
     x_j: uint256 = x[1 - i]
     y: uint256 = D**2 / (x_j * N_COINS**2)
@@ -84,7 +84,7 @@ def _newton_y(ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: 
             diff = y_prev - y
         if diff < max(convergence_limit, y / 10**14):
             frac: uint256 = y * 10**18 / D
-            # assert (frac > 10**16 - 1) and (frac < 10**20 + 1)  # dev: unsafe value for y
+            assert (frac > 10**16 - 1) and (frac < 10**20 + 1)  # dev: unsafe value for y
             return y
 
     raise "Did not converge"

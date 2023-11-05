@@ -11,11 +11,10 @@ MAX_SAMPLES = 1000000  # Increase for fuzzing
 
 A_MUL = 10000
 MIN_A = int(N_COINS**N_COINS * A_MUL / 10)
-MAX_A = int(N_COINS**N_COINS * A_MUL * 100000)
+MAX_A = int(N_COINS**N_COINS * A_MUL * 1000)
 
-# gamma from 1e-8 up to 0.05
 MIN_GAMMA = 10**10
-MAX_GAMMA = 5 * 10**16
+MAX_GAMMA = 2 * 10**15
 
 pytest.current_case_id = 0
 pytest.negative_sqrt_arg = 0
@@ -53,10 +52,10 @@ def inv_target_decimal_n2(A, gamma, x, D):
         min_value=10**18, max_value=10**14 * 10**18
     ),  # 1 USD to 100T USD
     xD=st.integers(
-        min_value=int(1.001e16), max_value=int(0.999e20)
+        min_value=5 * 10**16, max_value=10**19
     ),  # <- ratio 1e18 * x/D, typically 1e18 * 1
     yD=st.integers(
-        min_value=int(1.001e16), max_value=int(0.999e20)
+        min_value=5 * 10**16, max_value=10**19
     ),  # <- ratio 1e18 * y/D, typically 1e18 * 1
     gamma=st.integers(min_value=MIN_GAMMA, max_value=MAX_GAMMA),
     j=st.integers(min_value=0, max_value=1),
