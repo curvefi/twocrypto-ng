@@ -1673,6 +1673,43 @@ def burnFrom(_to: address, _value: uint256) -> bool:
 # ------------------------- AMM View Functions -------------------------------
 
 
+@internal
+@view
+def internal_price_oracle() -> uint256:
+    """
+    @notice Returns the oracle price of the coin at index `k` w.r.t the coin
+            at index 0.
+    @dev The oracle is an exponential moving average, with a periodicity
+         determined by `self.ma_time`. The aggregated prices are cached state
+         prices (dy/dx) calculated AFTER the latest trade.
+    @param k The index of the coin.
+    @return uint256 Price oracle value of kth coin.
+    """
+    price_oracle: uint256 = self.cached_price_oracle
+    price_scale: uint256 = self.cached_price_scale
+    last_prices_timestamp: uint256 = self.last_timestamp[0]
+
+    if last_prices_timestamp < block.timestamp:  # <------------ Update moving
+        #                                                   average if needed.
+
+        last_prices: uint256 = self.last_prices
+        ma_time: uint256 = self._unpack(self.packed_rebalancing_params)[2]
+        alpha: uint256 = MATH.wad_exp(
+            -convert(
+                (block.timestamp - last_prices_timestamp) * 10**18 / ma_time,
+                int256,
+            )
+        )
+
+        # ---- We cap state price that goes into the EMA with 2 x price_scale.
+        return (
+            min(last_prices, 2 * price_scale) * (10**18 - alpha) +
+            price_oracle * alpha
+        ) / 10**18
+
+    return price_oracle
+
+
 @external
 @view
 def fee_receiver() -> address:
@@ -1740,7 +1777,7 @@ def lp_price() -> uint256:
             0th index
     @return uint256 LP price.
     """
-    return 2 * self.virtual_price * isqrt(self.cached_price_oracle) / 10**18
+    return 2 * self.virtual_price * isqrt(self.internal_price_oracle()) / 10**18
 
 
 @external
@@ -1769,29 +1806,7 @@ def price_oracle() -> uint256:
     @param k The index of the coin.
     @return uint256 Price oracle value of kth coin.
     """
-    price_oracle: uint256 = self.cached_price_oracle
-    price_scale: uint256 = self.cached_price_scale
-    last_prices_timestamp: uint256 = self.last_timestamp[0]
-
-    if last_prices_timestamp < block.timestamp:  # <------------ Update moving
-        #                                                   average if needed.
-
-        last_prices: uint256 = self.last_prices
-        ma_time: uint256 = self._unpack(self.packed_rebalancing_params)[2]
-        alpha: uint256 = MATH.wad_exp(
-            -convert(
-                (block.timestamp - last_prices_timestamp) * 10**18 / ma_time,
-                int256,
-            )
-        )
-
-        # ---- We cap state price that goes into the EMA with 2 x price_scale.
-        return (
-            min(last_prices, 2 * price_scale) * (10**18 - alpha) +
-            price_oracle * alpha
-        ) / 10**18
-
-    return price_oracle
+    return self.internal_price_oracle()
 
 
 @external
