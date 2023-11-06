@@ -1,5 +1,5 @@
-# @version 0.3.10
-#pragma optimize gas
+# pragma version 0.3.10
+# pragma optimize gas
 """
 @title CurveTwocryptoOptimized
 @author Curve.Fi
