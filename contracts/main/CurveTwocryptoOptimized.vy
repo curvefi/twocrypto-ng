@@ -545,7 +545,7 @@ def exchange_received_split(
     j: uint256,
     split_in: uint256[2],  # <---- sum of split_in is `dx` (amount_in)
     min_dy: uint256,
-    split_out: uint256[2],
+    amount_to_receiver: uint256,
     receiver: address,
     expect_optimistic_transfer: bool
 ) -> uint256:
@@ -572,10 +572,9 @@ def exchange_received_split(
                             expect_optimistic_transfer set to True).
                     Index 1 is what is used from msg.sender's spot balance.
     @param min_dy Minimum amount of output coin to receive
-    @param split_out Array of output amounts that are handled by the pool. There are two
-                 elements in the array: index 0 is the amount of coin[j] sent out to
-                 `receiver`. The rest goes into msg.sender's spot wallet balances.
-    @param receiver Address to send split_out[0] amount of the output coin to
+    @param amount_to_receiver Amount of coin[j] sent out to `receiver`. The rest goes into
+                             msg.sender's spot wallet balances.
+    @param receiver Address to send amount_to_receiver amount of the output coin to
     @param expect_optimistic_transfer If True: user needs to do a transfer into the pool
                                       similar to exchange_received, and then call this
                                       method.
@@ -604,21 +603,24 @@ def exchange_received_split(
         j,
         dx_received,
         min_dy,
-    )
+    )  # <------------------------------------------ min_dy checks occur here.
 
-    assert split_out[0] + split_out[1] == out[0]  # dev: requested split is greater than calculated dy
+    # Calculate amount that goes to wallet. amount_to_receiver cannot be
+    # greater than out[0]:
+    amount_to_wallet: uint256 = out[0] - amount_to_receiver
 
     # Difference between calculated dy and requested out amount is what stays
-    # in the spot wallet. To make this a fully spot_wallet swap, set split[0] to 0.
-    if split_out[1] > 0:
-        self._transfer_to_spot_wallet(j, split_out[1], msg.sender)
+    # in the spot wallet. To make this a fully spot_wallet swap, set split[0]
+    # to 0.
+    if amount_to_receiver > 0:
+        self._transfer_to_spot_wallet(j, amount_to_receiver, msg.sender)
 
     # _transfer_out updates self.balances here. Update to state occurs before
     # external calls:
-    if split_out[0] > 0:
-        self._transfer_out(j, split_out[0], receiver)
 
-    # log:
+    if amount_to_wallet > 0:
+        self._transfer_out(j, amount_to_wallet, receiver)
+
     log TokenExchange(msg.sender, i, dx_received, j, out[0], out[1], out[2])
 
     return out[0]
