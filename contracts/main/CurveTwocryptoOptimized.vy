@@ -608,18 +608,13 @@ def exchange_received_split(
     # Calculate amount that goes to wallet. amount_to_receiver cannot be
     # greater than out[0]:
     amount_to_wallet: uint256 = out[0] - amount_to_receiver
-
-    # Difference between calculated dy and requested out amount is what stays
-    # in the spot wallet. To make this a fully spot_wallet swap, set split[0]
-    # to 0.
-    if amount_to_receiver > 0:
-        self._transfer_to_spot_wallet(j, amount_to_receiver, msg.sender)
+    if amount_to_wallet > 0:
+        self._transfer_to_spot_wallet(j, amount_to_wallet, msg.sender)
 
     # _transfer_out updates self.balances here. Update to state occurs before
     # external calls:
-
-    if amount_to_wallet > 0:
-        self._transfer_out(j, amount_to_wallet, receiver)
+    if amount_to_receiver > 0:
+        self._transfer_out(j, amount_to_receiver, receiver)
 
     log TokenExchange(msg.sender, i, dx_received, j, out[0], out[1], out[2])
 
