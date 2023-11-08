@@ -27,11 +27,11 @@ MAX_XD = 10**20
 N_COINS = 2
 A_MUL = 10000
 MIN_A = int(N_COINS**N_COINS * A_MUL / 10)
-MAX_A = int(N_COINS**N_COINS * A_MUL * 100000)
+MAX_A = int(N_COINS**N_COINS * A_MUL * 1000)
 
 # gamma from 1e-8 up to 0.05
 MIN_GAMMA = 10**10
-MAX_GAMMA = 2 * 10**16
+MAX_GAMMA = 2 * 10**15
 
 
 # Test with 2 coins

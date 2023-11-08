@@ -19,7 +19,7 @@ SETTINGS = {"max_examples": 100, "deadline": None}
     j=strategy("uint", min_value=0, max_value=1),
 )
 @settings(**SETTINGS)
-def test_exchange_split(
+def test_exchange_received(
     swap_with_deposit,
     views_contract,
     coins,
