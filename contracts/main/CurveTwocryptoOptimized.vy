@@ -151,11 +151,6 @@ future_A_gamma_time: public(uint256)  # <------ Time when ramping is finished.
 #                                                            and not set to 0.
 
 balances: public(uint256[N_COINS])
-spot_wallet_balances: public(HashMap[address, uint256[N_COINS]])  # <---- Spot
-#         Wallet is a hashmap that stores coin balances for users. This cannot
-#                                                 be commingled with balances.
-spot_portfolio: public(uint256[N_COINS])  # <--- A sum of all coin balances in
-#                                                            all spot wallets.
 D: public(uint256)
 xcp_profit: public(uint256)
 xcp_profit_a: public(uint256)  # <--- Full profit at last claim of admin fees.
@@ -298,8 +293,7 @@ def _transfer_in(
             This is only enabled for exchange_received.
     @return The amount of tokens received.
     """
-    # Subtract spot portfolio from coin balances:
-    coin_balance: uint256 = ERC20(coins[_coin_idx]).balanceOf(self) - self.spot_portfolio[_coin_idx]
+    coin_balance: uint256 = ERC20(coins[_coin_idx]).balanceOf(self)
 
     if expect_optimistic_transfer:  # Only enabled in exchange_received:
         # it expects the caller of exchange_received to have sent tokens to
@@ -354,91 +348,6 @@ def _transfer_out(_coin_idx: uint256, _amount: uint256, receiver: address):
         _amount,
         default_return_value=True
     )
-
-
-# ------------- Token transfers in and out involving Spot Wallets ------------
-# NOTE: EXPERIMENTAL
-
-@internal
-def _transfer_to_spot_wallet(_coin_idx: uint256, _amount: uint256, _account: address):
-
-    account_balance: uint256[N_COINS] = self.spot_wallet_balances[_account]
-
-    # Adjust balances before handling transfers:
-    self.balances[_coin_idx] -= _amount
-    account_balance[_coin_idx] += _amount
-    self.spot_wallet_balances[_account] = account_balance
-
-
-@internal
-def _transfer_from_spot_wallet(_coin_idx: uint256, _amount: uint256, _account: address):
-
-    account_balance: uint256[N_COINS] = self.spot_wallet_balances[_account]
-
-    # Adjust balances before handling transfers:
-    self.balances[_coin_idx] += _amount
-    account_balance[_coin_idx] -= _amount
-    self.spot_wallet_balances[_account] = account_balance
-
-
-@external
-@nonreentrant('lock')
-def deposit_to_spot_wallet(_amounts: uint256[N_COINS]):
-
-    # Adjust balances before handling transfers
-    account_balance: uint256[N_COINS] = self.spot_wallet_balances[msg.sender]
-    spot_portfolio: uint256[N_COINS] = self.spot_portfolio
-
-    # Transfer out of spot wallet
-    coin_balance: uint256 = 0
-    received_amount: uint256 = 0
-    for i in range(N_COINS):
-
-        if _amounts[i] > 0:
-
-            coin_balance = ERC20(coins[i]).balanceOf(self)
-            assert ERC20(coins[i]).transferFrom(
-                msg.sender,
-                self,
-                _amounts[i],
-                default_return_value=True
-            )
-            received_amount = ERC20(coins[i]).balanceOf(self) - coin_balance
-
-            account_balance[i] += received_amount
-            spot_portfolio[i] += received_amount
-
-    # Update spot wallet account balances
-    self.spot_wallet_balances[msg.sender] = account_balance
-    self.spot_portfolio = spot_portfolio
-
-
-@external
-@nonreentrant('lock')
-def withdraw_from_spot_wallet(_amounts: uint256[N_COINS]):
-
-    # Adjust balances before handling transfers
-    account_balance: uint256[N_COINS] = self.spot_wallet_balances[msg.sender]
-    spot_portfolio: uint256[N_COINS] = self.spot_portfolio
-
-    for i in range(N_COINS):
-        if _amounts[i] > 0:
-            account_balance[i] -= _amounts[i]
-            spot_portfolio[i] -= _amounts[i]
-
-    self.spot_wallet_balances[msg.sender] = account_balance
-    self.spot_portfolio = spot_portfolio
-
-    # Transfer out of spot wallet
-    for i in range(N_COINS):
-
-        if _amounts[i] > 0:
-
-            assert ERC20(coins[i]).transfer(
-                msg.sender,
-                _amounts[i],
-                default_return_value=True
-            )
 
 
 # -------------------------- AMM Main Functions ------------------------------
@@ -532,90 +441,6 @@ def exchange_received(
     self._transfer_out(j, out[0], receiver)
 
     # log:
-    log TokenExchange(msg.sender, i, dx_received, j, out[0], out[1], out[2])
-
-    return out[0]
-
-
-# NOTE: EXPERIMENTAL
-@external
-@nonreentrant('lock')
-def exchange_received_split(
-    i: uint256,
-    j: uint256,
-    split_in: uint256[2],  # <---- sum of split_in is `dx` (amount_in)
-    min_dy: uint256,
-    amount_to_receiver: uint256,
-    receiver: address,
-    expect_optimistic_transfer: bool
-) -> uint256:
-    """
-    @notice Exchange: but user must transfer dx amount of coin[i] tokens to pool first.
-            Pool will not call transferFrom and will only check if a surplus of
-            coins[i] is greater than or equal to `dx`.
-            User also needs to specify a `split` to decide what amount of dy_out goes
-            to receiver address and what amount stays in the sender's spot wallet.
-    @dev Use-case is to reduce the number of redundant ERC20 token
-         transfers in zaps. Primarily for dex-aggregators/arbitrageurs/searchers,
-         and helps reduce the total number of ERC20 tokens per arb transaction to
-         2: arbitrageur can withdraw profits at a later time and do not need to hedge
-         atomically (which is expensive).
-         Note for users: please transfer + exchange_received_split in 1 tx if
-                         expect_optimistic_transfer is set to True.
-    @param i Index value for the input coin
-    @param j Index value for the output coin
-    @param split_in Amount of input coin being swapped in.
-                    Index 0 is what is transferred in from outside the pool contract.
-                            This can occur using either transferFrom if expect_optimistic_transfer
-                            is set to False, else the pool contract expects user to transfer into
-                            the pool (in the same tx) and then call exchange_received_split (with
-                            expect_optimistic_transfer set to True).
-                    Index 1 is what is used from msg.sender's spot balance.
-    @param min_dy Minimum amount of output coin to receive
-    @param amount_to_receiver Amount of coin[j] sent out to `receiver`. The rest goes into
-                             msg.sender's spot wallet balances.
-    @param receiver Address to send amount_to_receiver amount of the output coin to
-    @param expect_optimistic_transfer If True: user needs to do a transfer into the pool
-                                      similar to exchange_received, and then call this
-                                      method.
-    @return uint256 Amount of tokens at index j received by the `receiver`
-    """
-    dx_received: uint256 = 0
-    if split_in[0] > 0:
-        # Two cases:
-        # 1. expect_optimistic_transfer is set to True. Use case: flashswap from
-        #    another AMM, set this twocrypto-ng pool as receiver.
-        # 2. pool calls ERC20(coins[i]).transferFrom(msg.sender, self, dx)
-        dx_received = self._transfer_in(
-            i,
-            split_in[0],
-            msg.sender,
-            expect_optimistic_transfer
-        )
-
-    if split_in[1] > 0:
-        self._transfer_from_spot_wallet(i, split_in[1], msg.sender)
-        dx_received += split_in[1]
-
-    # No ERC20 token transfers occur here:
-    out: uint256[3] = self._exchange(
-        i,
-        j,
-        dx_received,
-        min_dy,
-    )  # <------------------------------------------ min_dy checks occur here.
-
-    # Calculate amount that goes to wallet. amount_to_receiver cannot be
-    # greater than out[0]:
-    amount_to_wallet: uint256 = out[0] - amount_to_receiver
-    if amount_to_wallet > 0:
-        self._transfer_to_spot_wallet(j, amount_to_wallet, msg.sender)
-
-    # _transfer_out updates self.balances here. Update to state occurs before
-    # external calls:
-    if amount_to_receiver > 0:
-        self._transfer_out(j, amount_to_receiver, receiver)
-
     log TokenExchange(msg.sender, i, dx_received, j, out[0], out[1], out[2])
 
     return out[0]
@@ -1263,8 +1088,7 @@ def _claim_admin_fees():
     vprice: uint256 = self.virtual_price
     price_scale: uint256 = self.cached_price_scale
     fee_receiver: address = factory.fee_receiver()
-    balances: uint256[N_COINS] = self.balances  # <- since there's no gulping,
-    #             admin cannot commingle user spot balance with pool balances.
+    balances: uint256[N_COINS] = self.balances
 
     #  Admin fees are calculated as follows.
     #      1. Calculate accrued profit since last claim. `xcp_profit`
