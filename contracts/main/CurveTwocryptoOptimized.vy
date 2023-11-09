@@ -1624,7 +1624,6 @@ def price_oracle() -> uint256:
     @dev The oracle is an exponential moving average, with a periodicity
          determined by `self.ma_time`. The aggregated prices are cached state
          prices (dy/dx) calculated AFTER the latest trade.
-    @param k The index of the coin.
     @return uint256 Price oracle value of kth coin.
     """
     return self.internal_price_oracle()
@@ -1671,7 +1670,6 @@ def price_scale() -> uint256:
             at index 0.
     @dev Price scale determines the price band around which liquidity is
          concentrated.
-    @param k The index of the coin.
     @return uint256 Price scale of coin.
     """
     return self.cached_price_scale
