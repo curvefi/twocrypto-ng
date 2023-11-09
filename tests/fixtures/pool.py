@@ -20,7 +20,7 @@ def _get_deposit_amounts(amount_per_token_usd, initial_prices, coins):
 def _crypto_swap_with_deposit(
     coins,
     user,
-    tricrypto_swap,
+    twocrypto_swap,
     initial_prices,
     dollar_amt_each_coin=int(1.5 * 10**6),
 ):
@@ -38,13 +38,13 @@ def _crypto_swap_with_deposit(
 
         # approve crypto_swap to trade coin for user:
         with boa.env.prank(user):
-            coin.approve(tricrypto_swap, 2**256 - 1)
+            coin.approve(twocrypto_swap, 2**256 - 1)
 
     # Very first deposit
     with boa.env.prank(user):
-        tricrypto_swap.add_liquidity(quantities, 0)
+        twocrypto_swap.add_liquidity(quantities, 0)
 
-    return tricrypto_swap
+    return twocrypto_swap
 
 
 @pytest.fixture(scope="module")
@@ -66,7 +66,7 @@ def params():
 
 @pytest.fixture(scope="module")
 def swap(
-    tricrypto_factory,
+    twocrypto_factory,
     amm_interface,
     coins,
     params,
@@ -74,7 +74,7 @@ def swap(
 ):
 
     with boa.env.prank(deployer):
-        swap = tricrypto_factory.deploy_pool(
+        swap = twocrypto_factory.deploy_pool(
             "Curve.fi USD<>WETH",
             "USD<>WETH",
             [coin.address for coin in coins],
@@ -95,7 +95,7 @@ def swap(
 
 @pytest.fixture(scope="module")
 def swap_multiprecision(
-    tricrypto_factory,
+    twocrypto_factory,
     amm_interface,
     stgusdc,
     deployer,
@@ -116,7 +116,7 @@ def swap_multiprecision(
     }
 
     with boa.env.prank(deployer):
-        swap = tricrypto_factory.deploy_pool(
+        swap = twocrypto_factory.deploy_pool(
             "Curve.fi STG/USDC",
             "STGUSDC",
             [coin.address for coin in stgusdc],

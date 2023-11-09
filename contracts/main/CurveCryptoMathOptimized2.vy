@@ -7,7 +7,7 @@
 # Swiss Stake GmbH are allowed to call this contract.
 
 """
-@title CurveTricryptoMathOptimized
+@title CurveTwocryptoMathOptimized
 @author Curve.Fi
 @license Copyright (c) Curve.Fi, 2020-2023 - all rights reserved
 @notice Curve AMM Math for 2 unpegged assets (e.g. ETH <> USD).
