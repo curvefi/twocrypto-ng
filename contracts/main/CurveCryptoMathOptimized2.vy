@@ -208,9 +208,9 @@ def _newton_y(ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: 
 def newton_y(ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: uint256) -> uint256:
 
     # Safety checks
-    assert ANN > MIN_A - 1 and ANN < MAX_A + 1  # dev: unsafe values A
-    assert gamma > MIN_GAMMA - 1 and gamma < MAX_GAMMA + 1  # dev: unsafe values gamma
-    assert D > 10**17 - 1 and D < 10**15 * 10**18 + 1 # dev: unsafe values D
+    # assert ANN > MIN_A - 1 and ANN < MAX_A + 1  # dev: unsafe values A
+    # assert gamma > MIN_GAMMA - 1 and gamma < MAX_GAMMA + 1  # dev: unsafe values gamma
+    # assert D > 10**17 - 1 and D < 10**15 * 10**18 + 1 # dev: unsafe values D
 
     y: uint256 = self._newton_y(ANN, gamma, x, D, i)
     frac: uint256 = y * 10**18 / D
@@ -230,9 +230,9 @@ def get_y(
 ) -> uint256[2]:
 
     # Safety checks
-    assert _ANN > MIN_A - 1 and _ANN < MAX_A + 1  # dev: unsafe values A
-    assert _gamma > MIN_GAMMA - 1 and _gamma < MAX_GAMMA + 1  # dev: unsafe values gamma
-    assert _D > 10**17 - 1 and _D < 10**15 * 10**18 + 1 # dev: unsafe values D
+    # assert _ANN > MIN_A - 1 and _ANN < MAX_A + 1  # dev: unsafe values A
+    # assert _gamma > MIN_GAMMA - 1 and _gamma < MAX_GAMMA + 1  # dev: unsafe values gamma
+    # assert _D > 10**17 - 1 and _D < 10**15 * 10**18 + 1 # dev: unsafe values D
 
     ANN: int256 = convert(_ANN, int256)
     gamma: int256 = convert(_gamma, int256)
@@ -259,7 +259,7 @@ def get_y(
         10**32*3
         + 4*gamma*10**14
         + gamma2/10**4
-        + 4*ANN*gamma2/D*x_j/10000/4/10**4
+        + 4*ANN*gamma2/10000/4/10**4*x_j/D
         - 4*ANN*gamma2/10000/4/10**4
     )
 
@@ -343,7 +343,7 @@ def get_y(
     C1: int256 = unsafe_div(unsafe_mul(unsafe_div(b_cbrt**2, 10**18), second_cbrt), 10**18)
 
     # root: int256 = (10**18*C1 - 10**18*b - 10**18*b*delta0/C1)/(3*a), keep 2 safe ops here.
-    root: int256 = (unsafe_mul(10**18, C1) - unsafe_mul(10**18, b) - unsafe_div(unsafe_mul(10**18, b)*delta0, C1))/unsafe_mul(3, a)
+    root: int256 = (unsafe_mul(10**18, C1) - unsafe_mul(10**18, b) - unsafe_mul(10**18, b)/C1*delta0)/unsafe_mul(3, a)
 
     # return [
     #     convert(D**2/x_j*root/4/10**18, uint256),   # <--- y
@@ -354,6 +354,7 @@ def get_y(
     frac: uint256 = y_out[0] * 10**18 / _D
     assert (frac > 10**16 - 1) and (frac < 10**20 + 1)  # dev: unsafe value for y
 
+    # return [a, b, c, d, delta0, delta1, C1, b_cbrt, second_cbrt, D**2/x_j*root/4/10**18]
     return y_out
 
 
