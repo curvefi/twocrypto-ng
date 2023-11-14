@@ -757,8 +757,6 @@ def _unpack_3(_packed: uint256) -> uint256[3]:
 @pure
 @internal
 def _pack_2(p1: uint256, p2: uint256) -> uint256:
-    assert p1 < 2**128
-    assert p2 < 2**128
     return p1 | (p2 << 128)
 
 
