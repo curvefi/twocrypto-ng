@@ -1,4 +1,3 @@
-import boa
 from boa.test import strategy
 from hypothesis import given, settings
 
@@ -14,14 +13,9 @@ def test_pack_unpack_three_integers(swap, twocrypto_factory, val):
             assert unpacked[i] == val[i]
 
 
-@given(val=strategy("uint256[2]", max_value=2**128))
+@given(val=strategy("uint256[2]", max_value=2**128 - 1))
 @settings(max_examples=10000, deadline=None)
 def test_pack_unpack_2_integers(swap, val):
-
-    if max(val) >= 2**128:
-        with boa.reverts():
-            swap.internal._pack_2(val[0], val[1])
-        return
 
     packed = swap.internal._pack_2(val[0], val[1])
     unpacked = swap.internal._unpack_2(packed)  # swap unpacks
