@@ -461,6 +461,8 @@ def add_liquidity(
     @return uint256 Amount of LP tokens received by the `receiver
     """
 
+    self._claim_admin_fees()  # <--------- Auto-claim admin fees occasionally.
+
     A_gamma: uint256[2] = self._A_gamma()
     xp: uint256[N_COINS] = self.balances
     amountsp: uint256[N_COINS] = empty(uint256[N_COINS])
@@ -563,8 +565,6 @@ def add_liquidity(
         token_supply,
         price_scale
     )
-
-    self._claim_admin_fees()  # <--------- Auto-claim admin fees occasionally.
 
     return d_token
 
@@ -683,6 +683,8 @@ def remove_liquidity_one_coin(
     @return Amount of tokens at index i received by the `receiver`
     """
 
+    self._claim_admin_fees()  # <--------- Auto-claim admin fees occasionally.
+
     A_gamma: uint256[2] = self._A_gamma()
 
     dy: uint256 = 0
@@ -719,8 +721,6 @@ def remove_liquidity_one_coin(
     log RemoveLiquidityOne(
         msg.sender, token_amount, i, dy, approx_fee, packed_price_scale
     )
-
-    self._claim_admin_fees()  # <--------- Auto-claim admin fees occasionally.
 
     return dy
 
