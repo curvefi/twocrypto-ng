@@ -112,7 +112,7 @@ def __init__(_fee_receiver: address, _admin: address):
 
 @internal
 @view
-def _pack(x: uint256[3]) -> uint256:
+def _pack_3(x: uint256[3]) -> uint256:
     """
     @notice Packs 3 integers with values <= 10**18 into a uint256
     @param x The uint256[3] to pack
@@ -181,15 +181,15 @@ def deploy_pool(
         d: uint256 = ERC20(_coins[i]).decimals()
         assert d < 19, "Max 18 decimals for coins"
         decimals[i] = d
-        precisions[i] = 10** (18 - d)
+        precisions[i] = 10 ** (18 - d)
 
     # pack fees
-    packed_fee_params: uint256 = self._pack(
+    packed_fee_params: uint256 = self._pack_3(
         [mid_fee, out_fee, fee_gamma]
     )
 
     # pack liquidity rebalancing params
-    packed_rebalancing_params: uint256 = self._pack(
+    packed_rebalancing_params: uint256 = self._pack_3(
         [allowed_extra_profit, adjustment_step, ma_exp_time]
     )
 
