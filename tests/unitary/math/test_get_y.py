@@ -45,7 +45,7 @@ def inv_target_decimal_n2(A, gamma, x, D):
 
     return f
 
-
+@pytest.mark.parametrize("_tmp", range(32)) # Create 32 independent test instances.
 @given(
     A=st.integers(min_value=MIN_A, max_value=MAX_A),
     D=st.integers(
@@ -61,7 +61,7 @@ def inv_target_decimal_n2(A, gamma, x, D):
     j=st.integers(min_value=0, max_value=1),
 )
 @settings(max_examples=MAX_SAMPLES, deadline=None)
-def test_get_y(math_unoptimized, math_optimized, A, D, xD, yD, gamma, j):
+def test_get_y(math_unoptimized, math_optimized, A, D, xD, yD, gamma, j, _tmp):
     pytest.current_case_id += 1
     X = [D * xD // 10**18, D * yD // 10**18]
 
