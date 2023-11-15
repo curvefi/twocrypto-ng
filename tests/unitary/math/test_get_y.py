@@ -99,3 +99,14 @@ def test_get_y(math_unoptimized, math_optimized, A, D, xD, yD, gamma, j, _tmp):
     ) or abs(calculate_F_by_y0(result_get_y)) <= abs(
         calculate_F_by_y0(result_original)
     )
+
+
+def test_get_y_revert(math_contract):
+    a = 1723894848
+    gamma = 24009999997600
+    x = [112497148627520223862735198942112, 112327102289152450435452075003508]
+    D = 224824250915890636214130540882688
+    i = 0
+
+    math_contract.newton_y(a, gamma, x, D, i)
+    math_contract.get_y(a, gamma, x, D, i)
