@@ -20,7 +20,7 @@ interface BaseRegistry:
 
 interface CurvePool:
     def adjustment_step() -> uint256: view
-    def admin_fee() -> uint256: view
+    def ADMIN_FEE() -> uint256: view
     def allowed_extra_profit() -> uint256: view
     def A() -> uint256: view
     def balances(i: uint256) -> uint256: view
@@ -170,7 +170,7 @@ def get_admin_balances(_pool: address) -> uint256[MAX_METAREGISTRY_COINS]:
 
     xcp_profit: uint256 = CurvePool(_pool).xcp_profit()
     xcp_profit_a: uint256 = CurvePool(_pool).xcp_profit_a()
-    admin_fee: uint256 = CurvePool(_pool).admin_fee()
+    admin_fee: uint256 = CurvePool(_pool).ADMIN_FEE()
     admin_balances: uint256[MAX_METAREGISTRY_COINS] = empty(uint256[MAX_METAREGISTRY_COINS])
 
     # admin balances are non zero if pool has made more than allowed profits:
@@ -275,7 +275,7 @@ def get_fees(_pool: address) -> uint256[10]:
     fees: uint256[10] = empty(uint256[10])
     pool_fees: uint256[4] = [
         CurvePool(_pool).fee(),
-        CurvePool(_pool).admin_fee(),
+        CurvePool(_pool).ADMIN_FEE(),
         CurvePool(_pool).mid_fee(),
         CurvePool(_pool).out_fee()
     ]
