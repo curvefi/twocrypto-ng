@@ -1,5 +1,5 @@
 import boa
-from hypothesis import example, given, settings
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from tests.fixtures.pool import INITIAL_PRICES

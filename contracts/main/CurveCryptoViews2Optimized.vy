@@ -286,11 +286,11 @@ def _calc_dtoken_nofee(
     amountsp[0] *= precisions[0]
 
     xp = [
-        xp[0] * precisions[0],
+        xp[0],
         xp[1] * price_scale * precisions[1] / PRECISION
     ]
     amountsp = [
-        amountsp[0] * precisions[0],
+        amountsp[0],
         amountsp[1] * price_scale * precisions[1] / PRECISION
     ]
 
