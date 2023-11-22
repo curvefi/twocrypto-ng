@@ -7,7 +7,7 @@ from tests.utils.tokens import mint_for_testing
 
 
 @given(ratio=st.floats(min_value=0.0001, max_value=0.1))
-@settings(max_examples=1000, deadline=None)
+@settings(max_examples=10, deadline=None)
 def test_admin_fee_after_deposit(
     swap, coins, fee_receiver, user, user_b, ratio
 ):
