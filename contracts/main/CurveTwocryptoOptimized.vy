@@ -1080,12 +1080,9 @@ def _claim_admin_fees():
     ):
         return
 
-    A_gamma: uint256[2] = self._A_gamma()
-
     xcp_profit: uint256 = self.xcp_profit  # <---------- Current pool profits.
     xcp_profit_a: uint256 = self.xcp_profit_a  # <- Profits at previous claim.
     current_lp_token_supply: uint256 = self.totalSupply
-    D: uint256 = self.D
 
     # Do not claim admin fees if:
     # 1. insufficient profits accrued since last claim, and
@@ -1097,6 +1094,8 @@ def _claim_admin_fees():
 
     # ---------- Conditions met to claim admin fees: compute state. ----------
 
+    A_gamma: uint256[2] = self._A_gamma()
+    D: uint256 = self.D
     vprice: uint256 = self.virtual_price
     price_scale: uint256 = self.cached_price_scale
     fee_receiver: address = factory.fee_receiver()
