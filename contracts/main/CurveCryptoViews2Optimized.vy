@@ -209,7 +209,7 @@ def _get_dx_fee(
     xp[i] = x_out[0]
 
     if i > 0:
-        dx = dy * PRECISION / (price_scale * precisions[1])
+        dx = dx * PRECISION / price_scale
     dx /= precisions[i]
 
     return dx, xp
