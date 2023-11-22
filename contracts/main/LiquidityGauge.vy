@@ -478,7 +478,7 @@ def claim_rewards(_addr: address = msg.sender, _receiver: address = empty(addres
 
 @external
 @nonreentrant('lock')
-def transferFrom(_from: address, _to :address, _value: uint256) -> bool:
+def transferFrom(_from: address, _to: address, _value: uint256) -> bool:
     """
      @notice Transfer tokens from one address to another.
      @dev Transferring claims pending reward tokens for the sender and receiver
@@ -488,7 +488,9 @@ def transferFrom(_from: address, _to :address, _value: uint256) -> bool:
     """
     _allowance: uint256 = self.allowance[_from][msg.sender]
     if _allowance != max_value(uint256):
-        self.allowance[_from][msg.sender] = _allowance - _value
+        _new_allowance: uint256 = _allowance - _value
+        self.allowance[_from][msg.sender] = _new_allowance
+        log Approval(_from, msg.sender, _new_allowance)
 
     self._transfer(_from, _to, _value)
 
