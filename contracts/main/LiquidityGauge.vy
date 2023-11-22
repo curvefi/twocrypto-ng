@@ -112,16 +112,16 @@ balanceOf: public(HashMap[address, uint256])
 totalSupply: public(uint256)
 allowance: public(HashMap[address, HashMap[address, uint256]])
 
-name: public(String[64])
-symbol: public(String[40])
+name: public(immutable(String[64]))
+symbol: public(immutable(String[40]))
 
 # ERC2612
 nonces: public(HashMap[address, uint256])
 
 # Gauge
-factory: public(address)
+factory: public(immutable(address))
+lp_token: public(immutable(address))
 manager: public(address)
-lp_token: public(address)
 
 is_killed: public(bool)
 
@@ -170,15 +170,15 @@ def __init__(_lp_token: address):
     @notice Contract constructor
     @param _lp_token Liquidity Pool contract address
     """
-    self.lp_token = _lp_token
-    self.factory = msg.sender
+    lp_token = _lp_token
+    factory = msg.sender
     self.manager = msg.sender
 
-    symbol: String[32] = ERC20Extended(_lp_token).symbol()
-    name: String[64] = concat("Curve.fi ", symbol, " Gauge Deposit")
+    _symbol: String[32] = ERC20Extended(_lp_token).symbol()
+    _name: String[64] = concat("Curve.fi ", symbol, " Gauge Deposit")
 
-    self.name = name
-    self.symbol = concat(symbol, "-gauge")
+    name = _name
+    symbol = concat(_symbol, "-gauge")
 
     self.period_timestamp[0] = block.timestamp
     self.inflation_params = (
@@ -186,7 +186,7 @@ def __init__(_lp_token: address):
         + CRV20(CRV).rate()
     )
 
-    NAME_HASH = keccak256(name)
+    NAME_HASH = keccak256(_name)
     salt = block.prevhash
     CACHED_CHAIN_ID = chain.id
     CACHED_DOMAIN_SEPARATOR = keccak256(
@@ -426,7 +426,7 @@ def deposit(_value: uint256, _addr: address = msg.sender, _claim_rewards: bool =
 
         self._update_liquidity_limit(_addr, new_balance, total_supply)
 
-        ERC20(self.lp_token).transferFrom(msg.sender, self, _value)
+        ERC20(lp_token).transferFrom(msg.sender, self, _value)
 
         log Deposit(_addr, _value)
         log Transfer(empty(address), _addr, _value)
@@ -455,7 +455,7 @@ def withdraw(_value: uint256, _claim_rewards: bool = False):
 
         self._update_liquidity_limit(msg.sender, new_balance, total_supply)
 
-        ERC20(self.lp_token).transfer(msg.sender, _value)
+        ERC20(lp_token).transfer(msg.sender, _value)
 
     log Withdraw(msg.sender, _value)
     log Transfer(msg.sender, empty(address), _value)
@@ -669,7 +669,7 @@ def set_gauge_manager(_gauge_manager: address):
         method, but only for the gauge which they are the manager of.
     @param _gauge_manager The account to set as the new manager of the gauge.
     """
-    assert msg.sender in [self.manager, Factory(self.factory).admin()]  # dev: only manager or factory admin
+    assert msg.sender in [self.manager, Factory(factory).admin()]  # dev: only manager or factory admin
 
     self.manager = _gauge_manager
     log SetGaugeManager(_gauge_manager)
@@ -719,7 +719,7 @@ def add_reward(_reward_token: address, _distributor: address):
     @param _reward_token The token to add as an additional reward
     @param _distributor Address permitted to fund this contract with the reward token
     """
-    assert msg.sender in [self.manager, Factory(self.factory).admin()]  # dev: only manager or factory admin
+    assert msg.sender in [self.manager, Factory(factory).admin()]  # dev: only manager or factory admin
     assert _distributor != empty(address)  # dev: distributor cannot be zero address
 
     reward_count: uint256 = self.reward_count
@@ -740,7 +740,7 @@ def set_reward_distributor(_reward_token: address, _distributor: address):
     """
     current_distributor: address = self.reward_data[_reward_token].distributor
 
-    assert msg.sender in [current_distributor, Factory(self.factory).admin(), self.manager]
+    assert msg.sender in [current_distributor, Factory(factory).admin(), self.manager]
     assert current_distributor != empty(address)
     assert _distributor != empty(address)
 
@@ -754,7 +754,7 @@ def set_killed(_is_killed: bool):
     @dev When killed, the gauge always yields a rate of 0 and so cannot mint CRV
     @param _is_killed Killed status to set
     """
-    assert msg.sender == Factory(self.factory).admin()  # dev: only owner
+    assert msg.sender == Factory(factory).admin()  # dev: only owner
 
     self.is_killed = _is_killed
 
