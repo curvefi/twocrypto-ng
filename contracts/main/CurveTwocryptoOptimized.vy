@@ -234,8 +234,18 @@ def __init__(
 
     PRECISIONS = precisions  # <------------------------ Precisions of coins.
 
-    self.initial_A_gamma = packed_A_gamma  # <------------------- A and gamma.
+    # --------------- Validate A and gamma parameters here and not in factory.
+    A_gamma: uint256[2] = self._unpack_2(packed_A_gamma)
+
+    assert A_gamma[0] > MIN_A-1
+    assert A_gamma[0] < MAX_A+1
+
+    assert A_gamma[1] > MIN_GAMMA-1
+    assert A_gamma[1] < MAX_GAMMA+1
+
+    self.initial_A_gamma = packed_A_gamma
     self.future_A_gamma = packed_A_gamma
+    # ------------------------------------------------------------------------
 
     self.packed_rebalancing_params = packed_rebalancing_params  # <-- Contains
     #               rebalancing params: allowed_extra_profit, adjustment_step,
