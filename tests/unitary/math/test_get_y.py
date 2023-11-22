@@ -45,7 +45,10 @@ def inv_target_decimal_n2(A, gamma, x, D):
 
     return f
 
-@pytest.mark.parametrize("_tmp", range(32)) # Create 32 independent test instances.
+
+@pytest.mark.parametrize(
+    "_tmp", range(32)
+)  # Create 32 independent test instances.
 @given(
     A=st.integers(min_value=MIN_A, max_value=MAX_A),
     D=st.integers(
