@@ -29,7 +29,7 @@ interface CurvePool:
     def fee_gamma() -> uint256: view
     def gamma() -> uint256: view
     def get_virtual_price() -> uint256: view
-    def ma_half_time() -> uint256: view
+    def ma_time() -> uint256: view
     def mid_fee() -> uint256: view
     def out_fee() -> uint256: view
     def virtual_price() -> uint256: view
@@ -390,7 +390,7 @@ def get_pool_params(_pool: address) -> uint256[20]:
     pool_params[3] = CurvePool(_pool).allowed_extra_profit()
     pool_params[4] = CurvePool(_pool).fee_gamma()
     pool_params[5] = CurvePool(_pool).adjustment_step()
-    pool_params[6] = CurvePool(_pool).ma_half_time()
+    pool_params[6] = CurvePool(_pool).ma_time()
     return pool_params
 
 
