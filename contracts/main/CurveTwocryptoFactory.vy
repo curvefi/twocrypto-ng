@@ -86,12 +86,9 @@ math_implementation: public(address)
 # mapping of coins -> pools for trading
 # a mapping key is generated for each pair of addresses via
 # `bitwise_xor(convert(a, uint256), convert(b, uint256))`
-markets: HashMap[uint256, address[4294967296]]
-market_counts: HashMap[uint256, uint256]
-
-pool_count: public(uint256)              # actual length of pool_list
+markets: HashMap[uint256, DynArray[address, 4294967296]]
 pool_data: HashMap[address, PoolArray]
-pool_list: public(address[4294967296])   # master list of pools
+pool_list: public(DynArray[address, 4294967296])   # master list of pools
 
 
 @external
@@ -203,9 +200,8 @@ def deploy_pool(
     )
 
     # populate pool data
-    length: uint256 = self.pool_count
-    self.pool_list[length] = pool
-    self.pool_count = length + 1
+    self.pool_list.append(pool)
+
     self.pool_data[pool].decimals = decimals
     self.pool_data[pool].coins = _coins
     self.pool_data[pool].implementation = pool_implementation
@@ -237,10 +233,7 @@ def _add_coins_to_market(coin_a: address, coin_b: address, pool: address):
     key: uint256 = (
         convert(coin_a, uint256) ^ convert(coin_b, uint256)
     )
-
-    length: uint256 = self.market_counts[key]
-    self.markets[key][length] = pool
-    self.market_counts[key] = length + 1
+    self.markets[key].append(pool)
 
 
 @external
@@ -380,6 +373,16 @@ def find_pool_for_coins(_from: address, _to: address, i: uint256 = 0) -> address
 
 @view
 @external
+def pool_count() -> uint256:
+    """
+    @notice Get number of pools deployed from the factory
+    @return Number of pools deployed from factory
+    """
+    return len(self.pool_list)
+
+
+@view
+@external
 def get_coins(_pool: address) -> address[N_COINS]:
     """
     @notice Get the coins within a pool
@@ -460,4 +463,4 @@ def get_market_counts(coin_a: address, coin_b: address) -> uint256:
         convert(coin_a, uint256) ^ convert(coin_b, uint256)
     )
 
-    return self.market_counts[key]
+    return len(self.markets[key])
