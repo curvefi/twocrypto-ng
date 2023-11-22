@@ -72,12 +72,6 @@ A_MULTIPLIER: constant(uint256) = 10000
 # Limits
 MAX_FEE: constant(uint256) = 10 * 10 ** 9
 
-MIN_GAMMA: constant(uint256) = 10 ** 10
-MAX_GAMMA: constant(uint256) = 5 * 10**16
-
-MIN_A: constant(uint256) = N_COINS ** N_COINS * A_MULTIPLIER / 100
-MAX_A: constant(uint256) = 1000 * A_MULTIPLIER * N_COINS**N_COINS
-
 admin: public(address)
 future_admin: public(address)
 
@@ -149,13 +143,6 @@ def deploy_pool(
     """
     pool_implementation: address = self.pool_implementations[implementation_id]
     assert pool_implementation != empty(address), "Pool implementation not set"
-
-    # Validate parameters
-    assert A > MIN_A-1
-    assert A < MAX_A+1
-
-    assert gamma > MIN_GAMMA-1
-    assert gamma < MAX_GAMMA+1
 
     assert mid_fee < MAX_FEE-1  # mid_fee can be zero
     assert out_fee >= mid_fee
