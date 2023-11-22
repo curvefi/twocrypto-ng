@@ -50,9 +50,6 @@ interface Math:
         D: uint256,
         i: uint256,
     ) -> uint256: view
-    def reduction_coefficient(
-        x: uint256[N_COINS], fee_gamma: uint256
-    ) -> uint256: view
 
 
 N_COINS: constant(uint256) = 2
@@ -360,10 +357,15 @@ def _calc_withdraw_one_coin(
 @internal
 @view
 def _fee(xp: uint256[N_COINS], swap: address) -> uint256:
-    math: Math = Curve(swap).MATH()
+
     packed_fee_params: uint256 = Curve(swap).packed_fee_params()
     fee_params: uint256[3] = self._unpack(packed_fee_params)
-    f: uint256 = math.reduction_coefficient(xp, fee_params[2])
+    f: uint256 = xp[0] + xp[1]
+    f = fee_params[2] * 10**18 / (
+        fee_params[2] + 10**18 -
+        (10**18 * N_COINS**N_COINS) * xp[0] / f * xp[1] / f
+    )
+
     return (fee_params[0] * f + fee_params[1] * (10**18 - f)) / 10**18
 
 
