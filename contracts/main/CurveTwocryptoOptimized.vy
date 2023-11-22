@@ -636,7 +636,7 @@ def remove_liquidity(
 
     # Update xcp since liquidity was removed:
     xp: uint256[N_COINS] = self.xp(self.balances, self.cached_price_scale)
-    self.last_xcp = isqrt(xp[0] * xp[1])
+    last_xcp: uint256 = isqrt(xp[0] * xp[1])  # <----------- Cache it for now.
 
     last_timestamp: uint256[2] = self._unpack_2(self.last_timestamp)
     if last_timestamp[1] < block.timestamp:
@@ -653,13 +653,16 @@ def remove_liquidity(
         )
 
         self.cached_xcp_oracle = unsafe_div(
-            self.last_xcp * (10**18 - alpha) + cached_xcp_oracle * alpha,
+            last_xcp * (10**18 - alpha) + cached_xcp_oracle * alpha,
             10**18
         )
         last_timestamp[1] = block.timestamp
 
         # Pack and store timestamps:
         self.last_timestamp = self._pack_2(last_timestamp[0], last_timestamp[1])
+
+    # Store last xcp
+    self.last_xcp = last_xcp
 
     return withdraw_amounts
 
