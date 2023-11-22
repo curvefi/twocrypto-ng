@@ -645,7 +645,7 @@ def remove_liquidity(
         alpha: uint256 = MATH.wad_exp(
             -convert(
                 unsafe_div(
-                    (block.timestamp - last_timestamp[1]) * 10**18,
+                    unsafe_sub(block.timestamp, last_timestamp[1]) * 10**18,
                     self.xcp_ma_time  # <---------- xcp ma time has is longer.
                 ),
                 int256,
@@ -883,7 +883,7 @@ def tweak_price(
         alpha = MATH.wad_exp(
             -convert(
                 unsafe_div(
-                    (block.timestamp - last_timestamp[0]) * 10**18,
+                    unsafe_sub(block.timestamp, last_timestamp[0]) * 10**18,
                     rebalancing_params[2]  # <----------------------- ma_time.
                 ),
                 int256,
@@ -911,7 +911,7 @@ def tweak_price(
         alpha = MATH.wad_exp(
             -convert(
                 unsafe_div(
-                    (block.timestamp - last_timestamp[1]) * 10**18,
+                    unsafe_sub(block.timestamp, last_timestamp[1]) * 10**18,
                     self.xcp_ma_time  # <---------- xcp ma time has is longer.
                 ),
                 int256,
@@ -1075,7 +1075,7 @@ def _claim_admin_fees():
 
     last_claim_time: uint256 = self.last_admin_fee_claim_timestamp
     if (
-        block.timestamp - last_claim_time < MIN_ADMIN_FEE_CLAIM_INTERVAL or
+        unsafe_sub(block.timestamp, last_claim_time) < MIN_ADMIN_FEE_CLAIM_INTERVAL or
         self.future_A_gamma_time > block.timestamp
     ):
         return
@@ -1528,7 +1528,7 @@ def internal_price_oracle() -> uint256:
         ma_time: uint256 = self._unpack_3(self.packed_rebalancing_params)[2]
         alpha: uint256 = MATH.wad_exp(
             -convert(
-                (block.timestamp - last_prices_timestamp) * 10**18 / ma_time,
+                unsafe_sub(block.timestamp, last_prices_timestamp) * 10**18 / ma_time,
                 int256,
             )
         )
@@ -1662,7 +1662,10 @@ def xcp_oracle() -> uint256:
 
         alpha: uint256 = MATH.wad_exp(
             -convert(
-                (block.timestamp - last_prices_timestamp) * 10**18 / self.xcp_ma_time,
+                unsafe_div(
+                    unsafe_sub(block.timestamp, last_prices_timestamp) * 10**18,
+                    self.xcp_ma_time
+                ),
                 int256,
             )
         )
