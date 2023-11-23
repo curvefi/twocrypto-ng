@@ -383,7 +383,7 @@ def newton_D(ANN: uint256, gamma: uint256, x_unsorted: uint256[N_COINS], K0_prev
     assert x[0] > 10**9 - 1 and x[0] < 10**15 * 10**18 + 1  # dev: unsafe values x[0]
     assert unsafe_div(x[1] * 10**18, x[0]) > 10**14 - 1  # dev: unsafe values x[i] (input)
 
-    S: uint256 = x[0] + x[1]
+    S: uint256 = unsafe_add(x[0], x[1])  # can unsafe add here because we checked x[0] bounds
 
     D: uint256 = 0
     if K0_prev == 0:
