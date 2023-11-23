@@ -395,11 +395,12 @@ def newton_D(ANN: uint256, gamma: uint256, x_unsorted: uint256[N_COINS], K0_prev
             D = S
 
     __g1k0: uint256 = gamma + 10**18
+    diff: uint256 = 0
 
     for i in range(255):
         D_prev: uint256 = D
         assert D > 0
-        # Unsafe ivision by D is now safe
+        # Unsafe division by D and D_prev is now safe
 
         # K0: uint256 = 10**18
         # for _x in x:
@@ -409,9 +410,9 @@ def newton_D(ANN: uint256, gamma: uint256, x_unsorted: uint256[N_COINS], K0_prev
 
         _g1k0: uint256 = __g1k0
         if _g1k0 > K0:
-            _g1k0 = unsafe_sub(_g1k0, K0) + 1  # > 0
+            _g1k0 = unsafe_add(unsafe_sub(_g1k0, K0), 1)  # > 0
         else:
-            _g1k0 = unsafe_sub(K0, _g1k0) + 1  # > 0
+            _g1k0 = unsafe_add(unsafe_sub(K0, _g1k0), 1)  # > 0
 
         # D / (A * N**N) * _g1k0**2 / gamma**2
         mul1: uint256 = unsafe_div(unsafe_div(unsafe_div(10**18 * D, gamma) * _g1k0, gamma) * _g1k0 * A_MULTIPLIER, ANN)
@@ -419,22 +420,22 @@ def newton_D(ANN: uint256, gamma: uint256, x_unsorted: uint256[N_COINS], K0_prev
         # 2*N*K0 / _g1k0
         mul2: uint256 = unsafe_div(((2 * 10**18) * N_COINS) * K0, _g1k0)
 
+        # calculate neg_fprime. here K0 > 0 is being validated (safediv).
         neg_fprime: uint256 = (S + unsafe_div(S * mul2, 10**18)) + mul1 * N_COINS / K0 - unsafe_div(mul2 * D, 10**18)
 
-        # D -= f / fprime
+        # D -= f / fprime; neg_fprime safediv being validated
         D_plus: uint256 = D * (neg_fprime + S) / neg_fprime
-        D_minus: uint256 = D*D / neg_fprime
+        D_minus: uint256 = unsafe_div(D * D,  neg_fprime)
         if 10**18 > K0:
-            D_minus += unsafe_div(D * (mul1 / neg_fprime), 10**18) * unsafe_sub(10**18, K0) / K0
+            D_minus += unsafe_div(unsafe_div(D * unsafe_div(mul1, neg_fprime), 10**18) * unsafe_sub(10**18, K0), K0)
         else:
-            D_minus -= unsafe_div(D * (mul1 / neg_fprime), 10**18) * unsafe_sub(K0, 10**18) / K0
+            D_minus -= unsafe_div(unsafe_div(D * unsafe_div(mul1, neg_fprime), 10**18) * unsafe_sub(K0, 10**18), K0)
 
         if D_plus > D_minus:
             D = unsafe_sub(D_plus, D_minus)
         else:
             D = unsafe_div(unsafe_sub(D_minus, D_plus), 2)
 
-        diff: uint256 = 0
         if D > D_prev:
             diff = unsafe_sub(D, D_prev)
         else:
