@@ -240,37 +240,42 @@ def get_y(
     x_j: int256 = convert(_x[1 - i], int256)
     gamma2: int256 = unsafe_mul(gamma, gamma)
 
+    # savediv by x_j done here:
     y: int256 = D**2 / (x_j * N_COINS**2)
-    K0_i: int256 = (10**18 * N_COINS) * x_j / D
-    assert (K0_i > 10**16*N_COINS - 1) and (K0_i < 10**20*N_COINS + 1)  # dev: unsafe values x[i]
+
+    # K0_i: int256 = (10**18 * N_COINS) * x_j / D
+    K0_i: int256 = unsafe_div(10**18 * N_COINS * x_j, D)
+    assert (K0_i > 10**16 * N_COINS - 1) and (K0_i < 10**20 * N_COINS + 1)  # dev: unsafe values x[i]
+
+    ann_gamma2: int256 = ANN * gamma2
 
     # a = 10**36 / N_COINS**2
     a: int256 = 10**32
 
     # b = ANN*D*gamma2/4/10000/x_j/10**4 - 10**32*3 - 2*gamma*10**14
     b: int256 = (
-        ANN*D*gamma2/4/10000/x_j/10**4
+        D*ann_gamma2/400000000/x_j
         - convert(unsafe_mul(10**32, 3), int256)
         - unsafe_mul(unsafe_mul(2, gamma), 10**14)
     )
 
     # c = 10**32*3 + 4*gamma*10**14 + gamma2/10**4 + 4*ANN*gamma2*x_j/D/10000/4/10**4 - 4*ANN*gamma2/10000/4/10**4
     c: int256 = (
-        10**32*3
-        + 4*gamma*10**14
-        + gamma2/10**4
-        + 4*ANN*gamma2/10000/4/10**4*x_j/D
-        - 4*ANN*gamma2/10000/4/10**4
+        unsafe_mul(10**32, convert(3, int256))
+        + unsafe_mul(unsafe_mul(4, gamma), 10**14)
+        + unsafe_div(gamma2, 10**4)
+        + unsafe_div(unsafe_div(unsafe_mul(4, ann_gamma2), 400000000) * x_j, D)
+        - unsafe_div(unsafe_mul(4, ann_gamma2), 400000000)
     )
 
     # d = -(10**18+gamma)**2 / 10**4
-    d: int256 = -(10**18+gamma)**2 / 10**4
+    d: int256 = -unsafe_div(unsafe_add(10**18, gamma) ** 2, 10**4)
 
     # delta0: int256 = 3*a*c/b - b
-    delta0: int256 = 3*a*c/b - b
+    delta0: int256 = 3 * a * c / b - b  # safediv by b
 
     # delta1: int256 = 9*a*c/b - 2*b - 27*a**2/b*d/b
-    delta1: int256 = 9*a*c/b - 2*b - 27*a**2/b*d/b
+    delta1: int256 = 3 * delta0 + b - 27*a**2/b*d/b
 
     divider: int256 = 1
     threshold: int256 = min(min(abs(delta0), abs(delta1)), a)
@@ -308,11 +313,11 @@ def get_y(
     c = unsafe_div(c, divider)
     d = unsafe_div(d, divider)
 
-    # delta0 = 3*a*c/b - b
-    delta0 = 3*a*c/b - b
+    # delta0 = 3*a*c/b - b: here we can do more unsafe ops now:
+    delta0 = unsafe_div(unsafe_mul(unsafe_mul(3, a), c), b) - b
 
     # delta1 = 9*a*c/b - 2*b - 27*a**2/b*d/b
-    delta1 = 9*a*c/b - 2*b - 27*a**2/b*d/b
+    delta1 = 3 * delta0 + b - unsafe_div(unsafe_mul(unsafe_div(unsafe_mul(27, a**2), b), d), b)
 
     # sqrt_arg: int256 = delta1**2 + 4*delta0**2/b*delta0
     sqrt_arg: int256 = delta1**2 + unsafe_mul(unsafe_div(4*delta0**2, b), delta0)
@@ -345,13 +350,13 @@ def get_y(
     # root: int256 = (10**18*C1 - 10**18*b - 10**18*b*delta0/C1)/(3*a), keep 2 safe ops here.
     root: int256 = (unsafe_mul(10**18, C1) - unsafe_mul(10**18, b) - unsafe_mul(10**18, b)/C1*delta0)/unsafe_mul(3, a)
 
-    # return [
+    # y_out: uint256[2] =  [
     #     convert(D**2/x_j*root/4/10**18, uint256),   # <--- y
     #     convert(root, uint256)  # <----------------------- K0Prev
     # ]
     y_out: uint256[2] = [convert(unsafe_div(unsafe_div(unsafe_mul(unsafe_div(D**2, x_j), root), 4), 10**18), uint256), convert(root, uint256)]
 
-    frac: uint256 = y_out[0] * 10**18 / _D
+    frac: uint256 = unsafe_div(y_out[0] * 10**18, _D)
     assert (frac > 10**16 - 1) and (frac < 10**20 + 1)  # dev: unsafe value for y
 
     return y_out
@@ -376,7 +381,7 @@ def newton_D(ANN: uint256, gamma: uint256, x_unsorted: uint256[N_COINS], K0_prev
         x = [x_unsorted[1], x_unsorted[0]]
 
     assert x[0] > 10**9 - 1 and x[0] < 10**15 * 10**18 + 1  # dev: unsafe values x[0]
-    assert x[1] * 10**18 / x[0] > 10**14-1  # dev: unsafe values x[i] (input)
+    assert unsafe_div(x[1] * 10**18, x[0]) > 10**14 - 1  # dev: unsafe values x[i] (input)
 
     S: uint256 = x[0] + x[1]
 

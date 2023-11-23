@@ -505,11 +505,11 @@ def add_liquidity(
 
     xp = [
         xp[0] * PRECISIONS[0],
-        xp[1] * price_scale * PRECISIONS[1] / PRECISION
+        unsafe_div(xp[1] * price_scale * PRECISIONS[1], PRECISION)
     ]
     xp_old = [
         xp_old[0] * PRECISIONS[0],
-        xp_old[1] * price_scale * PRECISIONS[1] / PRECISION
+        unsafe_div(xp_old[1] * price_scale * PRECISIONS[1], PRECISION)
     ]
 
     for i in range(N_COINS):

@@ -2,12 +2,14 @@
 import time
 from decimal import Decimal
 
+import boa
 import pytest
 from hypothesis import given, note, settings
 from hypothesis import strategies as st
 
 N_COINS = 2
 MAX_SAMPLES = 1000000  # Increase for fuzzing
+N_CASES = 32
 
 A_MUL = 10000
 MIN_A = int(N_COINS**N_COINS * A_MUL / 10)
@@ -46,9 +48,23 @@ def inv_target_decimal_n2(A, gamma, x, D):
     return f
 
 
+def test_get_y_revert(math_contract):
+    a = 1723894848
+    gamma = 24009999997600
+    x = [112497148627520223862735198942112, 112327102289152450435452075003508]
+    D = 224824250915890636214130540882688
+    i = 0
+
+    with boa.reverts():
+        math_contract.newton_y(a, gamma, x, D, i)
+
+    with boa.reverts():
+        math_contract.get_y(a, gamma, x, D, i)
+
+
 @pytest.mark.parametrize(
-    "_tmp", range(32)
-)  # Create 32 independent test instances.
+    "_tmp", range(N_CASES)
+)  # Create N_CASES independent test instances.
 @given(
     A=st.integers(min_value=MIN_A, max_value=MAX_A),
     D=st.integers(
@@ -102,14 +118,3 @@ def test_get_y(math_unoptimized, math_optimized, A, D, xD, yD, gamma, j, _tmp):
     ) or abs(calculate_F_by_y0(result_get_y)) <= abs(
         calculate_F_by_y0(result_original)
     )
-
-
-def test_get_y_revert(math_contract):
-    a = 1723894848
-    gamma = 24009999997600
-    x = [112497148627520223862735198942112, 112327102289152450435452075003508]
-    D = 224824250915890636214130540882688
-    i = 0
-
-    math_contract.newton_y(a, gamma, x, D, i)
-    math_contract.get_y(a, gamma, x, D, i)
