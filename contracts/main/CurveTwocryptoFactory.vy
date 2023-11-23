@@ -139,7 +139,9 @@ def deploy_pool(
     @return Address of the deployed pool
     """
     pool_implementation: address = self.pool_implementations[implementation_id]
+    _math_implementation: address = self.math_implementation
     assert pool_implementation != empty(address), "Pool implementation not set"
+    assert _math_implementation != empty(address), "Math implementation not set"
 
     assert mid_fee < MAX_FEE-1  # mid_fee can be zero
     assert out_fee >= mid_fee
@@ -183,7 +185,6 @@ def deploy_pool(
 
     # pool is an ERC20 implementation
     _salt: bytes32 = block.prevhash
-    _math_implementation: address = self.math_implementation
     pool: address = create_from_blueprint(
         pool_implementation,
         _name,
