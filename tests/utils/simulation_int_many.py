@@ -139,7 +139,7 @@ def newton_y(A, gamma, x, D, i):
 
 
 def solve_x(A, gamma, x, D, i):
-    return get_y_n2_dec(A, gamma, x, D, i)
+    return int(get_y_n2_dec(A, gamma, x, D, i)[0] * 10**18)
     # return newton_y(A, gamma, x, D, i)
 
 
@@ -172,7 +172,10 @@ class Curve:
         xp = self.xp()
         xp[i] = x * self.p[i] // 10**18
         yp = solve_x(self.A, self.gamma, xp, self.D(), j)
-        return yp * 10**18 // self.p[j]
+        try:
+            return yp * 10**18 // self.p[j]
+        except:
+            breakpoint()
 
 
 def get_data(fname):
