@@ -168,12 +168,6 @@ def _test_newton_D(
             try:
                 result_contract = math_optimized.newton_D(A, gamma, X, K0)
             except BoaError:
-                case = (
-                    "{"
-                    f"'ANN': {A}, 'D': {D}, 'xD': {xD}, 'yD': {yD}, 'GAMMA': {gamma}, 'j': {j}, 'btcScalePrice': {btcScalePrice}, 'ethScalePrice': {ethScalePrice}, 'mid_fee': {mid_fee}, 'out_fee': {out_fee}, 'fee_gamma': {fee_gamma}"
-                    "}"
-                )
-                print("broken at:", case)
                 raise
 
             try:
@@ -181,10 +175,4 @@ def _test_newton_D(
                     10000, result_sim / 1e12
                 )
             except AssertionError:
-                case = (
-                    "{"
-                    f"'ANN': {A}, 'D': {D}, 'xD': {xD}, 'yD': {yD}, 'GAMMA': {gamma}, 'j': {j}, 'btcScalePrice': {btcScalePrice}, 'ethScalePrice': {ethScalePrice}, 'mid_fee': {mid_fee}, 'out_fee': {out_fee}, 'fee_gamma': {fee_gamma}"
-                    "},\n"
-                )
-                print("broken at:", case)
                 raise
