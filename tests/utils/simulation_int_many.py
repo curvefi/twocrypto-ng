@@ -37,6 +37,11 @@ def reduction_coefficient(x, gamma):
     return K
 
 
+def get_fee(x, fee_gamma, mid_fee, out_fee):
+    f = reduction_coefficient(x, fee_gamma)
+    return (mid_fee * f + out_fee * (10**18 - f)) // 10**18
+
+
 def newton_D(A, gamma, x, D0):
     D = D0
     i = 0

@@ -214,7 +214,7 @@ def newton_y(ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: u
 
     y: uint256 = self._newton_y(ANN, gamma, x, D, i)
     frac: uint256 = y * 10**18 / D
-    assert (frac > 10**16 - 1) and (frac < 10**20 + 1)  # dev: unsafe value for y
+    assert (frac >= 10**16 - 1) and (frac < 10**20 + 1)  # dev: unsafe value for y
 
     return y
 
@@ -357,7 +357,7 @@ def get_y(
     y_out: uint256[2] = [convert(unsafe_div(unsafe_div(unsafe_mul(unsafe_div(D**2, x_j), root), 4), 10**18), uint256), convert(root, uint256)]
 
     frac: uint256 = unsafe_div(y_out[0] * 10**18, _D)
-    assert (frac > 10**16 - 1) and (frac < 10**20 + 1)  # dev: unsafe value for y
+    assert (frac >= 10**16 - 1) and (frac < 10**20 + 1)  # dev: unsafe value for y
 
     return y_out
 
@@ -445,7 +445,7 @@ def newton_D(ANN: uint256, gamma: uint256, x_unsorted: uint256[N_COINS], K0_prev
 
             for _x in x:
                 frac: uint256 = _x * 10**18 / D
-                assert (frac > 10**16 - 1) and (frac < 10**20 + 1)  # dev: unsafe values x[i]
+                assert (frac >= 10**16 - 1) and (frac < 10**20 + 1)  # dev: unsafe values x[i]
             return D
 
     raise "Did not converge"
