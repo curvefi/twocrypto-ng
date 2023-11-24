@@ -1,6 +1,6 @@
 name: unit-tests-boa
 
-on: ["push", "pull_request"]
+on: [push]
 
 env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
