@@ -3,12 +3,13 @@ import sys
 from decimal import Decimal
 
 from boa.vyper.contract import BoaError
+import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
 import tests.utils.simulation_int_many as sim
 
-sys.stdout = sys.stderr
+# sys.stdout = sys.stderr
 
 
 def inv_target_decimal_n2(A, gamma, x, D):
@@ -35,8 +36,8 @@ def inv_target_decimal_n2(A, gamma, x, D):
 
 
 N_COINS = 2
-# MAX_SAMPLES = 3000000  # Increase for fuzzing
-MAX_SAMPLES = 300  # Increase for fuzzing
+MAX_SAMPLES = 3000000  # Increase for fuzzing
+# MAX_SAMPLES = 300  # Increase for fuzzing
 
 A_MUL = 10000
 MIN_A = int(N_COINS**N_COINS * A_MUL / 10)
@@ -46,20 +47,20 @@ MAX_A = int(N_COINS**N_COINS * A_MUL * 1000)
 MIN_GAMMA = 10**10
 MAX_GAMMA = 2 * 10**15
 
-MIN_XD = 10**16 - 1
-MAX_XD = 10**20 + 1
+MIN_XD = 10**17
+MAX_XD = 10**19
 
-
+pytest.cases = 0
 @given(
     A=st.integers(min_value=MIN_A, max_value=MAX_A),
     D=st.integers(
         min_value=10**18, max_value=10**14 * 10**18
     ),  # 1 USD to 100T USD
     xD=st.integers(
-        min_value=int(1.001e16), max_value=int(0.999e20)
+        min_value=MIN_XD, max_value=MAX_XD
     ),  # <- ratio 1e18 * x/D, typically 1e18 * 1
     yD=st.integers(
-        min_value=int(1.001e16), max_value=int(0.999e20)
+        min_value=MIN_XD, max_value=MAX_XD
     ),  # <- ratio 1e18 * y/D, typically 1e18 * 1
     gamma=st.integers(min_value=MIN_GAMMA, max_value=MAX_GAMMA),
     j=st.integers(min_value=0, max_value=1),
@@ -125,6 +126,7 @@ def _test_newton_D(
     fee_gamma,
 ):
 
+    pytest.cases += 1
     X = [D * xD // 10**18, D * yD // 10**18]
     is_safe = all(
         f >= MIN_XD and f <= MAX_XD
@@ -159,15 +161,17 @@ def _test_newton_D(
 
             X[j] = y
 
+            print(f'> {pytest.cases}')
             try:
                 result_sim = math_unoptimized.newton_D(A, gamma, X)
             except:
-                breakpoint()
+                # breakpoint()
                 raise  # this is a problem
 
             try:
                 result_contract = math_optimized.newton_D(A, gamma, X, K0)
-            except BoaError:
+            # except BoaError:
+            except:
                 raise
 
             try:
