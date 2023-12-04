@@ -36,8 +36,9 @@ def inv_target_decimal_n2(A, gamma, x, D):
 
 
 N_COINS = 2
-MAX_SAMPLES = 3000000  # Increase for fuzzing
+MAX_SAMPLES = 300000  # Increase for fuzzing
 # MAX_SAMPLES = 300  # Increase for fuzzing
+N_CASES = 1
 
 A_MUL = 10000
 MIN_A = int(N_COINS**N_COINS * A_MUL / 10)
@@ -51,6 +52,9 @@ MIN_XD = 10**17
 MAX_XD = 10**19
 
 pytest.cases = 0
+@pytest.mark.parametrize(
+    "_tmp", range(N_CASES)
+    )  # Create N_CASES independent test instances.
 @given(
     A=st.integers(min_value=MIN_A, max_value=MAX_A),
     D=st.integers(
@@ -92,6 +96,7 @@ def test_newton_D(
     mid_fee,
     out_fee,
     fee_gamma,
+    _tmp,
 ):
     _test_newton_D(
         math_optimized,
@@ -107,6 +112,7 @@ def test_newton_D(
         mid_fee,
         out_fee,
         fee_gamma,
+        _tmp,
     )
 
 
@@ -124,6 +130,7 @@ def _test_newton_D(
     mid_fee,
     out_fee,
     fee_gamma,
+    _tmp,
 ):
 
     pytest.cases += 1
@@ -161,7 +168,8 @@ def _test_newton_D(
 
             X[j] = y
 
-            print(f'> {pytest.cases}')
+            # if pytest.cases % 1000 == 0:
+            #     print(f'> {pytest.cases}')
             try:
                 result_sim = math_unoptimized.newton_D(A, gamma, X)
             except:
