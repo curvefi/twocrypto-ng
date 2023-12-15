@@ -75,19 +75,19 @@ def swap(
 
     with boa.env.prank(deployer):
         swap = twocrypto_factory.deploy_pool(
-            "Curve.fi USD<>WETH",
-            "USD<>WETH",
-            [coin.address for coin in coins],
-            0,  # <-------- 0th implementation index
-            params["A"],
-            params["gamma"],
-            params["mid_fee"],
-            params["out_fee"],
-            params["fee_gamma"],
-            params["allowed_extra_profit"],
-            params["adjustment_step"],
-            params["ma_time"],  # <--- no admin_fee needed
-            params["initial_prices"][1],
+            "Curve.fi USD<>WETH",  # _name: String[64]
+            "USD<>WETH",  # _symbol: String[32]
+            [coin.address for coin in coins],  # _coins: address[N_COINS]
+            0,  # implementation_id: uint256
+            params["A"],  # A: uint256
+            params["gamma"],  # gamma: uint256
+            params["mid_fee"],  # mid_fee: uint256
+            params["out_fee"],  # out_fee: uint256
+            params["fee_gamma"],  # fee_gamma: uint256
+            params["allowed_extra_profit"],  # allowed_extra_profit: uint256
+            params["adjustment_step"],  # adjustment_step: uint256
+            params["ma_time"],  # ma_exp_time: uint256
+            params["initial_prices"][1],  # initial_price: uint256
         )
 
     return amm_interface.at(swap)

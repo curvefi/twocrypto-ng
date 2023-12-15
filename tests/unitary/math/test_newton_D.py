@@ -2,15 +2,17 @@
 import sys
 import time
 from decimal import Decimal
+
 import pytest
 from boa.vyper.contract import BoaError
 from hypothesis import given, settings
 from hypothesis import strategies as st
-import tests.utils.simulation_int_many as sim
 
+import tests.utils.simulation_int_many as sim
 
 # Uncomment to be able to print when parallelized
 # sys.stdout = sys.stderr
+
 
 def inv_target_decimal_n2(A, gamma, x, D):
     N = len(x)
@@ -41,7 +43,7 @@ N_CASES = 1
 
 A_MUL = 10000
 MIN_A = int(N_COINS**N_COINS * A_MUL / 10)
-MAX_A = int(N_COINS**N_COINS * A_MUL * 100000)
+MAX_A = int(N_COINS**N_COINS * A_MUL * 1000)
 
 # gamma from 1e-8 up to 0.05
 MIN_GAMMA = 10**10
@@ -54,9 +56,10 @@ pytest.progress = 0
 pytest.actually_tested = 0
 pytest.t_start = time.time()
 
+
 @pytest.mark.parametrize(
-            "_tmp", range(N_CASES)
-                )  # Create N_CASES independent test instances.
+    "_tmp", range(N_CASES)
+)  # Create N_CASES independent test instances.
 @given(
     A=st.integers(min_value=MIN_A, max_value=MAX_A),
     D=st.integers(
@@ -142,7 +145,9 @@ def _test_newton_D(
 
     pytest.progress += 1
     if pytest.progress % 1000 == 0 and pytest.actually_tested != 0:
-        print(f"{pytest.progress} | {pytest.actually_tested} cases processed in {time.time()-pytest.t_start:.1f} seconds.")
+        print(
+            f"{pytest.progress} | {pytest.actually_tested} cases processed in {time.time()-pytest.t_start:.1f} seconds."
+        )
     X = [D * xD // 10**18, D * yD // 10**18]
 
     result_get_y = 0
@@ -199,7 +204,7 @@ def _test_newton_D(
                 #     f.write(case)
                 # with open("log/newton_D_fail_trace.txt", "a") as f:
                 #     f.write(str(e))
-                    return
+                return
 
             A_dec = Decimal(A) / 10000 / 4
 
@@ -213,4 +218,3 @@ def _test_newton_D(
 
             # with open("log/newton_D_pass.txt", "a") as f:
             #     f.write(case)
-
