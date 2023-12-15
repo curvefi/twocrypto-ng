@@ -1,5 +1,5 @@
 # pragma version 0.3.10
-# pragma optimize gas
+# pragma optimize codesize
 """
 @title CurveTwocryptoFactory
 @author Curve.Fi
@@ -186,17 +186,17 @@ def deploy_pool(
     # pool is an ERC20 implementation
     _salt: bytes32 = block.prevhash
     pool: address = create_from_blueprint(
-        pool_implementation,
-        _name,
-        _symbol,
-        _coins,
-        _math_implementation,
-        _salt,
-        precisions,
-        packed_A_gamma,
-        packed_fee_params,
-        packed_rebalancing_params,
-        initial_price,
+        pool_implementation,  # blueprint: address
+        _name,  # String[64]
+        _symbol,  # String[32]
+        _coins,  # address[N_COINS]
+        _math_implementation,  # address
+        _salt,  # bytes32
+        precisions,  # uint256[N_COINS]
+        packed_A_gamma,  # uint256
+        packed_fee_params,  # uint256
+        packed_rebalancing_params,  # uint256
+        initial_price,  # uint256
         code_offset=3
     )
 

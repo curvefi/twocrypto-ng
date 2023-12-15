@@ -2,8 +2,8 @@
 import sys
 from decimal import Decimal
 
-from boa.vyper.contract import BoaError
 import pytest
+from boa.vyper.contract import BoaError
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -52,9 +52,11 @@ MIN_XD = 10**17
 MAX_XD = 10**19
 
 pytest.cases = 0
+
+
 @pytest.mark.parametrize(
     "_tmp", range(N_CASES)
-    )  # Create N_CASES independent test instances.
+)  # Create N_CASES independent test instances.
 @given(
     A=st.integers(min_value=MIN_A, max_value=MAX_A),
     D=st.integers(

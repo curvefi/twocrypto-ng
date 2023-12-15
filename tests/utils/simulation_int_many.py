@@ -172,10 +172,7 @@ class Curve:
         xp = self.xp()
         xp[i] = x * self.p[i] // 10**18
         yp = solve_x(self.A, self.gamma, xp, self.D(), j)
-        try:
-            return yp * 10**18 // self.p[j]
-        except:
-            breakpoint()
+        return yp * 10**18 // self.p[j]
 
 
 def get_data(fname):

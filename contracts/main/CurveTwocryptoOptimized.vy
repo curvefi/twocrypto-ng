@@ -123,7 +123,6 @@ event ClaimAdminFee:
 
 N_COINS: constant(uint256) = 2
 PRECISION: constant(uint256) = 10**18  # <------- The precision to convert to.
-A_MULTIPLIER: constant(uint256) = 10000
 PRECISIONS: immutable(uint256[N_COINS])
 
 MATH: public(immutable(Math))
@@ -178,8 +177,9 @@ admin_lp_virtual_balance: uint256
 MIN_RAMP_TIME: constant(uint256) = 86400
 MIN_ADMIN_FEE_CLAIM_INTERVAL: constant(uint256) = 86400
 
+A_MULTIPLIER: constant(uint256) = 10000
 MIN_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER / 10
-MAX_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER * 100000
+MAX_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER * 1000
 MAX_A_CHANGE: constant(uint256) = 10
 MIN_GAMMA: constant(uint256) = 10**10
 MAX_GAMMA: constant(uint256) = 5 * 10**16
@@ -235,13 +235,13 @@ def __init__(
     PRECISIONS = precisions  # <------------------------ Precisions of coins.
 
     # --------------- Validate A and gamma parameters here and not in factory.
-    A_gamma: uint256[2] = self._unpack_2(packed_A_gamma)
+    gamma_A: uint256[2] = self._unpack_2(packed_A_gamma)  # gamma is at idx 0.
 
-    assert A_gamma[0] > MIN_A-1
-    assert A_gamma[0] < MAX_A+1
+    assert gamma_A[0] > MIN_GAMMA-1
+    assert gamma_A[0] < MAX_GAMMA+1
 
-    assert A_gamma[1] > MIN_GAMMA-1
-    assert A_gamma[1] < MAX_GAMMA+1
+    assert gamma_A[1] > MIN_A-1
+    assert gamma_A[1] < MAX_A+1
 
     self.initial_A_gamma = packed_A_gamma
     self.future_A_gamma = packed_A_gamma
