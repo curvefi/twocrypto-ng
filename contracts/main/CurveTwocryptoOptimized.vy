@@ -218,8 +218,8 @@ def __init__(
     _coins: address[N_COINS],
     _math: address,
     _salt: bytes32,
-    precisions: uint256[N_COINS],
-    packed_A_gamma: uint256,
+    packed_precisions: uint256,
+    packed_gamma_A: uint256,
     packed_fee_params: uint256,
     packed_rebalancing_params: uint256,
     initial_price: uint256,
@@ -232,10 +232,10 @@ def __init__(
     symbol = _symbol
     coins = _coins
 
-    PRECISIONS = precisions  # <------------------------ Precisions of coins.
+    PRECISIONS = self._unpack_2(packed_precisions)  # <-- Precisions of coins.
 
     # --------------- Validate A and gamma parameters here and not in factory.
-    gamma_A: uint256[2] = self._unpack_2(packed_A_gamma)  # gamma is at idx 0.
+    gamma_A: uint256[2] = self._unpack_2(packed_gamma_A)  # gamma is at idx 0.
 
     assert gamma_A[0] > MIN_GAMMA-1
     assert gamma_A[0] < MAX_GAMMA+1
@@ -243,8 +243,8 @@ def __init__(
     assert gamma_A[1] > MIN_A-1
     assert gamma_A[1] < MAX_A+1
 
-    self.initial_A_gamma = packed_A_gamma
-    self.future_A_gamma = packed_A_gamma
+    self.initial_A_gamma = packed_gamma_A
+    self.future_A_gamma = packed_gamma_A
     # ------------------------------------------------------------------------
 
     self.packed_rebalancing_params = packed_rebalancing_params  # <-- Contains
