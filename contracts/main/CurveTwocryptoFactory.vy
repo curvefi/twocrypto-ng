@@ -102,7 +102,7 @@ def __init__(_fee_receiver: address, _admin: address):
 
 
 @internal
-@view
+@pure
 def _pack_3(x: uint256[3]) -> uint256:
     """
     @notice Packs 3 integers with values <= 10**18 into a uint256
@@ -111,6 +111,11 @@ def _pack_3(x: uint256[3]) -> uint256:
     """
     return (x[0] << 128) | (x[1] << 64) | x[2]
 
+
+@pure
+@internal
+def _pack_2(p1: uint256, p2: uint256) -> uint256:
+    return p1 | (p2 << 128)
 
 
 # <--- Pool Deployers --->
@@ -169,6 +174,9 @@ def deploy_pool(
         decimals[i] = d
         precisions[i] = 10 ** (18 - d)
 
+    # pack precision
+    packed_precisions: uint256 = self._pack_2(precisions[0], precisions[1])
+
     # pack fees
     packed_fee_params: uint256 = self._pack_3(
         [mid_fee, out_fee, fee_gamma]
@@ -179,9 +187,8 @@ def deploy_pool(
         [allowed_extra_profit, adjustment_step, ma_exp_time]
     )
 
-    # pack A_gamma
-    packed_A_gamma: uint256 = A << 128
-    packed_A_gamma = packed_A_gamma | gamma
+    # pack gamma and A
+    packed_gamma_A: uint256 = self._pack_2(gamma, A)
 
     # pool is an ERC20 implementation
     _salt: bytes32 = block.prevhash
@@ -192,8 +199,8 @@ def deploy_pool(
         _coins,  # address[N_COINS]
         _math_implementation,  # address
         _salt,  # bytes32
-        precisions,  # uint256[N_COINS]
-        packed_A_gamma,  # uint256
+        packed_precisions,  # uint256
+        packed_gamma_A,  # uint256
         packed_fee_params,  # uint256
         packed_rebalancing_params,  # uint256
         initial_price,  # uint256
@@ -218,7 +225,7 @@ def deploy_pool(
         _math_implementation,
         _salt,
         precisions,
-        packed_A_gamma,
+        packed_gamma_A,
         packed_fee_params,
         packed_rebalancing_params,
         initial_price,
