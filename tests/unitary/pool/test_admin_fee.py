@@ -33,15 +33,13 @@ def test_admin_fee_after_deposit(
             swap.exchange(1, 0, to_swap, 0)
 
     balances = [swap.balances(i) for i in range(2)]
-    print("Balance of the pool: " + str(balances[0]) + ", " + str(balances[1]))
-    print("Ratio:", ratio)
     split_quantities = [int(balances[0] * ratio), int(balances[1] * ratio)]
     with boa.env.prank(user):
         swap.add_liquidity(split_quantities, 0)
 
-    print("FEES 0: " + str(coins[0].balanceOf(fee_receiver)))
-    print("FEES 1: " + str(coins[1].balanceOf(fee_receiver)))
-
-    print()
+    assert (
+        coins[0].balanceOf(fee_receiver) + coins[1].balanceOf(fee_receiver)
+        == 0
+    )
 
     return swap

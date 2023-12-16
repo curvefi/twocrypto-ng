@@ -471,8 +471,6 @@ def add_liquidity(
     @return uint256 Amount of LP tokens received by the `receiver
     """
 
-    self._claim_admin_fees()  # <--------- Auto-claim admin fees occasionally.
-
     A_gamma: uint256[2] = self._A_gamma()
     xp: uint256[N_COINS] = self.balances
     amountsp: uint256[N_COINS] = empty(uint256[N_COINS])
