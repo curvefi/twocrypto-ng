@@ -1,19 +1,14 @@
-import math
-
 import boa
 import pytest
 from boa.test import strategy
 from hypothesis import given, settings
 
 from tests.fixtures.pool import INITIAL_PRICES
+from tests.utils import approx
 from tests.utils import simulation_int_many as sim
 from tests.utils.tokens import mint_for_testing
 
 SETTINGS = {"max_examples": 100, "deadline": None}
-
-
-def approx(x1, x2, precision):
-    return abs(math.log(x1 / x2)) <= precision
 
 
 def assert_string_contains(string, substrings):
