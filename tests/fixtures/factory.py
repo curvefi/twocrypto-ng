@@ -37,7 +37,7 @@ def views_contract(deployer):
 
 
 @pytest.fixture(scope="module")
-def tricrypto_factory(
+def factory(
     deployer,
     fee_receiver,
     owner,

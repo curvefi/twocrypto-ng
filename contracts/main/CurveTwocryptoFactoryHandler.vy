@@ -1,4 +1,4 @@
-# @version 0.3.10
+# pragma version 0.3.10
 """
 @title CurveTwocryptoFactoryHandler
 @author Curve.Fi
@@ -20,7 +20,7 @@ interface BaseRegistry:
 
 interface CurvePool:
     def adjustment_step() -> uint256: view
-    def admin_fee() -> uint256: view
+    def ADMIN_FEE() -> uint256: view
     def allowed_extra_profit() -> uint256: view
     def A() -> uint256: view
     def balances(i: uint256) -> uint256: view
@@ -29,7 +29,7 @@ interface CurvePool:
     def fee_gamma() -> uint256: view
     def gamma() -> uint256: view
     def get_virtual_price() -> uint256: view
-    def ma_half_time() -> uint256: view
+    def ma_time() -> uint256: view
     def mid_fee() -> uint256: view
     def out_fee() -> uint256: view
     def virtual_price() -> uint256: view
@@ -119,7 +119,7 @@ def _get_gauge_type(_gauge: address) -> int128:
     success, response = raw_call(
         GAUGE_CONTROLLER,
         concat(
-            method_id("gauge_type(address)"),
+            method_id("gauge_types(address)"),
             convert(_gauge, bytes32),
         ),
         max_outsize=32,
@@ -170,7 +170,7 @@ def get_admin_balances(_pool: address) -> uint256[MAX_METAREGISTRY_COINS]:
 
     xcp_profit: uint256 = CurvePool(_pool).xcp_profit()
     xcp_profit_a: uint256 = CurvePool(_pool).xcp_profit_a()
-    admin_fee: uint256 = CurvePool(_pool).admin_fee()
+    admin_fee: uint256 = CurvePool(_pool).ADMIN_FEE()
     admin_balances: uint256[MAX_METAREGISTRY_COINS] = empty(uint256[MAX_METAREGISTRY_COINS])
 
     # admin balances are non zero if pool has made more than allowed profits:
@@ -275,7 +275,7 @@ def get_fees(_pool: address) -> uint256[10]:
     fees: uint256[10] = empty(uint256[10])
     pool_fees: uint256[4] = [
         CurvePool(_pool).fee(),
-        CurvePool(_pool).admin_fee(),
+        CurvePool(_pool).ADMIN_FEE(),
         CurvePool(_pool).mid_fee(),
         CurvePool(_pool).out_fee()
     ]
@@ -390,7 +390,7 @@ def get_pool_params(_pool: address) -> uint256[20]:
     pool_params[3] = CurvePool(_pool).allowed_extra_profit()
     pool_params[4] = CurvePool(_pool).fee_gamma()
     pool_params[5] = CurvePool(_pool).adjustment_step()
-    pool_params[6] = CurvePool(_pool).ma_half_time()
+    pool_params[6] = CurvePool(_pool).ma_time()
     return pool_params
 
 

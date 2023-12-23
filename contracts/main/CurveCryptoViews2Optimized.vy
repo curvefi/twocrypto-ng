@@ -1,4 +1,4 @@
-# @version 0.3.10
+# pragma version 0.3.10
 """
 @title CurveCryptoViews2Optimized
 @author Curve.Fi
@@ -43,8 +43,12 @@ interface Math:
         D: uint256,
         i: uint256,
     ) -> uint256[2]: view
-    def reduction_coefficient(
-        x: uint256[N_COINS], fee_gamma: uint256
+    def newton_y(
+        ANN: uint256,
+        gamma: uint256,
+        x: uint256[N_COINS],
+        D: uint256,
+        i: uint256,
     ) -> uint256: view
 
 
@@ -162,14 +166,11 @@ def _calc_D_ramp(
 ) -> uint256:
 
     math: Math = Curve(swap).MATH()
-
     D: uint256 = Curve(swap).D()
     if Curve(swap).future_A_gamma_time() > block.timestamp:
         _xp: uint256[N_COINS] = xp
         _xp[0] *= precisions[0]
-        _xp[1] = (
-            _xp[1] * price_scale * precisions[1] / PRECISION
-        )
+        _xp[1] = _xp[1] * price_scale * precisions[1] / PRECISION
         D = math.newton_D(A, gamma, _xp, 0)
 
     return D
@@ -201,16 +202,15 @@ def _get_dx_fee(
     # adjust xp with output dy. dy contains fee element, which we handle later
     # (hence this internal method is called _get_dx_fee)
     xp[j] -= dy
-    xp = [xp[0] * precisions[0], xp[1] * price_scale / PRECISION]
+    xp = [xp[0] * precisions[0], xp[1] * price_scale * precisions[1] / PRECISION]
 
     x_out: uint256[2] = math.get_y(A, gamma, xp, D, i)
     dx: uint256 = x_out[0] - xp[i]
     xp[i] = x_out[0]
 
     if i > 0:
-        dx = dy * PRECISION / price_scale
-    else:
-        dx /= precisions[0]
+        dx = dx * PRECISION / price_scale
+    dx /= precisions[i]
 
     return dx, xp
 
@@ -238,15 +238,18 @@ def _get_dy_nofee(
 
     # adjust xp with input dx
     xp[i] += dx
-    xp = [xp[0] * precisions[0], xp[1] * price_scale / PRECISION]
+    xp = [
+        xp[0] * precisions[0],
+        xp[1] * price_scale * precisions[1] / PRECISION
+    ]
 
     y_out: uint256[2] = math.get_y(A, gamma, xp, D, j)
+
     dy: uint256 = xp[j] - y_out[0] - 1
     xp[j] = y_out[0]
     if j > 0:
         dy = dy * PRECISION / price_scale
-    else:
-        dy /= precisions[0]
+    dy /= precisions[j]
 
     return dy, xp
 
@@ -277,15 +280,13 @@ def _calc_dtoken_nofee(
         for k in range(N_COINS):
             xp[k] -= amounts[k]
 
-    amountsp[0] *= precisions[0]
-
     xp = [
         xp[0] * precisions[0],
-        xp[1] * price_scale / PRECISION
+        xp[1] * price_scale * precisions[1] / PRECISION
     ]
     amountsp = [
-        amountsp[0] * precisions[0],
-        amountsp[1] * price_scale / PRECISION
+        amountsp[0]* precisions[0],
+        amountsp[1] * price_scale * precisions[1] / PRECISION
     ]
 
     D: uint256 = math.newton_D(A, gamma, xp, 0)
@@ -314,7 +315,6 @@ def _calc_withdraw_one_coin(
     math: Math = Curve(swap).MATH()
 
     xx: uint256[N_COINS] = empty(uint256[N_COINS])
-    price_scale: uint256 = Curve(swap).price_scale()
     for k in range(N_COINS):
         xx[k] = Curve(swap).balances(k)
 
@@ -324,7 +324,7 @@ def _calc_withdraw_one_coin(
     D0: uint256 = 0
     p: uint256 = 0
 
-    price_scale_i: uint256 = PRECISION * precisions[0]
+    price_scale_i: uint256 = Curve(swap).price_scale() * precisions[1]
     xp: uint256[N_COINS] = [
         xx[0] * precisions[0],
         unsafe_div(xx[1] * price_scale_i, PRECISION)
@@ -357,10 +357,15 @@ def _calc_withdraw_one_coin(
 @internal
 @view
 def _fee(xp: uint256[N_COINS], swap: address) -> uint256:
-    math: Math = Curve(swap).MATH()
+
     packed_fee_params: uint256 = Curve(swap).packed_fee_params()
-    fee_params: uint256[3] = self._unpack(packed_fee_params)
-    f: uint256 = math.reduction_coefficient(xp, fee_params[2])
+    fee_params: uint256[3] = self._unpack_3(packed_fee_params)
+    f: uint256 = xp[0] + xp[1]
+    f = fee_params[2] * 10**18 / (
+        fee_params[2] + 10**18 -
+        (10**18 * N_COINS**N_COINS) * xp[0] / f * xp[1] / f
+    )
+
     return (fee_params[0] * f + fee_params[1] * (10**18 - f)) / 10**18
 
 
@@ -395,7 +400,7 @@ def _prep_calc(swap: address) -> (
 
 @internal
 @view
-def _unpack(_packed: uint256) -> uint256[3]:
+def _unpack_3(_packed: uint256) -> uint256[3]:
     """
     @notice Unpacks a uint256 into 3 integers (values must be <= 10**18)
     @param val The uint256 to unpack
