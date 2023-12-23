@@ -21,8 +21,8 @@ def hacker():
 
 
 @pytest.fixture(scope="module")
-def factory_admin(twocrypto_factory):
-    return twocrypto_factory.admin()
+def factory_admin(factory):
+    return factory.admin()
 
 
 @pytest.fixture(scope="module")

@@ -4,10 +4,8 @@ from hypothesis import given, settings
 
 @given(val=strategy("uint256[3]", max_value=10**18))
 @settings(max_examples=10000, deadline=None)
-def test_pack_unpack_three_integers(
-    swap, math_contract, twocrypto_factory, val
-):
-    for contract in [swap, twocrypto_factory]:
+def test_pack_unpack_three_integers(swap, factory, val):
+    for contract in [swap, factory]:
         packed = contract.internal._pack_3(val)
         unpacked = swap.internal._unpack_3(packed)  # swap unpacks
         for i in range(3):
