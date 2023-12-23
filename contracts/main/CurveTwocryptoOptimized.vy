@@ -1630,7 +1630,7 @@ def lp_price() -> uint256:
             0th index
     @return uint256 LP price.
     """
-    return 2 * self.virtual_price * isqrt(self.internal_price_oracle()) / 10**18
+    return 2 * self.virtual_price * isqrt(self.internal_price_oracle() * 10**18) / 10**18
 
 
 @external

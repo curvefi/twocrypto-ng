@@ -219,4 +219,4 @@ def test_lp_price(swap_with_deposit):
         // 10**18
     )
     naive_price = tvl * 10**18 // swap_with_deposit.totalSupply()
-    assert abs(swap_with_deposit.lp_price() / naive_price - 1) < 2e-3
+    assert approx(naive_price, swap_with_deposit.lp_price(), 0)
