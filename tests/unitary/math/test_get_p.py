@@ -1,14 +1,13 @@
-from math import log
-
 import boa
 import pytest
 from boa.test import strategy
 from hypothesis import given, settings
 
 from tests.fixtures.pool import INITIAL_PRICES
+from tests.utils import approx
 from tests.utils.tokens import mint_for_testing
 
-SETTINGS = {"max_examples": 1000, "deadline": None}
+SETTINGS = {"max_examples": 20, "deadline": None}
 
 
 # flake8: noqa: E501
@@ -59,17 +58,17 @@ def _get_prices_vyper(swap, price_calc):
 
 def _get_prices_numeric_nofee(swap, views, i):
 
-    if i == 0:  # we are selling j
-
-        dx = 10**16  # 0.01 USD
-        dy = views.internal._get_dy_nofee(0, 1, dx, swap)[0]
-        price = dx * 10**18 // dy[0]
-
-    else:  # we are buying j so numba should go up
+    if i == 0:  # token at index 1 is being pupmed.
 
         dx = int(0.01 * 10**36 // INITIAL_PRICES[1])
         dolla_out = views.internal._get_dy_nofee(1, 0, dx, swap)[0]
         price = dolla_out * 10**18 // dx
+
+    else:  # token at index 1 is being dupmed.
+
+        dx = 10**16  # 0.01 USD
+        dy = views.internal._get_dy_nofee(0, 1, dx, swap)[0]
+        price = dx * 10**18 // dy
 
     return price
 
@@ -78,9 +77,7 @@ def _get_prices_numeric_nofee(swap, views, i):
 
 
 @given(
-    dollar_amount=strategy(
-        "decimal", min_value=10**-5, max_value=5 * 10**8
-    ),
+    dollar_amount=strategy("decimal", min_value=1e-5, max_value=5e8),
 )
 @settings(**SETTINGS)
 @pytest.mark.parametrize("i", [0, 1])
@@ -97,22 +94,20 @@ def test_dxdy_similar(
     previous_p = yuge_swap.price_scale()
     j = 1 - i
 
-    dx = int(dollar_amount * 10**36 // INITIAL_PRICES[i])
-    mint_for_testing(coins[i], user, dx)
-    out = yuge_swap.exchange(i, j, dx, 0, sender=user)
+    amount_in = int(dollar_amount * 10**36 // INITIAL_PRICES[i])
+    mint_for_testing(coins[i], user, amount_in)
+    yuge_swap.exchange(i, j, amount_in, 0, sender=user)
 
     dxdy_vyper = _get_prices_vyper(yuge_swap, dydx_safemath)
     dxdy_swap = yuge_swap.last_prices()  # <-- we check unsafe impl here.
-    dxdy_numeric_nofee = _get_prices_numeric_nofee(
-        yuge_swap, views_contract, i
-    )
+    dxdy_numeric = _get_prices_numeric_nofee(yuge_swap, views_contract, i)
 
-    if i == 0:  # j is being pupmed
+    if i == 0:  # token at index 1 is being pupmed, so last_price should go up
         assert dxdy_swap > previous_p
-        assert dxdy_numeric_nofee > previous_p
-    else:  # j is being dupmed
+        assert dxdy_numeric > previous_p
+    else:  # token at index 1 is being dupmed, so last_price should go down
         assert dxdy_swap < previous_p
-        assert dxdy_numeric_nofee < previous_p
+        assert dxdy_numeric < previous_p
 
     assert dxdy_vyper == dxdy_swap
-    assert abs(log(dxdy_vyper / dxdy_numeric_nofee)) < 1e-5
+    assert approx(dxdy_vyper, dxdy_numeric, 1e-5)

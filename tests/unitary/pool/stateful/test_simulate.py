@@ -1,23 +1,14 @@
-from math import log
-
 import boa
 from boa.test import strategy
 from hypothesis.stateful import invariant, rule, run_state_machine_as_test
 
 from tests.unitary.pool.stateful.stateful_base import StatefulBase
+from tests.utils import approx
 from tests.utils import simulation_int_many as sim
 from tests.utils.tokens import mint_for_testing
 
 MAX_SAMPLES = 20
 STEP_COUNT = 100
-
-
-def approx(x1, x2, precision):
-    return abs(log(x1 / x2)) <= precision
-
-
-def logdiff(x1, x2):
-    return abs(log(x1 / x2))
 
 
 class StatefulSimulation(StatefulBase):
@@ -87,13 +78,10 @@ class StatefulSimulation(StatefulBase):
         self.trader.tweak_price(boa.env.vm.state.timestamp)
 
         # exchange checks:
-        out_logdiff = logdiff(self.swap_out, dy_trader)
-        price_oracle_logdiff = logdiff(
-            self.swap.price_oracle(), self.trader.price_oracle[1]
+        assert approx(self.swap_out, dy_trader, 1e-3)
+        assert approx(
+            self.swap.price_oracle(), self.trader.price_oracle[1], 1e-3
         )
-
-        assert out_logdiff <= 1e-3
-        assert price_oracle_logdiff <= 1e-3
 
         boa.env.time_travel(12)
 
@@ -108,9 +96,8 @@ class StatefulSimulation(StatefulBase):
 
         price_scale = self.swap.price_scale()
         price_trader = self.trader.curve.p[1]
-        price_scale_logdiff = logdiff(price_scale, price_trader)
         try:
-            assert price_scale_logdiff <= 1e-3
+            assert approx(price_scale, price_trader, 1e-3)
         except Exception:
             if self.check_limits([0, 0, 0]):
                 assert False

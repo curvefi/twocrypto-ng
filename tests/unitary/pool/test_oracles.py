@@ -1,4 +1,4 @@
-from math import exp, log, log2, sqrt
+from math import exp, log2, sqrt
 
 import boa
 import pytest
@@ -6,13 +6,10 @@ from boa.test import strategy
 from hypothesis import given, settings
 
 from tests.fixtures.pool import INITIAL_PRICES
+from tests.utils import approx
 from tests.utils.tokens import mint_for_testing
 
 SETTINGS = {"max_examples": 1000, "deadline": None}
-
-
-def approx(x1, x2, precision):
-    return abs(log(x1 / x2)) <= precision
 
 
 def norm(price_oracle, price_scale):
