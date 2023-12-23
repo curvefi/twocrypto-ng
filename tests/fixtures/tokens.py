@@ -50,7 +50,7 @@ def coins(usd, weth):
 
 
 @pytest.fixture(scope="module")
-def stgusdc(usdt, weth):
+def stgusdc(stg, usdc):
     yield [stg, usdc]
 
 

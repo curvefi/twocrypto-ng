@@ -1565,6 +1565,16 @@ def fee_receiver() -> address:
 
 @external
 @view
+def admin() -> address:
+    """
+    @notice Returns the address of the pool's admin.
+    @return address Admin.
+    """
+    return factory.admin()
+
+
+@external
+@view
 def calc_token_amount(amounts: uint256[N_COINS], deposit: bool) -> uint256:
     """
     @notice Calculate LP tokens minted or to be burned for depositing or

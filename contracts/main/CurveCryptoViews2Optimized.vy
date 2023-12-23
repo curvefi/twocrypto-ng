@@ -359,7 +359,7 @@ def _calc_withdraw_one_coin(
 def _fee(xp: uint256[N_COINS], swap: address) -> uint256:
 
     packed_fee_params: uint256 = Curve(swap).packed_fee_params()
-    fee_params: uint256[3] = self._unpack(packed_fee_params)
+    fee_params: uint256[3] = self._unpack_3(packed_fee_params)
     f: uint256 = xp[0] + xp[1]
     f = fee_params[2] * 10**18 / (
         fee_params[2] + 10**18 -
@@ -400,7 +400,7 @@ def _prep_calc(swap: address) -> (
 
 @internal
 @view
-def _unpack(_packed: uint256) -> uint256[3]:
+def _unpack_3(_packed: uint256) -> uint256[3]:
     """
     @notice Unpacks a uint256 into 3 integers (values must be <= 10**18)
     @param val The uint256 to unpack

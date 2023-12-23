@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # flake8: noqa
-import json
+from math import exp
 
 from tests.unitary.math.misc import get_y_n2_dec
 
@@ -20,7 +20,6 @@ def geometric_mean(x):
         diff = abs(D - D_prev)
         if diff <= 1 or diff * 10**18 < D:
             return D
-    print(x)
     raise ValueError("Did not converge")
 
 
@@ -149,14 +148,11 @@ def solve_D(A, gamma, x):
 
 
 class Curve:
-    def __init__(self, A, gamma, D, n, p=None):
+    def __init__(self, A, gamma, D, n, p):
         self.A = A
         self.gamma = gamma
         self.n = n
-        if p:
-            self.p = p
-        else:
-            self.p = [10**18] * n
+        self.p = p
         self.x = [D // n * 10**18 // self.p[i] for i in range(n)]
 
     def xp(self):
@@ -174,44 +170,26 @@ class Curve:
         yp = solve_x(self.A, self.gamma, xp, self.D(), j)
         return yp * 10**18 // self.p[j]
 
+    def get_p(self):
 
-def get_data(fname):
-    with open("download/{0}-1m.json".format(fname), "r") as f:
-        return [
-            {
-                "open": float(t[1]),
-                "high": float(t[2]),
-                "low": float(t[3]),
-                "close": float(t[4]),
-                "t": t[0] // 1000,
-                "volume": float(t[5]),
-            }
-            for t in json.load(f)
-        ]
+        A = self.A
+        gamma = self.gamma
+        xp = self.xp()
+        D = self.D()
 
+        K0 = xp[0] * xp[1] * 4 // D * 10**36 // D
+        gK0 = (
+            2 * K0 * K0 // 10**36 * K0 // 10**36
+            + (gamma + 10**18) ** 2
+            - (K0 * K0 // 10**36 * (2 * gamma + 3 * 10**18) // 10**18)
+        )
+        NNAG2 = A * gamma**2 // A_MULTIPLIER
+        numerator = (
+            xp[0] * (gK0 + NNAG2 * xp[1] // D * K0 // 10**36) // xp[1]
+        )
+        denominator = gK0 + NNAG2 * xp[0] // D * K0 // 10**36
 
-def get_all():
-    # 0 - usdt
-    # 1 - btc
-    # 2 - eth
-    out = []
-    all_trades = {
-        name: get_data(name) for name in ["btcusdt", "ethusdt", "ethbtc"]
-    }
-    min_time = max(t[0]["t"] for t in all_trades.values())
-    max_time = min(t[-1]["t"] for t in all_trades.values())
-    for name, pair in [
-        ("btcusdt", (0, 1)),
-        ("ethusdt", (0, 2)),
-        ("ethbtc", (1, 2)),
-    ]:
-        trades = all_trades[name]
-        for trade in trades:
-            if trade["t"] >= min_time and trade["t"] <= max_time:
-                trade["pair"] = pair
-                out.append((trade["t"] + sum(pair) * 15, trade))
-    out = sorted(out)
-    return [i[1] for i in out]
+        return numerator * 10**18 // denominator
 
 
 class Trader:
@@ -227,7 +205,7 @@ class Trader:
         allowed_extra_profit=2 * 10**13,
         fee_gamma=None,
         adjustment_step=0.003,
-        ma_half_time=500,
+        ma_time=866,
         log=True,
     ):
         # allowed_extra_profit is actually not used
@@ -248,7 +226,7 @@ class Trader:
         self.log = log
         self.fee_gamma = fee_gamma or gamma
         self.total_vol = 0.0
-        self.ma_half_time = ma_half_time
+        self.ma_time = ma_time
         self.ext_fee = 0  # 0.03e-2
         self.slippage = 0
         self.slippage_count = 0
@@ -256,28 +234,6 @@ class Trader:
     def fee(self):
         f = reduction_coefficient(self.curve.xp(), self.fee_gamma)
         return (self.mid_fee * f + self.out_fee * (10**18 - f)) // 10**18
-
-    def price(self, i, j):
-        dx_raw = self.dx * 10**18 // self.curve.p[i]
-        return (
-            dx_raw
-            * 10**18
-            // (self.curve.x[j] - self.curve.y(self.curve.x[i] + dx_raw, i, j))
-        )
-
-    def step_for_price(self, dp, pair, sign=1):
-        a, b = pair
-        p0 = self.price(*pair)
-        dp = p0 * dp // 10**18
-        x0 = self.curve.x[:]
-        step = self.dx * 10**18 // self.curve.p[a]
-        while True:
-            self.curve.x[a] = x0[a] + sign * step
-            dp_ = abs(p0 - self.price(*pair))
-            if dp_ >= dp or step >= self.curve.x[a] // 10:
-                self.curve.x = x0
-                return step
-            step *= 2
 
     def get_xcp(self):
         # First calculate the ideal balance
@@ -339,26 +295,31 @@ class Trader:
         except ValueError:
             return False
 
+    def _ma_multiplier(self, t):
+        return int(10**18 * exp(-1 * (t - self.t) / self.ma_time))
+
     def ma_recorder(self, t, price_vector):
+        # need to convert this to exp!
         # XXX what if every block only has p_b being last
         N = len(price_vector)
         if t > self.t:
-            alpha = 0.5 ** ((t - self.t) / self.ma_half_time)
-            for k in range(1, N):
-                self.price_oracle[k] = int(
-                    price_vector[k] * (1 - alpha)
-                    + self.price_oracle[k] * alpha
+            alpha = self._ma_multiplier(t)
+            last_price = min(price_vector[1], 2 * self.curve.p[1])
+            self.price_oracle[1] = (
+                int(
+                    last_price * (10**18 - alpha)
+                    + self.price_oracle[1] * alpha
                 )
+                // 10**18
+            )
             self.t = t
 
-    def tweak_price(self, t, a, b, p):
-        self.ma_recorder(t, self.last_price)
-        if b > 0:
-            self.last_price[b] = p * self.last_price[a] // 10**18
-        else:
-            self.last_price[a] = self.last_price[0] * 10**18 // p
+    def tweak_price(self, t):
 
-        # price_oracle looks like [1, p1, p2, ...] normalized to 1e18
+        self.ma_recorder(t, self.last_price)
+        self.last_price[1] = self.curve.get_p() * self.curve.p[1] // 10**18
+
+        # update price_scale:
         norm = int(
             sum(
                 (p_real * 10**18 // p_target - 10**18) ** 2
@@ -371,13 +332,10 @@ class Trader:
             # Already close to the target price
             return norm
 
-        p_new = [10**18]
-        p_new += [
-            p_target + adjustment_step * (p_real - p_target) // norm
-            for p_real, p_target in zip(
-                self.price_oracle[1:], self.curve.p[1:]
-            )
-        ]
+        price_scale_adjustment = (
+            adjustment_step * (self.price_oracle[1] - self.curve.p[1]) // norm
+        )
+        p_new = [10**18, self.curve.p[1] + price_scale_adjustment]
 
         old_p = self.curve.p[:]
         old_profit = self.xcp_profit_real
@@ -393,153 +351,3 @@ class Trader:
             self.xcp = old_xcp
 
         return norm
-
-    def simulate(self, mdata):
-        lasts = {}
-        self.t = mdata[0]["t"]
-        for i, d in enumerate(mdata):
-            a, b = d["pair"]
-            vol = 0
-            ext_vol = int(
-                d["volume"] * self.price_oracle[b]
-            )  # <- now all is in USD
-            ctr = 0
-            last = lasts.get(
-                (a, b), self.price_oracle[b] * 10**18 // self.price_oracle[a]
-            )
-            _high = last
-            _low = last
-
-            # Dynamic step
-            # f = reduction_coefficient(self.curve.xp(), self.curve.gamma)
-            candle = min(
-                int(1e18 * abs((d["high"] - d["low"]) / d["high"])), 10**17
-            )
-            candle = max(10**15, candle)
-            step1 = self.step_for_price(candle // 50, (a, b), sign=1)
-            step2 = self.step_for_price(candle // 50, (a, b), sign=-1)
-            step = min(step1, step2)
-
-            max_price = int(1e18 * d["high"])
-            _dx = 0
-            p_before = self.price(a, b)
-            while last < max_price and vol < ext_vol // 2:
-                dy = self.buy(step, a, b, max_price=max_price)
-                if dy is False:
-                    break
-                vol += dy * self.price_oracle[b] // 10**18
-                _dx += dy
-                last = step * 10**18 // dy
-                max_price = int(1e18 * d["high"])
-                ctr += 1
-            p_after = self.price(a, b)
-            if p_before != p_after:
-                self.slippage_count += 1
-                self.slippage += (
-                    _dx
-                    * self.curve.p[b]
-                    // 10**18
-                    * (p_before + p_after)
-                    // (2 * abs(p_before - p_after))
-                )
-            _high = last
-            min_price = int(1e18 * d["low"])
-            _dx = 0
-            p_before = p_after
-            while last > min_price and vol < ext_vol // 2:
-                dx = step * 10**18 // last
-                dy = self.sell(dx, a, b, min_price=min_price)
-                _dx += dx
-                if dy is False:
-                    break
-                vol += dx * self.price_oracle[b] // 10**18
-                last = dy * 10**18 // dx
-                min_price = int(10**18 * d["low"])
-                ctr += 1
-            p_after = self.price(a, b)
-            if p_before != p_after:
-                self.slippage_count += 1
-                self.slippage += (
-                    _dx
-                    * self.curve.p[b]
-                    // 10**18
-                    * (p_before + p_after)
-                    // (2 * abs(p_before - p_after))
-                )
-            _low = last
-            lasts[(a, b)] = last
-
-            self.tweak_price(d["t"], a, b, (_high + _low) // 2)
-
-            self.total_vol += vol
-            if self.log:
-                try:
-                    print(
-                        (
-                            """{0:.1f}%\ttrades: {1}\t"""
-                            """AMM: {2:.0f}, {3:.0f}\tTarget: {4:.0f}, {5:.0f}\t"""
-                            """Vol: {6:.4f}\tPR:{7:.2f}\txCP-growth: {8:.5f}\t"""
-                            """APY:{9:.1f}%\tfee:{10:.3f}%"""
-                        ).format(
-                            100 * i / len(mdata),
-                            ctr,
-                            lasts.get(
-                                (0, 1),
-                                self.price_oracle[1]
-                                * 10**18
-                                // self.price_oracle[0],
-                            )
-                            / 1e18,
-                            lasts.get(
-                                (0, 2),
-                                self.price_oracle[2]
-                                * 10**18
-                                // self.price_oracle[0],
-                            )
-                            / 1e18,
-                            self.curve.p[1] / 1e18,
-                            self.curve.p[2] / 1e18,
-                            self.total_vol / 1e18,
-                            (self.xcp_profit_real - 10**18)
-                            / (self.xcp_profit - 10**18),
-                            self.xcp_profit_real / 1e18,
-                            (
-                                (self.xcp_profit_real / 1e18)
-                                ** (86400 * 365 / (d["t"] - mdata[0]["t"] + 1))
-                                - 1
-                            )
-                            * 100,
-                            self.fee() / 1e10 * 100,
-                        )
-                    )
-                except Exception:
-                    pass
-
-
-def get_price_vector(n, data):
-    p = [10**18] + [None] * (n - 1)
-    for d in data:
-        if d["pair"][0] == 0:
-            p[d["pair"][1]] = int(d["close"] * 1e18)
-        if all(x is not None for x in p):
-            return p
-
-
-if __name__ == "__main__":
-    test_data = get_all()[-100000:]
-
-    trader = Trader(
-        135 * 3**3 * 10000,
-        int(7e-5 * 1e18),
-        5_000_000 * 10**18,
-        3,
-        get_price_vector(3, test_data),
-        mid_fee=4e-4,
-        out_fee=4.0e-3,
-        allowed_extra_profit=2 * 10**13,
-        fee_gamma=int(0.01 * 1e18),
-        adjustment_step=0.0015,
-        ma_half_time=600,
-    )
-
-    trader.simulate(test_data)

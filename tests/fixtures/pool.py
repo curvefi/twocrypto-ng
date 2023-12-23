@@ -66,7 +66,7 @@ def params():
 
 @pytest.fixture(scope="module")
 def swap(
-    twocrypto_factory,
+    factory,
     amm_interface,
     coins,
     params,
@@ -74,7 +74,7 @@ def swap(
 ):
 
     with boa.env.prank(deployer):
-        swap = twocrypto_factory.deploy_pool(
+        swap = factory.deploy_pool(
             "Curve.fi USD<>WETH",  # _name: String[64]
             "USD<>WETH",  # _symbol: String[32]
             [coin.address for coin in coins],  # _coins: address[N_COINS]
@@ -95,11 +95,10 @@ def swap(
 
 @pytest.fixture(scope="module")
 def swap_multiprecision(
-    twocrypto_factory,
+    factory,
     amm_interface,
     stgusdc,
     deployer,
-    weth,
 ):
 
     # STG/USDC pool params (on deployment)
@@ -112,26 +111,25 @@ def swap_multiprecision(
         "fee_gamma": 230000000000000,
         "adjustment_step": 146000000000000,
         "ma_time": 866,
-        "initial_prices": 500000000000000000,
+        "initial_prices": 1777655918836068423,
     }
 
-    with boa.env.prank(deployer):
-        swap = twocrypto_factory.deploy_pool(
-            "Curve.fi STG/USDC",
-            "STGUSDC",
-            [coin.address for coin in stgusdc],
-            weth,
-            0,
-            _params["A"],
-            _params["gamma"],
-            _params["mid_fee"],
-            _params["out_fee"],
-            _params["fee_gamma"],
-            _params["allowed_extra_profit"],
-            _params["adjustment_step"],
-            _params["ma_time"],
-            _params["initial_prices"],
-        )
+    swap = factory.deploy_pool(
+        "Curve.fi STG/USDC",
+        "STGUSDC",
+        [coin.address for coin in stgusdc],  # _coins: address[N_COINS]
+        0,  # implementation_id: uint256
+        _params["A"],  # A: uint256
+        _params["gamma"],  # gamma: uint256
+        _params["mid_fee"],  # mid_fee: uint256
+        _params["out_fee"],  # out_fee: uint256
+        _params["fee_gamma"],  # fee_gamma: uint256
+        _params["allowed_extra_profit"],  # allowed_extra_profit: uint256
+        _params["adjustment_step"],  # adjustment_step: uint256
+        _params["ma_time"],  # ma_exp_time: uint256
+        _params["initial_prices"],  # initial_price: uint256
+        sender=deployer,
+    )
 
     return amm_interface.at(swap)
 

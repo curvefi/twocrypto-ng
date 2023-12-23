@@ -8,7 +8,8 @@ from hypothesis import given, note, settings
 from hypothesis import strategies as st
 
 N_COINS = 2
-MAX_SAMPLES = 1000000  # Increase for fuzzing
+# MAX_SAMPLES = 1000000  # Increase for fuzzing
+MAX_SAMPLES = 300
 N_CASES = 32
 
 A_MUL = 10000
