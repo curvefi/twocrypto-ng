@@ -1,4 +1,5 @@
-# @version 0.3.10
+# pragma version 0.3.10
+# pragma optimize codesize
 """
 @title CurveTwocryptoFactory
 @author Curve.Fi
@@ -71,12 +72,6 @@ A_MULTIPLIER: constant(uint256) = 10000
 # Limits
 MAX_FEE: constant(uint256) = 10 * 10 ** 9
 
-MIN_GAMMA: constant(uint256) = 10 ** 10
-MAX_GAMMA: constant(uint256) = 5 * 10**16
-
-MIN_A: constant(uint256) = N_COINS ** N_COINS * A_MULTIPLIER / 100
-MAX_A: constant(uint256) = 1000 * A_MULTIPLIER * N_COINS**N_COINS
-
 admin: public(address)
 future_admin: public(address)
 
@@ -91,12 +86,9 @@ math_implementation: public(address)
 # mapping of coins -> pools for trading
 # a mapping key is generated for each pair of addresses via
 # `bitwise_xor(convert(a, uint256), convert(b, uint256))`
-markets: HashMap[uint256, address[4294967296]]
-market_counts: HashMap[uint256, uint256]
-
-pool_count: public(uint256)              # actual length of pool_list
+markets: HashMap[uint256, DynArray[address, 4294967296]]
 pool_data: HashMap[address, PoolArray]
-pool_list: public(address[4294967296])   # master list of pools
+pool_list: public(DynArray[address, 4294967296])   # master list of pools
 
 
 @external
@@ -110,8 +102,8 @@ def __init__(_fee_receiver: address, _admin: address):
 
 
 @internal
-@view
-def _pack(x: uint256[3]) -> uint256:
+@pure
+def _pack_3(x: uint256[3]) -> uint256:
     """
     @notice Packs 3 integers with values <= 10**18 into a uint256
     @param x The uint256[3] to pack
@@ -119,6 +111,11 @@ def _pack(x: uint256[3]) -> uint256:
     """
     return (x[0] << 128) | (x[1] << 64) | x[2]
 
+
+@pure
+@internal
+def _pack_2(p1: uint256, p2: uint256) -> uint256:
+    return p1 | (p2 << 128)
 
 
 # <--- Pool Deployers --->
@@ -147,14 +144,9 @@ def deploy_pool(
     @return Address of the deployed pool
     """
     pool_implementation: address = self.pool_implementations[implementation_id]
+    _math_implementation: address = self.math_implementation
     assert pool_implementation != empty(address), "Pool implementation not set"
-
-    # Validate parameters
-    assert A > MIN_A-1
-    assert A < MAX_A+1
-
-    assert gamma > MIN_GAMMA-1
-    assert gamma < MAX_GAMMA+1
+    assert _math_implementation != empty(address), "Math implementation not set"
 
     assert mid_fee < MAX_FEE-1  # mid_fee can be zero
     assert out_fee >= mid_fee
@@ -180,44 +172,44 @@ def deploy_pool(
         d: uint256 = ERC20(_coins[i]).decimals()
         assert d < 19, "Max 18 decimals for coins"
         decimals[i] = d
-        precisions[i] = 10** (18 - d)
+        precisions[i] = 10 ** (18 - d)
+
+    # pack precision
+    packed_precisions: uint256 = self._pack_2(precisions[0], precisions[1])
 
     # pack fees
-    packed_fee_params: uint256 = self._pack(
+    packed_fee_params: uint256 = self._pack_3(
         [mid_fee, out_fee, fee_gamma]
     )
 
     # pack liquidity rebalancing params
-    packed_rebalancing_params: uint256 = self._pack(
+    packed_rebalancing_params: uint256 = self._pack_3(
         [allowed_extra_profit, adjustment_step, ma_exp_time]
     )
 
-    # pack A_gamma
-    packed_A_gamma: uint256 = A << 128
-    packed_A_gamma = packed_A_gamma | gamma
+    # pack gamma and A
+    packed_gamma_A: uint256 = self._pack_2(gamma, A)
 
     # pool is an ERC20 implementation
     _salt: bytes32 = block.prevhash
-    _math_implementation: address = self.math_implementation
     pool: address = create_from_blueprint(
-        pool_implementation,
-        _name,
-        _symbol,
-        _coins,
-        _math_implementation,
-        _salt,
-        precisions,
-        packed_A_gamma,
-        packed_fee_params,
-        packed_rebalancing_params,
-        initial_price,
+        pool_implementation,  # blueprint: address
+        _name,  # String[64]
+        _symbol,  # String[32]
+        _coins,  # address[N_COINS]
+        _math_implementation,  # address
+        _salt,  # bytes32
+        packed_precisions,  # uint256
+        packed_gamma_A,  # uint256
+        packed_fee_params,  # uint256
+        packed_rebalancing_params,  # uint256
+        initial_price,  # uint256
         code_offset=3
     )
 
     # populate pool data
-    length: uint256 = self.pool_count
-    self.pool_list[length] = pool
-    self.pool_count = length + 1
+    self.pool_list.append(pool)
+
     self.pool_data[pool].decimals = decimals
     self.pool_data[pool].coins = _coins
     self.pool_data[pool].implementation = pool_implementation
@@ -233,7 +225,7 @@ def deploy_pool(
         _math_implementation,
         _salt,
         precisions,
-        packed_A_gamma,
+        packed_gamma_A,
         packed_fee_params,
         packed_rebalancing_params,
         initial_price,
@@ -249,10 +241,7 @@ def _add_coins_to_market(coin_a: address, coin_b: address, pool: address):
     key: uint256 = (
         convert(coin_a, uint256) ^ convert(coin_b, uint256)
     )
-
-    length: uint256 = self.market_counts[key]
-    self.markets[key][length] = pool
-    self.market_counts[key] = length + 1
+    self.markets[key].append(pool)
 
 
 @external
@@ -392,6 +381,16 @@ def find_pool_for_coins(_from: address, _to: address, i: uint256 = 0) -> address
 
 @view
 @external
+def pool_count() -> uint256:
+    """
+    @notice Get number of pools deployed from the factory
+    @return Number of pools deployed from factory
+    """
+    return len(self.pool_list)
+
+
+@view
+@external
 def get_coins(_pool: address) -> address[N_COINS]:
     """
     @notice Get the coins within a pool
@@ -472,4 +471,4 @@ def get_market_counts(coin_a: address, coin_b: address) -> uint256:
         convert(coin_a, uint256) ^ convert(coin_b, uint256)
     )
 
-    return self.market_counts[key]
+    return len(self.markets[key])

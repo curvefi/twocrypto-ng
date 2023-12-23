@@ -1,5 +1,5 @@
-# @version 0.3.10
-#pragma optimize gas
+# pragma version 0.3.10
+# pragma optimize gas
 """
 @title LiquidityGaugeV6
 @author Curve.Fi
@@ -89,9 +89,9 @@ MAX_REWARDS: constant(uint256) = 8
 TOKENLESS_PRODUCTION: constant(uint256) = 40
 WEEK: constant(uint256) = 604800
 
-VERSION: constant(String[8]) = "v6.0.0"  # <- updated from v5.0.0 (adds `create_from_blueprint` pattern)
+VERSION: constant(String[8]) = "v6.1.0"  # <- updated from v6.0.0 (makes rewards semi-permissionless)
 
-EIP712_TYPEHASH: constant(bytes32) = keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)")
+EIP712_TYPEHASH: constant(bytes32) = keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract,bytes32 salt)")
 EIP2612_TYPEHASH: constant(bytes32) = keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)")
 
 VERSION_HASH: constant(bytes32) = keccak256(VERSION)
@@ -112,16 +112,16 @@ balanceOf: public(HashMap[address, uint256])
 totalSupply: public(uint256)
 allowance: public(HashMap[address, HashMap[address, uint256]])
 
-name: public(String[64])
-symbol: public(String[40])
+name: public(immutable(String[64]))
+symbol: public(immutable(String[40]))
 
 # ERC2612
 nonces: public(HashMap[address, uint256])
 
 # Gauge
-factory: public(address)
+factory: public(immutable(address))
+lp_token: public(immutable(address))
 manager: public(address)
-lp_token: public(address)
 
 is_killed: public(bool)
 
@@ -170,15 +170,15 @@ def __init__(_lp_token: address):
     @notice Contract constructor
     @param _lp_token Liquidity Pool contract address
     """
-    self.lp_token = _lp_token
-    self.factory = msg.sender
+    lp_token = _lp_token
+    factory = msg.sender
     self.manager = msg.sender
 
-    symbol: String[32] = ERC20Extended(_lp_token).symbol()
-    name: String[64] = concat("Curve.fi ", symbol, " Gauge Deposit")
+    _symbol: String[32] = ERC20Extended(_lp_token).symbol()
+    _name: String[64] = concat("Curve.fi ", symbol, " Gauge Deposit")
 
-    self.name = name
-    self.symbol = concat(symbol, "-gauge")
+    name = _name
+    symbol = concat(_symbol, "-gauge")
 
     self.period_timestamp[0] = block.timestamp
     self.inflation_params = (
@@ -186,7 +186,7 @@ def __init__(_lp_token: address):
         + CRV20(CRV).rate()
     )
 
-    NAME_HASH = keccak256(name)
+    NAME_HASH = keccak256(_name)
     salt = block.prevhash
     CACHED_CHAIN_ID = chain.id
     CACHED_DOMAIN_SEPARATOR = keccak256(
@@ -426,7 +426,7 @@ def deposit(_value: uint256, _addr: address = msg.sender, _claim_rewards: bool =
 
         self._update_liquidity_limit(_addr, new_balance, total_supply)
 
-        ERC20(self.lp_token).transferFrom(msg.sender, self, _value)
+        ERC20(lp_token).transferFrom(msg.sender, self, _value)
 
         log Deposit(_addr, _value)
         log Transfer(empty(address), _addr, _value)
@@ -455,7 +455,7 @@ def withdraw(_value: uint256, _claim_rewards: bool = False):
 
         self._update_liquidity_limit(msg.sender, new_balance, total_supply)
 
-        ERC20(self.lp_token).transfer(msg.sender, _value)
+        ERC20(lp_token).transfer(msg.sender, _value)
 
     log Withdraw(msg.sender, _value)
     log Transfer(msg.sender, empty(address), _value)
@@ -478,7 +478,7 @@ def claim_rewards(_addr: address = msg.sender, _receiver: address = empty(addres
 
 @external
 @nonreentrant('lock')
-def transferFrom(_from: address, _to :address, _value: uint256) -> bool:
+def transferFrom(_from: address, _to: address, _value: uint256) -> bool:
     """
      @notice Transfer tokens from one address to another.
      @dev Transferring claims pending reward tokens for the sender and receiver
@@ -488,7 +488,9 @@ def transferFrom(_from: address, _to :address, _value: uint256) -> bool:
     """
     _allowance: uint256 = self.allowance[_from][msg.sender]
     if _allowance != max_value(uint256):
-        self.allowance[_from][msg.sender] = _allowance - _value
+        _new_allowance: uint256 = _allowance - _value
+        self.allowance[_from][msg.sender] = _new_allowance
+        log Approval(_from, msg.sender, _new_allowance)
 
     self._transfer(_from, _to, _value)
 
@@ -572,7 +574,7 @@ def permit(
     assert ecrecover(digest, _v, _r, _s) == _owner  # dev: invalid signature
 
     self.allowance[_owner][_spender] = _value
-    self.nonces[_owner] = nonce + 1
+    self.nonces[_owner] = unsafe_add(nonce, 1)
 
     log Approval(_owner, _spender, _value)
     return True
@@ -669,7 +671,7 @@ def set_gauge_manager(_gauge_manager: address):
         method, but only for the gauge which they are the manager of.
     @param _gauge_manager The account to set as the new manager of the gauge.
     """
-    assert msg.sender in [self.manager, Factory(self.factory).admin()]  # dev: only manager or factory admin
+    assert msg.sender in [self.manager, Factory(factory).admin()]  # dev: only manager or factory admin
 
     self.manager = _gauge_manager
     log SetGaugeManager(_gauge_manager)
@@ -719,7 +721,7 @@ def add_reward(_reward_token: address, _distributor: address):
     @param _reward_token The token to add as an additional reward
     @param _distributor Address permitted to fund this contract with the reward token
     """
-    assert msg.sender in [self.manager, Factory(self.factory).admin()]  # dev: only manager or factory admin
+    assert msg.sender in [self.manager, Factory(factory).admin()]  # dev: only manager or factory admin
     assert _distributor != empty(address)  # dev: distributor cannot be zero address
 
     reward_count: uint256 = self.reward_count
@@ -740,7 +742,7 @@ def set_reward_distributor(_reward_token: address, _distributor: address):
     """
     current_distributor: address = self.reward_data[_reward_token].distributor
 
-    assert msg.sender in [current_distributor, Factory(self.factory).admin(), self.manager]
+    assert msg.sender in [current_distributor, Factory(factory).admin(), self.manager]
     assert current_distributor != empty(address)
     assert _distributor != empty(address)
 
@@ -754,7 +756,7 @@ def set_killed(_is_killed: bool):
     @dev When killed, the gauge always yields a rate of 0 and so cannot mint CRV
     @param _is_killed Killed status to set
     """
-    assert msg.sender == Factory(self.factory).admin()  # dev: only owner
+    assert msg.sender == Factory(factory).admin()  # dev: only owner
 
     self.is_killed = _is_killed
 

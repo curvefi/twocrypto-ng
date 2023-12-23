@@ -1,10 +1,7 @@
 import boa
 
 
-def test_A_gamma(swap, math_contract, params):
-
-    breakpoint()
-
+def test_A_gamma(swap, params):
     A = swap.A()
     gamma = swap.gamma()
 

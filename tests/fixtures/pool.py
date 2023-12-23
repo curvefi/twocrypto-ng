@@ -18,7 +18,11 @@ def _get_deposit_amounts(amount_per_token_usd, initial_prices, coins):
 
 
 def _crypto_swap_with_deposit(
-    coins, user, tricrypto_swap, initial_prices, dollar_amt_each_coin=10**6
+    coins,
+    user,
+    twocrypto_swap,
+    initial_prices,
+    dollar_amt_each_coin=int(1.5 * 10**6),
 ):
 
     # add 1M of each token to the pool
@@ -34,13 +38,13 @@ def _crypto_swap_with_deposit(
 
         # approve crypto_swap to trade coin for user:
         with boa.env.prank(user):
-            coin.approve(tricrypto_swap, 2**256 - 1)
+            coin.approve(twocrypto_swap, 2**256 - 1)
 
     # Very first deposit
     with boa.env.prank(user):
-        tricrypto_swap.add_liquidity(quantities, 0)
+        twocrypto_swap.add_liquidity(quantities, 0)
 
-    return tricrypto_swap
+    return twocrypto_swap
 
 
 @pytest.fixture(scope="module")
@@ -62,7 +66,7 @@ def params():
 
 @pytest.fixture(scope="module")
 def swap(
-    tricrypto_factory,
+    factory,
     amm_interface,
     coins,
     params,
@@ -70,20 +74,20 @@ def swap(
 ):
 
     with boa.env.prank(deployer):
-        swap = tricrypto_factory.deploy_pool(
-            "Curve.fi USD<>WETH",
-            "USD<>WETH",
-            [coin.address for coin in coins],
-            0,  # <-------- 0th implementation index
-            params["A"],
-            params["gamma"],
-            params["mid_fee"],
-            params["out_fee"],
-            params["fee_gamma"],
-            params["allowed_extra_profit"],
-            params["adjustment_step"],
-            params["ma_time"],  # <--- no admin_fee needed
-            params["initial_prices"][1],
+        swap = factory.deploy_pool(
+            "Curve.fi USD<>WETH",  # _name: String[64]
+            "USD<>WETH",  # _symbol: String[32]
+            [coin.address for coin in coins],  # _coins: address[N_COINS]
+            0,  # implementation_id: uint256
+            params["A"],  # A: uint256
+            params["gamma"],  # gamma: uint256
+            params["mid_fee"],  # mid_fee: uint256
+            params["out_fee"],  # out_fee: uint256
+            params["fee_gamma"],  # fee_gamma: uint256
+            params["allowed_extra_profit"],  # allowed_extra_profit: uint256
+            params["adjustment_step"],  # adjustment_step: uint256
+            params["ma_time"],  # ma_exp_time: uint256
+            params["initial_prices"][1],  # initial_price: uint256
         )
 
     return amm_interface.at(swap)
@@ -91,11 +95,10 @@ def swap(
 
 @pytest.fixture(scope="module")
 def swap_multiprecision(
-    tricrypto_factory,
+    factory,
     amm_interface,
     stgusdc,
     deployer,
-    weth,
 ):
 
     # STG/USDC pool params (on deployment)
@@ -108,42 +111,36 @@ def swap_multiprecision(
         "fee_gamma": 230000000000000,
         "adjustment_step": 146000000000000,
         "ma_time": 866,
-        "initial_prices": 500000000000000000,
+        "initial_prices": 1777655918836068423,
     }
 
-    with boa.env.prank(deployer):
-        swap = tricrypto_factory.deploy_pool(
-            "Curve.fi STG/USDC",
-            "STGUSDC",
-            [coin.address for coin in stgusdc],
-            weth,
-            0,
-            _params["A"],
-            _params["gamma"],
-            _params["mid_fee"],
-            _params["out_fee"],
-            _params["fee_gamma"],
-            _params["allowed_extra_profit"],
-            _params["adjustment_step"],
-            _params["ma_time"],
-            _params["initial_prices"],
-        )
+    swap = factory.deploy_pool(
+        "Curve.fi STG/USDC",
+        "STGUSDC",
+        [coin.address for coin in stgusdc],  # _coins: address[N_COINS]
+        0,  # implementation_id: uint256
+        _params["A"],  # A: uint256
+        _params["gamma"],  # gamma: uint256
+        _params["mid_fee"],  # mid_fee: uint256
+        _params["out_fee"],  # out_fee: uint256
+        _params["fee_gamma"],  # fee_gamma: uint256
+        _params["allowed_extra_profit"],  # allowed_extra_profit: uint256
+        _params["adjustment_step"],  # adjustment_step: uint256
+        _params["ma_time"],  # ma_exp_time: uint256
+        _params["initial_prices"],  # initial_price: uint256
+        sender=deployer,
+    )
 
     return amm_interface.at(swap)
 
 
 @pytest.fixture(scope="module")
 def swap_with_deposit(swap, coins, user):
-    yield _crypto_swap_with_deposit(coins, user, swap, INITIAL_PRICES)
-
-
-@pytest.fixture(scope="module")
-def hyper_swap_with_deposit(hyper_swap, coins, user):
-    yield _crypto_swap_with_deposit(coins, user, hyper_swap, INITIAL_PRICES)
+    return _crypto_swap_with_deposit(coins, user, swap, INITIAL_PRICES)
 
 
 @pytest.fixture(scope="module")
 def yuge_swap(swap, coins, user):
-    yield _crypto_swap_with_deposit(
+    return _crypto_swap_with_deposit(
         coins, user, swap, INITIAL_PRICES, dollar_amt_each_coin=10**10
     )

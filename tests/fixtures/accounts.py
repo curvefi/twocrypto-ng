@@ -16,8 +16,13 @@ def owner():
 
 
 @pytest.fixture(scope="module")
-def factory_admin(tricrypto_factory):
-    return tricrypto_factory.admin()
+def hacker():
+    return boa.env.generate_address()
+
+
+@pytest.fixture(scope="module")
+def factory_admin(factory):
+    return factory.admin()
 
 
 @pytest.fixture(scope="module")
@@ -27,6 +32,13 @@ def fee_receiver():
 
 @pytest.fixture(scope="module")
 def user():
+    acc = boa.env.generate_address()
+    boa.env.set_balance(acc, 10**25)
+    return acc
+
+
+@pytest.fixture(scope="module")
+def user_b():
     acc = boa.env.generate_address()
     boa.env.set_balance(acc, 10**25)
     return acc
