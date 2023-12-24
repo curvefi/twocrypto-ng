@@ -133,28 +133,24 @@ CURVE_DAO_OWNERSHIP = {
 }
 
 
-def deploy_via_create2_deployer(
-    contract_source_file, abi_encoded_ctor, expected_deployment_address
+def get_create2_deployment_address(
+    compiled_bytecode,
+    abi_encoded_ctor,
+    salt,
+    blueprint=False,
+    blueprint_preamble=b"\xFE\x71\x00",
 ):
+    deployment_bytecode = compiled_bytecode + abi_encoded_ctor
 
-    source_compiler_data = boa.load_partial(contract_source_file).compiler_data
-    deployment_bytecode = source_compiler_data.bytecode + abi_encoded_ctor
+    if blueprint:
+        deployment_bytecode = blueprint_preamble + deployment_bytecode
+
     code_hash = keccak(deployment_bytecode)
-    salt = keccak(42069)
+    return (
+        CREATExDEPLOYER.computeAddress(salt, code_hash),
+        deployment_bytecode,
+    )
 
-    precomputed_address = CREATExDEPLOYER.computeAddress(salt, code_hash)
-    assert precomputed_address == expected_deployment_address
 
-    # deploy at precomputed address:
+def deploy_via_create2_factory(deployment_bytecode, salt):
     CREATExDEPLOYER.deploy(0, salt, deployment_bytecode)
-    deployed_contract = boa.load_partial(contract_source_file).at(
-        precomputed_address
-    )
-
-    # add bytecode check (no ctor):
-    # Note that this check the runtime bytecode only and not the init bytecode
-    # Note the right hand side is deploying a contract at some random address
-    assert (
-        deployed_contract.bytecode == boa.load(contract_source_file).bytecode
-    )
-    return deployed_contract
