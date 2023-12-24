@@ -1,5 +1,6 @@
 # pragma version 0.3.10
-# pragma optimize codesize
+# pragma optimize gas
+# pragma evm-version paris
 """
 @title CurveTwocryptoFactory
 @author Curve.Fi
