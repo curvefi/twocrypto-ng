@@ -5,6 +5,7 @@ import sys
 
 import boa
 import deployment_utils as deploy_utils
+import yaml
 from boa.network import NetworkEnv
 from eth_account import Account
 from eth_utils import keccak
@@ -12,157 +13,73 @@ from rich.console import Console as RichConsole
 
 logger = RichConsole(file=sys.stdout)
 
-deployments = {
-    # Ethereum
-    "ethereum:mainnet": {
-        "math": "",
-        "views": "",
-        "amm": "",
-        "factory": "",
-        "gauge": "0x38D9BdA812da2C68dFC6aDE85A7F7a54E77F8325",
-    },
-    "ethereum:sepolia": {
-        "math": "",
-        "views": "",
-        "amm": "",
-        "factory": "",
-    },
-    # Layer 2
-    "arbitrum:mainnet": {
-        "math": "",
-        "views": "",
-        "amm": "",
-        "factory": "",
-    },
-    "optimism:mainnet": {
-        "math": "",
-        "views": "",
-        "amm": "",
-        "factory": "",
-    },
-    "base:mainnet": {
-        "math": "",
-        "views": "",
-        "amm": "",
-        "factory": "",
-    },
-    "linea:mainnet": {
-        "math": "",
-        "views": "",
-        "amm": "",
-        "factory": "",
-    },
-    "scroll:mainnet": {
-        "math": "",
-        "views": "",
-        "amm": "",
-        "factory": "",
-    },
-    "pzkevm:mainnet": {
-        "math": "",
-        "views": "",
-        "amm": "",
-        "factory": "",
-    },
-    # Layer 1
-    "gnosis:mainnet": {
-        "math": "",
-        "views": "",
-        "amm": "",
-        "factory": "",
-    },
-    "polygon:mainnet": {
-        "math": "",
-        "views": "",
-        "amm": "",
-        "factory": "",
-    },
-    "avax:mainnet": {
-        "math": "",
-        "views": "",
-        "amm": "",
-        "factory": "",
-    },
-    "ftm:mainnet": {
-        "math": "",
-        "views": "",
-        "amm": "",
-        "factory": "",
-    },
-    "bsc:mainnet": {
-        "math": "",
-        "views": "",
-        "amm": "",
-        "factory": "",
-    },
-    "celo:mainnet": {
-        "math": "",
-        "views": "",
-        "amm": "",
-        "factory": "",
-    },
-    "kava:mainnet": {
-        "math": "",
-        "views": "",
-        "amm": "",
-        "factory": "",
-    },
-    "aurora:mainnet": {
-        "math": "",
-        "views": "",
-        "amm": "",
-        "factory": "",
-    },
-    "mantle:mainnet": {
-        "math": "",
-        "views": "",
-        "amm": "",
-        "factory": "",
-        "factory_ctor": "",  # noqa:E501
-    },
-}
+
+def check_contract_deployed(network, designation):
+
+    with open("./deployments.yaml", "r") as file:
+        deployments = yaml.safe_load(file)[network]
+
+    if designation in deployments.keys():
+        return deployments[designation]
+
+
+def store_deployed_contract(network, designation, deployment_address):
+
+    with open("./deployments.yaml", "r") as file:
+        deployments = yaml.safe_load(file)
+
+    deployments[network][designation] = deployment_address
+
+    with open("./deployments.yaml", "w") as file:
+        yaml.dump(deployments, file)
 
 
 def check_and_deploy(
     contract_obj,
     contract_designation,
     calculated_address,
+    create2deployer,
     network,
     abi_encoded_args=b"",
     blueprint: bool = False,
+    upkeep_deploy_log: bool = False,
 ):
 
-    deployed_contract = deployments[network][contract_designation]
+    deployed_contract_address = check_contract_deployed(
+        network, contract_designation
+    )
+    if deployed_contract_address:
+        logger.log(f"Contract exists at {calculated_address} ...")
+        return contract_obj.at(calculated_address)
 
-    if not deployed_contract:
+    logger.log(f"Deploying {contract_designation} contract ...")
+    salt = keccak(42069)
+    compiled_bytecode = contract_obj.compiler_data.bytecode
+    (
+        precomputed_address,
+        deployment_bytecode,
+    ) = deploy_utils.get_create2_deployment_address(
+        compiled_bytecode,
+        abi_encoded_args,
+        salt,
+        create2deployer=create2deployer,
+        blueprint=blueprint,
+        blueprint_preamble=b"\xFE\x71\x00",
+    )
+    assert precomputed_address == calculated_address
 
-        logger.log(f"Deploying {contract_designation} contract ...")
-        salt = keccak(42069)
-        compiled_bytecode = contract_obj.compiler_data.bytecode
-        (
-            precomputed_address,
-            deployment_bytecode,
-        ) = deploy_utils.get_create2_deployment_address(
-            compiled_bytecode,
-            abi_encoded_args,
-            salt,
-            blueprint=blueprint,
-            blueprint_preamble=b"\xFE\x71\x00",
+    deploy_utils.deploy_via_create2_factory(
+        deployment_bytecode,
+        salt,
+        create2deployer=create2deployer,
+    )
+    logger.log(f"Deployed! At: {precomputed_address}.")
+    if upkeep_deploy_log:
+        store_deployed_contract(
+            network, contract_designation, calculated_address
         )
-        assert precomputed_address == calculated_address
 
-        deploy_utils.deploy_via_create2_factory(deployment_bytecode, salt)
-        contract = contract_obj.at(precomputed_address)
-        logger.log(f"Deployed! At: {precomputed_address}.")
-
-    else:
-
-        logger.log(
-            f"Deployed {contract_designation} contract exists. Using {deployed_contract} ..."
-        )
-        contract = contract_obj.at(deployed_contract)
-
-    return contract
+    return contract_obj.at(calculated_address)
 
 
 def deploy_infra(network, url, account, fork=False):
@@ -177,6 +94,10 @@ def deploy_infra(network, url, account, fork=False):
         logger.log("Prodmode ...")
         boa.set_env(NetworkEnv(url))
         boa.env.add_account(Account.from_key(os.environ[account]))
+
+    CREATE2DEPLOYER = boa.load_abi("abi/create2deployer.json").at(
+        "0x13b0D85CcB8bf860b6b79AF3029fCA081AE9beF2"
+    )
 
     for _network, data in deploy_utils.curve_dao_network_settings.items():
 
@@ -205,13 +126,17 @@ def deploy_infra(network, url, account, fork=False):
         contract_obj=math_contract_obj,
         contract_designation="math",
         network=network,
+        create2deployer=CREATE2DEPLOYER,
         calculated_address="0x2005995a71243be9FB995DaB4742327dc76564Df",
+        upkeep_deploy_log=not fork,
     )
     views_contract = check_and_deploy(
         contract_obj=views_contract_obj,
         contract_designation="views",
         network=network,
+        create2deployer=CREATE2DEPLOYER,
         calculated_address="0x07CdEBF81977E111B08C126DEFA07818d0045b80",
+        upkeep_deploy_log=not fork,
     )
 
     # deploy blueprint:
@@ -219,8 +144,10 @@ def deploy_infra(network, url, account, fork=False):
         contract_obj=amm_contract_obj,
         contract_designation="amm",
         network=network,
+        create2deployer=CREATE2DEPLOYER,
         calculated_address="0x04Fd6beC7D45EFA99a27D29FB94b55c56dD07223",
         blueprint=True,
+        upkeep_deploy_log=not fork,
     )
 
     # Factory:
@@ -228,13 +155,16 @@ def deploy_infra(network, url, account, fork=False):
         contract_obj=factory_contract_obj,
         contract_designation="factory",
         network=network,
+        create2deployer=CREATE2DEPLOYER,
         calculated_address="0x98EE851a00abeE0d95D08cF4CA2BdCE32aeaAF7F",
+        upkeep_deploy_log=not fork,
     )
 
     # initialise ownership addresses: this is so we can do create2
     # addresses across multiple chains (where args are different)
-    logger.log("Instantiating ownership ...")
-    factory.initialise_ownership(fee_receiver, deploy_utils.FIDDYDEPLOYER)
+    if factory.admin() == "0x0000000000000000000000000000000000000000":
+        logger.log("Instantiating ownership ...")
+        factory.initialise_ownership(fee_receiver, deploy_utils.FIDDYDEPLOYER)
 
     # Set up implementation addresses in the factory.
     if not factory.pool_implementations(0) == amm_blueprint.address:
@@ -249,23 +179,21 @@ def deploy_infra(network, url, account, fork=False):
         logger.log("Setting Math implementation ...")
         factory.set_math_implementation(math_contract)
 
-    if (
-        network == "ethereum:mainnet"
-        and not factory.gauge_implementation() == deployments[network]["gauge"]
-    ):
-        gauge_impl = deployments[network]["gauge"]
-        logger.log(f"Setting gauge implementation to {gauge_impl} ...")
-        factory.set_gauge_implementation(gauge_impl)
+    if network == "ethereum:mainnet":
+        gauge_impl = check_contract_deployed(network, "gauge")
+        if factory.gauge_implementation() != gauge_impl:
+            logger.log(f"Setting gauge implementation to {gauge_impl} ...")
+            factory.set_gauge_implementation(gauge_impl)
 
     logger.log("Infra deployed!")
 
 
 def main():
 
-    forkmode = True
+    forkmode = False
     deploy_infra(
-        "ethereum:mainnet",
-        os.environ["RPC_ETHEREUM"],
+        "gnosis:mainnet",
+        os.environ["RPC_GNOSIS"],
         "FIDDYDEPLOYER",
         fork=forkmode,
     )
