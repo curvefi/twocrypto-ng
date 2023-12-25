@@ -141,13 +141,20 @@ def get_create2_deployment_address(
     blueprint_preamble=b"\xFE\x71\x00",
 ):
     deployment_bytecode = compiled_bytecode + abi_encoded_ctor
-
     if blueprint:
-        deployment_bytecode = blueprint_preamble + deployment_bytecode
+        # Add blueprint preamble to disable calling the contract:
+        blueprint_bytecode = blueprint_preamble + deployment_bytecode
+        # Add code for blueprint deployment:
+        len_blueprint_bytecode = len(blueprint_bytecode).to_bytes(2, "big")
+        deployment_bytecode = (
+            b"\x61"
+            + len_blueprint_bytecode
+            + b"\x3d\x81\x60\x0a\x3d\x39\xf3"
+            + blueprint_bytecode
+        )
 
-    code_hash = keccak(deployment_bytecode)
     return (
-        CREATExDEPLOYER.computeAddress(salt, code_hash),
+        CREATExDEPLOYER.computeAddress(salt, keccak(deployment_bytecode)),
         deployment_bytecode,
     )
 
