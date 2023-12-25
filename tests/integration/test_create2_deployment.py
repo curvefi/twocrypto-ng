@@ -15,8 +15,8 @@ def forked_chain():
 
 
 @pytest.fixture(scope="module")
-def createxdeployer():
-    return boa.load_abi("abi/xdeployer.json").at(
+def create2deployer():
+    return boa.load_abi("abi/create2deployer.json").at(
         "0x13b0D85CcB8bf860b6b79AF3029fCA081AE9beF2"
     )
 
@@ -83,44 +83,44 @@ def deploy_contract(
 
 
 @pytest.fixture(scope="module")
-def math_contract(forked_chain, createxdeployer):
+def math_contract(forked_chain, create2deployer):
     return deploy_contract(
         boa.load_partial("contracts/main/CurveCryptoMathOptimized2.vy"),
         abi_encoded_args=b"",
-        create2deployer=createxdeployer,
+        create2deployer=create2deployer,
         calculated_address="0x2005995a71243be9FB995DaB4742327dc76564Df",
         blueprint=False,
     )
 
 
 @pytest.fixture(scope="module")
-def gauge_implementation(forked_chain, createxdeployer):
+def gauge_implementation(forked_chain, create2deployer):
     return deploy_contract(
         boa.load_partial("contracts/main/LiquidityGauge.vy"),
         abi_encoded_args=b"",
-        create2deployer=createxdeployer,
+        create2deployer=create2deployer,
         calculated_address="0xF0B468653de6475c2d17c0b7b5405417CE6a6d67",
         blueprint=True,
     )
 
 
 @pytest.fixture(scope="module")
-def amm_implementation(forked_chain, createxdeployer):
+def amm_implementation(forked_chain, create2deployer):
     return deploy_contract(
         boa.load_partial("contracts/main/CurveTwocryptoOptimized.vy"),
         abi_encoded_args=b"",
-        create2deployer=createxdeployer,
+        create2deployer=create2deployer,
         calculated_address="0x04Fd6beC7D45EFA99a27D29FB94b55c56dD07223",
         blueprint=True,
     )
 
 
 @pytest.fixture(scope="module")
-def views_contract(forked_chain, createxdeployer):
+def views_contract(forked_chain, create2deployer):
     return deploy_contract(
         boa.load_partial("contracts/main/CurveCryptoViews2Optimized.vy"),
         abi_encoded_args=b"",
-        create2deployer=createxdeployer,
+        create2deployer=create2deployer,
         calculated_address="0x07CdEBF81977E111B08C126DEFA07818d0045b80",
         blueprint=False,
     )
@@ -136,13 +136,13 @@ def factory(
     views_contract,
     math_contract,
     forked_chain,
-    createxdeployer,
+    create2deployer,
 ):
 
     _factory = deploy_contract(
         boa.load_partial("contracts/main/CurveTwocryptoFactory.vy"),
         abi_encoded_args=b"",
-        create2deployer=createxdeployer,
+        create2deployer=create2deployer,
         calculated_address="0x98EE851a00abeE0d95D08cF4CA2BdCE32aeaAF7F",
         deployer=deployer,
         blueprint=False,
