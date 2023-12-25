@@ -1,9 +1,10 @@
-name: unit-tests-boa
+name: integration-tests-boa
 
 on: [push]
 
 env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  RPC_ETHEREUM: ${{ secrets.RPC_ETHEREUM }}
 
 jobs:
   boa-tests:
@@ -27,4 +28,4 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run Tests
-        run: python -m pytest tests/unitary -n auto
+        run: python -m pytest tests/integration/test_create2_deployment.py

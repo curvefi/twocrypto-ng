@@ -211,10 +211,13 @@ def deploy_infra(network, url, account, fork=False):
     )
 
     # Factory:
-    args = [fee_receiver, deploy_utils.FIDDYDEPLOYER]
     factory = check_and_deploy(
-        factory_contract_obj, "factory", network, False, args
+        factory_contract_obj, "factory", network, False, b""
     )
+
+    # initialise ownership addresses: this is so we can do create2
+    # addresses across multiple chains (where args are different)
+    factory.initialise_ownership(fee_receiver, deploy_utils.FIDDYDEPLOYER)
 
     # Set up implementation addresses in the factory:
     # This also checks if create2 deployment went well.
