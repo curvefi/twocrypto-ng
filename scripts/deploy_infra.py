@@ -6,7 +6,6 @@ import sys
 import boa
 import deployment_utils as deploy_utils
 from boa.network import NetworkEnv
-from eth_abi import encode
 from eth_account import Account
 from eth_utils import keccak
 from rich.console import Console as RichConsole
@@ -127,8 +126,9 @@ deployments = {
 def check_and_deploy(
     contract_obj,
     contract_designation,
+    calculated_address,
     network,
-    abi_encoded_args,
+    abi_encoded_args=b"",
     blueprint: bool = False,
 ):
 
@@ -149,11 +149,10 @@ def check_and_deploy(
             blueprint=blueprint,
             blueprint_preamble=b"\xFE\x71\x00",
         )
+        assert precomputed_address == calculated_address
 
-        contract = deploy_utils.deploy_via_create2_factory(
-            deployment_bytecode, salt
-        )
-
+        deploy_utils.deploy_via_create2_factory(deployment_bytecode, salt)
+        contract = contract_obj.at(precomputed_address)
         logger.log(f"Deployed! At: {precomputed_address}.")
 
     else:
@@ -202,26 +201,42 @@ def deploy_infra(network, url, account, fork=False):
     )
 
     # deploy non-blueprint contracts:
-    math_contract = check_and_deploy(math_contract_obj, "math", network)
-    views_contract = check_and_deploy(views_contract_obj, "views", network)
+    math_contract = check_and_deploy(
+        contract_obj=math_contract_obj,
+        contract_designation="math",
+        network=network,
+        calculated_address="0x2005995a71243be9FB995DaB4742327dc76564Df",
+    )
+    views_contract = check_and_deploy(
+        contract_obj=views_contract_obj,
+        contract_designation="views",
+        network=network,
+        calculated_address="0x07CdEBF81977E111B08C126DEFA07818d0045b80",
+    )
 
     # deploy blueprint:
-    plain_blueprint = check_and_deploy(
-        amm_contract_obj, "amm", network, blueprint=True
+    amm_blueprint = check_and_deploy(
+        contract_obj=amm_contract_obj,
+        contract_designation="amm",
+        network=network,
+        calculated_address="0x04Fd6beC7D45EFA99a27D29FB94b55c56dD07223",
+        blueprint=True,
     )
 
     # Factory:
     factory = check_and_deploy(
-        factory_contract_obj, "factory", network, False, b""
+        contract_obj=factory_contract_obj,
+        contract_designation="factory",
+        network=network,
+        calculated_address="0x98EE851a00abeE0d95D08cF4CA2BdCE32aeaAF7F",
     )
 
     # initialise ownership addresses: this is so we can do create2
     # addresses across multiple chains (where args are different)
     factory.initialise_ownership(fee_receiver, deploy_utils.FIDDYDEPLOYER)
 
-    # Set up implementation addresses in the factory:
-    # This also checks if create2 deployment went well.
-    factory.set_pool_implementation(plain_blueprint, 0)
+    # Set up implementation addresses in the factory.
+    factory.set_pool_implementation(amm_blueprint, 0)
     factory.set_views_implementation(views_contract)
     factory.set_math_implementation(math_contract)
 

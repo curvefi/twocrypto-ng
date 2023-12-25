@@ -143,7 +143,7 @@ def factory(
         boa.load_partial("contracts/main/CurveTwocryptoFactory.vy"),
         abi_encoded_args=b"",
         create2deployer=createxdeployer,
-        calculated_address="0x187CDD894d3ee916A10c50831e418F8eF54f8560",
+        calculated_address="0x98EE851a00abeE0d95D08cF4CA2BdCE32aeaAF7F",
         deployer=deployer,
         blueprint=False,
     )
