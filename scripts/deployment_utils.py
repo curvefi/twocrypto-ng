@@ -3,28 +3,17 @@
 import sys
 from dataclasses import dataclass
 
-import boa
 from eth_typing import Address
 from eth_utils import keccak
 from rich.console import Console as RichConsole
 
 logger = RichConsole(file=sys.stdout)
 
-
-# ------ IMMUTABLES ------
-
-
 GAUGE_CONTROLLER = "0x2F50D538606Fa9EDD2B11E2446BEb18C9D5846bB"
 ADDRESS_PROVIDER = "0x0000000022d53366457f9d5e68ec105046fc4383"
 FIDDYRESEARCH = "0xE6DA683076b7eD6ce7eC972f21Eb8F91e9137a17"
 FIDDYDEPLOYER = "0x2d12D0907A388811e3AA855A550F959501d303EE"
 BABE = "0xbabe61887f1de2713c6f97e567623453d3C79f67"
-CREATExDEPLOYER = boa.load_abi("abi/xdeployer.json").at(
-    "0x13b0D85CcB8bf860b6b79AF3029fCA081AE9beF2"
-)
-
-
-# -------------- CURVE DATA --------------
 
 
 @dataclass
@@ -126,7 +115,6 @@ curve_dao_network_settings = {
     ),
 }
 
-
 CURVE_DAO_OWNERSHIP = {
     "agent": "0x40907540d8a6c65c637785e8f8b742ae6b0b9968",
     "voting": "0xe478de485ad2fe566d49342cbd03e49ed7db3356",
@@ -139,6 +127,7 @@ def get_create2_deployment_address(
     compiled_bytecode,
     abi_encoded_ctor,
     salt,
+    create2deployer,
     blueprint=False,
     blueprint_preamble=b"\xFE\x71\x00",
 ):
@@ -156,10 +145,10 @@ def get_create2_deployment_address(
         )
 
     return (
-        CREATExDEPLOYER.computeAddress(salt, keccak(deployment_bytecode)),
+        create2deployer.computeAddress(salt, keccak(deployment_bytecode)),
         deployment_bytecode,
     )
 
 
-def deploy_via_create2_factory(deployment_bytecode, salt):
-    CREATExDEPLOYER.deploy(0, salt, deployment_bytecode)
+def deploy_via_create2_factory(deployment_bytecode, salt, create2deployer):
+    create2deployer.deploy(0, salt, deployment_bytecode)
