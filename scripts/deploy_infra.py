@@ -233,24 +233,39 @@ def deploy_infra(network, url, account, fork=False):
 
     # initialise ownership addresses: this is so we can do create2
     # addresses across multiple chains (where args are different)
+    logger.log("Instantiating ownership ...")
     factory.initialise_ownership(fee_receiver, deploy_utils.FIDDYDEPLOYER)
 
     # Set up implementation addresses in the factory.
-    factory.set_pool_implementation(amm_blueprint, 0)
-    factory.set_views_implementation(views_contract)
-    factory.set_math_implementation(math_contract)
+    if not factory.pool_implementations(0) == amm_blueprint.address:
+        logger.log("Setting AMM implementation ...")
+        factory.set_pool_implementation(amm_blueprint, 0)
 
-    if network == "ethereum:mainnet":
-        factory.set_gauge_implementation(deployments[network]["gauge"])
+    if not factory.views_implementation() == views_contract.address:
+        logger.log("Setting Views implementation ...")
+        factory.set_views_implementation(views_contract)
+
+    if not factory.math_implementation() == math_contract.address:
+        logger.log("Setting Math implementation ...")
+        factory.set_math_implementation(math_contract)
+
+    if (
+        network == "ethereum:mainnet"
+        and not factory.gauge_implementation() == deployments[network]["gauge"]
+    ):
+        gauge_impl = deployments[network]["gauge"]
+        logger.log(f"Setting gauge implementation to {gauge_impl} ...")
+        factory.set_gauge_implementation(gauge_impl)
+
+    logger.log("Infra deployed!")
 
 
 def main():
 
     forkmode = True
-
     deploy_infra(
-        "gnosis:mainnet",
-        os.environ["RPC_GNOSIS"],
+        "ethereum:mainnet",
+        os.environ["RPC_ETHEREUM"],
         "FIDDYDEPLOYER",
         fork=forkmode,
     )
