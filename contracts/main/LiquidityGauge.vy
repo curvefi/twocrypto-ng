@@ -1,5 +1,6 @@
 # pragma version 0.3.10
 # pragma optimize gas
+# pragma evm-version paris
 """
 @title LiquidityGaugeV6
 @author Curve.Fi
