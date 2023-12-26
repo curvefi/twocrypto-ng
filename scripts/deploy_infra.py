@@ -7,6 +7,7 @@ import boa
 import deployment_utils as deploy_utils
 import yaml
 from boa.network import NetworkEnv
+from eth.codecs.abi.exceptions import DecodeError
 from eth_account import Account
 from eth_utils import keccak
 from rich.console import Console as RichConsole
@@ -17,16 +18,22 @@ logger = RichConsole(file=sys.stdout)
 def check_contract_deployed(network, designation):
 
     with open("./deployments.yaml", "r") as file:
-        deployments = yaml.safe_load(file)[network]
+        deployments = yaml.safe_load(file)
 
-    if designation in deployments.keys():
-        return deployments[designation]
+    if (
+        network in deployments.keys()
+        and designation in deployments[network].keys()
+    ):
+        return deployments[network][designation]
 
 
 def store_deployed_contract(network, designation, deployment_address):
 
     with open("./deployments.yaml", "r") as file:
         deployments = yaml.safe_load(file)
+
+    if not network in deployments.keys():
+        deployments[network] = {}
 
     deployments[network][designation] = deployment_address
 
@@ -49,37 +56,54 @@ def check_and_deploy(
         network, contract_designation
     )
     if deployed_contract_address:
-        logger.log(f"Contract exists at {calculated_address} ...")
-        return contract_obj.at(calculated_address)
+        logger.log(f"Contract exists at {deployed_contract_address} ...")
+        return contract_obj.at(deployed_contract_address)
 
     logger.log(f"Deploying {contract_designation} contract ...")
     salt = keccak(42069)
     compiled_bytecode = contract_obj.compiler_data.bytecode
-    (
-        precomputed_address,
-        deployment_bytecode,
-    ) = deploy_utils.get_create2_deployment_address(
-        compiled_bytecode,
-        abi_encoded_args,
-        salt,
-        create2deployer=create2deployer,
-        blueprint=blueprint,
-        blueprint_preamble=b"\xFE\x71\x00",
-    )
-    assert precomputed_address == calculated_address
 
-    deploy_utils.deploy_via_create2_factory(
-        deployment_bytecode,
-        salt,
-        create2deployer=create2deployer,
-    )
-    logger.log(f"Deployed! At: {precomputed_address}.")
+    try:
+        (
+            precomputed_address,
+            deployment_bytecode,
+        ) = deploy_utils.get_create2_deployment_address(
+            compiled_bytecode,
+            abi_encoded_args,
+            salt,
+            create2deployer=create2deployer,
+            blueprint=blueprint,
+            blueprint_preamble=b"\xFE\x71\x00",
+        )
+        assert precomputed_address == calculated_address
+
+        deploy_utils.deploy_via_create2_factory(
+            deployment_bytecode,
+            salt,
+            create2deployer=create2deployer,
+        )
+        deployed_address = precomputed_address
+
+    except DecodeError:
+
+        logger.log(
+            f"No create2deployer found for {network}. Deploying with CREATE."
+        )
+        if blueprint:
+            c = contract_obj.deploy_as_blueprint()
+        else:
+            c = contract_obj.deploy()
+
+        deployed_address = c.address
+
+    logger.log(f"Deployed! At: {deployed_address}.")
+
     if upkeep_deploy_log:
         store_deployed_contract(
-            network, contract_designation, calculated_address
+            network, contract_designation, str(deployed_address)
         )
 
-    return contract_obj.at(calculated_address)
+    return contract_obj.at(deployed_address)
 
 
 def deploy_infra(network, url, account, fork=False):
@@ -192,8 +216,8 @@ def main():
 
     forkmode = False
     deploy_infra(
-        "gnosis:mainnet",
-        os.environ["RPC_GNOSIS"],
+        "ethereum:sepolia",
+        os.environ["RPC_ETHEREUM_SEPOLIA"],
         "FIDDYDEPLOYER",
         fork=forkmode,
     )
