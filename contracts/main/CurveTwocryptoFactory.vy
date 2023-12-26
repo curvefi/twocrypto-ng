@@ -1,5 +1,6 @@
 # pragma version 0.3.10
-# pragma optimize codesize
+# pragma optimize gas
+# pragma evm-version paris
 """
 @title CurveTwocryptoFactory
 @author Curve.Fi
@@ -72,6 +73,7 @@ A_MULTIPLIER: constant(uint256) = 10000
 # Limits
 MAX_FEE: constant(uint256) = 10 * 10 ** 9
 
+deployer: address
 admin: public(address)
 future_admin: public(address)
 
@@ -92,7 +94,15 @@ pool_list: public(DynArray[address, 4294967296])   # master list of pools
 
 
 @external
-def __init__(_fee_receiver: address, _admin: address):
+def __init__():
+    self.deployer = tx.origin
+
+
+@external
+def initialise_ownership(_fee_receiver: address, _admin: address):
+
+    assert msg.sender == self.deployer
+    assert self.admin == empty(address)
 
     self.fee_receiver = _fee_receiver
     self.admin = _admin
@@ -204,7 +214,7 @@ def deploy_pool(
         packed_fee_params,  # uint256
         packed_rebalancing_params,  # uint256
         initial_price,  # uint256
-        code_offset=3
+        code_offset=3,
     )
 
     # populate pool data

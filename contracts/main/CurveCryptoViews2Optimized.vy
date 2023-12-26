@@ -1,4 +1,6 @@
 # pragma version 0.3.10
+# pragma optimize gas
+# pragma evm-version paris
 """
 @title CurveCryptoViews2Optimized
 @author Curve.Fi

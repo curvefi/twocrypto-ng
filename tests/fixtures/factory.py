@@ -47,11 +47,8 @@ def factory(
     views_contract,
 ):
     with boa.env.prank(deployer):
-        factory = boa.load(
-            "contracts/main/CurveTwocryptoFactory.vy",
-            fee_receiver,
-            owner,
-        )
+        factory = boa.load("contracts/main/CurveTwocryptoFactory.vy")
+        factory.initialise_ownership(fee_receiver, owner)
 
     with boa.env.prank(owner):
         factory.set_pool_implementation(amm_implementation, 0)

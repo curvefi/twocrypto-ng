@@ -145,7 +145,6 @@ reports/
 /data
 todo.txt
 node_modules
-*.json
 /audits
 
 # temp
