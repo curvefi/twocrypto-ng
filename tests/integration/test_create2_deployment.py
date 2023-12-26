@@ -61,23 +61,30 @@ def deploy_contract(
     blueprint: bool = False,
 ):
 
-    salt = keccak(42069)
-    compiled_bytecode = contract_obj.compiler_data.bytecode
-    (
-        precomputed_address,
-        deployment_bytecode,
-    ) = get_create2_deployment_address(
-        create2deployer,
-        compiled_bytecode,
-        abi_encoded_args,
-        salt,
-        blueprint=blueprint,
-        blueprint_preamble=b"\xFE\x71\x00",
-    )
-    assert precomputed_address == calculated_address
+    try:
+        salt = keccak(42069)
+        compiled_bytecode = contract_obj.compiler_data.bytecode
+        (
+            precomputed_address,
+            deployment_bytecode,
+        ) = get_create2_deployment_address(
+            create2deployer,
+            compiled_bytecode,
+            abi_encoded_args,
+            salt,
+            blueprint=blueprint,
+            blueprint_preamble=b"\xFE\x71\x00",
+        )
+        assert precomputed_address == calculated_address
 
-    with boa.env.prank(deployer):
-        deploy_via_create2_factory(create2deployer, deployment_bytecode, salt)
+        with boa.env.prank(deployer):
+            deploy_via_create2_factory(
+                create2deployer, deployment_bytecode, salt
+            )
+    except Exception:
+        # we revert here if contract is already deployed!
+        # safe to catch exception since we perform other tests later on
+        return contract_obj.at(precomputed_address)
 
     return contract_obj.at(precomputed_address)
 
@@ -148,14 +155,15 @@ def factory(
         blueprint=False,
     )
 
-    with boa.env.prank(deployer):
-        _factory.initialise_ownership(fee_receiver, owner)
+    if _factory.admin() == "0x0000000000000000000000000000000000000000":
+        with boa.env.prank(deployer):
+            _factory.initialise_ownership(fee_receiver, owner)
 
-    with boa.env.prank(owner):
-        _factory.set_pool_implementation(amm_implementation.address, 0)
-        _factory.set_gauge_implementation(gauge_implementation.address)
-        _factory.set_views_implementation(views_contract.address)
-        _factory.set_math_implementation(math_contract.address)
+        with boa.env.prank(owner):
+            _factory.set_pool_implementation(amm_implementation.address, 0)
+            _factory.set_gauge_implementation(gauge_implementation.address)
+            _factory.set_views_implementation(views_contract.address)
+            _factory.set_math_implementation(math_contract.address)
 
     return _factory
 
