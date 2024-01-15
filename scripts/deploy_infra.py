@@ -216,9 +216,9 @@ def main():
 
     forkmode = False
     deploy_infra(
-        "ethereum:sepolia",
-        os.environ["RPC_ETHEREUM_SEPOLIA"],
-        "FIDDYDEPLOYER",
+        ":mainnet",
+        os.environ["RPC_"],
+        "",
         fork=forkmode,
     )
 
