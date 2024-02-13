@@ -60,10 +60,9 @@ def check_and_deploy(
         return contract_obj.at(deployed_contract_address)
 
     logger.log(f"Deploying {contract_designation} contract ...")
-    salt = keccak(42069)
-    compiled_bytecode = contract_obj.compiler_data.bytecode
-
     try:
+        salt = keccak(42069)
+        compiled_bytecode = contract_obj.compiler_data.bytecode
         (
             precomputed_address,
             deployment_bytecode,
@@ -216,9 +215,9 @@ def main():
 
     forkmode = False
     deploy_infra(
-        ":mainnet",
-        os.environ["RPC_"],
-        "",
+        "fraxtal:mainnet",
+        os.environ["RPC_FRAXTAL"],
+        "FIDDYDEPLOYER",
         fork=forkmode,
     )
 
