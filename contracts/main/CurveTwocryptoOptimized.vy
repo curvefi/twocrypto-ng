@@ -1254,7 +1254,7 @@ def get_xcp(D: uint256, price_scale: uint256) -> uint256:
         unsafe_div(D, N_COINS) * # <------------- xp[0]
         D * PRECISION / (price_scale * N_COINS) # xp[1]
     )
-    
+
 
 
 @view
