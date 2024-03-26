@@ -57,7 +57,7 @@ def newton_y(ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: u
     # S_i = x_j
 
     # frac = x_j * 1e18 / D => frac = K0_i / N_COINS
-    assert (K0_i > 10**16*N_COINS - 1) and (K0_i < 10**20*N_COINS + 1)  # dev: unsafe values x[i]
+    assert (K0_i > 10**16 - 1) and (K0_i < 10**20 + 1)  # dev: unsafe values x[i]
 
     # x_sorted: uint256[N_COINS] = x
     # x_sorted[i] = 0
@@ -111,7 +111,7 @@ def newton_y(ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: u
             diff = y_prev - y
         if diff < max(convergence_limit, y / 10**14):
             frac: uint256 = y * 10**18 / D
-            assert (frac > 10**16 - 1) and (frac < 10**20 + 1)  # dev: unsafe value for y
+            assert (frac > 10**16 / N_COINS - 1) and (frac < 10**20 / N_COINS + 1)  # dev: unsafe value for y
             return y
 
     raise "Did not converge"

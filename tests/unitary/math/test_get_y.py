@@ -9,7 +9,7 @@ from hypothesis import strategies as st
 
 N_COINS = 2
 # MAX_SAMPLES = 1000000  # Increase for fuzzing
-MAX_SAMPLES = 300
+MAX_SAMPLES = 1000
 N_CASES = 32
 
 A_MUL = 10000
@@ -17,7 +17,7 @@ MIN_A = int(N_COINS**N_COINS * A_MUL / 10)
 MAX_A = int(N_COINS**N_COINS * A_MUL * 1000)
 
 MIN_GAMMA = 10**10
-MAX_GAMMA = 2 * 10**15
+MAX_GAMMA = 2 * 10**16
 
 pytest.current_case_id = 0
 pytest.negative_sqrt_arg = 0
@@ -72,10 +72,10 @@ def test_get_y_revert(math_contract):
         min_value=10**18, max_value=10**14 * 10**18
     ),  # 1 USD to 100T USD
     xD=st.integers(
-        min_value=5 * 10**16, max_value=10**19
+        min_value=10**17 // 2, max_value=10**19 // 2
     ),  # <- ratio 1e18 * x/D, typically 1e18 * 1
     yD=st.integers(
-        min_value=5 * 10**16, max_value=10**19
+        min_value=10**17 // 2, max_value=10**19 // 2
     ),  # <- ratio 1e18 * y/D, typically 1e18 * 1
     gamma=st.integers(min_value=MIN_GAMMA, max_value=MAX_GAMMA),
     j=st.integers(min_value=0, max_value=1),
