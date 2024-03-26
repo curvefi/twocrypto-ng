@@ -9,7 +9,7 @@ from hypothesis import strategies as st
 
 N_COINS = 2
 # MAX_SAMPLES = 1000000  # Increase for fuzzing
-MAX_SAMPLES = 1000
+MAX_SAMPLES = 10000
 N_CASES = 32
 
 A_MUL = 10000
@@ -17,7 +17,7 @@ MIN_A = int(N_COINS**N_COINS * A_MUL / 10)
 MAX_A = int(N_COINS**N_COINS * A_MUL * 1000)
 
 MIN_GAMMA = 10**10
-MAX_GAMMA = 2 * 10**16
+MAX_GAMMA = 3 * 10**17
 
 pytest.current_case_id = 0
 pytest.negative_sqrt_arg = 0
@@ -92,7 +92,13 @@ def test_get_y(math_unoptimized, math_optimized, A, D, xD, yD, gamma, j, _tmp):
         new_X[j] = y0
         return inv_target_decimal_n2(A_dec, gamma, new_X, D)
 
-    result_original = math_unoptimized.newton_y(A, gamma, X, D, j)
+    try:
+        result_original = math_unoptimized.newton_y(A, gamma, X, D, j)
+    except Exception as e:
+        if 'unsafe value' in str(e):
+            assert not 'gamma' in str(e)
+            assert gamma > 2 * 10**16
+            return
     pytest.gas_original += math_unoptimized._computation.get_gas_used()
 
     result_get_y, K0 = math_optimized.get_y(A, gamma, X, D, j)
