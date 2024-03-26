@@ -18,7 +18,7 @@ N_COINS: constant(uint256) = 2
 A_MULTIPLIER: constant(uint256) = 10000
 
 MIN_GAMMA: constant(uint256) = 10**10
-MAX_GAMMA: constant(uint256) = 2 * 10**15
+MAX_GAMMA: constant(uint256) = 2 * 10**16
 
 MIN_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER / 10
 MAX_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER * 1000
@@ -150,7 +150,7 @@ def _newton_y(ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: 
     y: uint256 = D**2 / (x_j * N_COINS**2)
     K0_i: uint256 = (10**18 * N_COINS) * x_j / D
 
-    assert (K0_i > 10**16*N_COINS - 1) and (K0_i < 10**20*N_COINS + 1)  # dev: unsafe values x[i]
+    assert (K0_i > 10**16 - 1) and (K0_i < 10**20 + 1)  # dev: unsafe values x[i]
 
     convergence_limit: uint256 = max(max(x_j / 10**14, D / 10**14), 100)
 
@@ -358,7 +358,7 @@ def get_y(
     y_out: uint256[2] = [convert(unsafe_div(unsafe_div(unsafe_mul(unsafe_div(D**2, x_j), root), 4), 10**18), uint256), convert(root, uint256)]
 
     frac: uint256 = unsafe_div(y_out[0] * 10**18, _D)
-    assert (frac >= 10**16 - 1) and (frac < 10**20 + 1)  # dev: unsafe value for y
+    assert (frac > 10**16 / N_COINS - 1) and (frac < 10**20 / N_COINS + 1)  # dev: unsafe value for y
 
     return y_out
 
