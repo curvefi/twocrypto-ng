@@ -95,8 +95,8 @@ def test_get_y(math_unoptimized, math_optimized, A, D, xD, yD, gamma, j, _tmp):
     try:
         result_original = math_unoptimized.newton_y(A, gamma, X, D, j)
     except Exception as e:
-        if 'unsafe value' in str(e):
-            assert not 'gamma' in str(e)
+        if "unsafe value" in str(e):
+            assert not "gamma" in str(e)
             assert gamma > 2 * 10**16
             return
     pytest.gas_original += math_unoptimized._computation.get_gas_used()
