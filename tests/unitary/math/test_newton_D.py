@@ -4,7 +4,6 @@ import time
 from decimal import Decimal
 
 import pytest
-from boa.vyper.contract import BoaError
 from hypothesis import given, settings
 from hypothesis import strategies as st
 

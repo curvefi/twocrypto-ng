@@ -3,7 +3,7 @@ import sys
 from decimal import Decimal
 
 import pytest
-from boa.vyper.contract import BoaError
+from boa import BoaError
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
