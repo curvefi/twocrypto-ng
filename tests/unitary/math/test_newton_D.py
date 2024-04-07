@@ -47,7 +47,7 @@ MAX_A = int(N_COINS**N_COINS * A_MUL * 1000)
 
 # gamma from 1e-8 up to 0.05
 MIN_GAMMA = 10**10
-MAX_GAMMA = 5 * 10**16
+MAX_GAMMA = 3 * 10**17
 
 MIN_XD = 10**17
 MAX_XD = 10**19
