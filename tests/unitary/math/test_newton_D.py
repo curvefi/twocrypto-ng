@@ -38,8 +38,8 @@ def inv_target_decimal_n2(A, gamma, x, D):
 
 N_COINS = 2
 # MAX_SAMPLES = 1000000  # Increase for fuzzing
-MAX_SAMPLES = 300  # Increase for fuzzing
-N_CASES = 1
+MAX_SAMPLES = 5000  # Increase for fuzzing
+N_CASES = 32
 
 A_MUL = 10000
 MIN_A = int(N_COINS**N_COINS * A_MUL / 10)
@@ -171,7 +171,7 @@ def _test_newton_D(
         raise  # this is a problem
 
     # dy should be positive
-    if result_get_y < X[j]:
+    if result_get_y < X[j] and result_get_y / D > MIN_XD / 1e18 and result_get_y / D < MAX_XD / 1e18:
 
         price_scale = (btcScalePrice, ethScalePrice)
         y = X[j]
