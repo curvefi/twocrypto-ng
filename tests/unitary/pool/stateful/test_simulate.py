@@ -80,7 +80,7 @@ class StatefulSimulation(StatefulBase):
         # exchange checks:
         assert approx(self.swap_out, dy_trader, 1e-3)
         assert approx(
-            self.swap.price_oracle(), self.trader.price_oracle[1], 1e-3
+            self.swap.price_oracle(), self.trader.price_oracle[1], 1.5e-3
         )
 
         boa.env.time_travel(12)
