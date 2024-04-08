@@ -128,6 +128,10 @@ class StatefulBase(RuleBasedStateMachine):
             if self.check_limits(_amounts) and exchange_amount_in > 10000:
                 raise
             return None
+        _amounts = [0] * 2
+        _amounts[exchange_i] = exchange_amount_in
+        _amounts[exchange_j] = -calc_amount
+        limits_check = self.check_limits(_amounts)  # If get_D fails
         mint_for_testing(self.coins[exchange_i], user, exchange_amount_in)
 
         d_balance_i = self.coins[exchange_i].balanceOf(user)
@@ -146,6 +150,7 @@ class StatefulBase(RuleBasedStateMachine):
                 and exchange_amount_in > 100
                 and calc_amount / self.swap.balances(exchange_j) > 1e-13
                 and exchange_amount_in / self.swap.balances(exchange_i) > 1e-13
+                and limits_check
             ):
                 raise
             return None
