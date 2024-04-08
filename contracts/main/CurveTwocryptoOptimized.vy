@@ -183,7 +183,7 @@ MIN_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER / 10
 MAX_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER * 1000
 MAX_A_CHANGE: constant(uint256) = 10
 MIN_GAMMA: constant(uint256) = 10**10
-MAX_GAMMA: constant(uint256) = 5 * 10**16
+MAX_GAMMA: constant(uint256) = 3 * 10**17
 
 # ----------------------- ERC20 Specific vars --------------------------------
 
