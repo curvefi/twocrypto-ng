@@ -99,9 +99,27 @@ def test_get_y(math_unoptimized, math_optimized, A, D, xD, yD, gamma, j, _tmp):
             assert not "gamma" in str(e)
             assert gamma > 2 * 10**16
             return
+        else:  # Did not converge?
+           raise
     pytest.gas_original += math_unoptimized._computation.get_gas_used()
 
-    result_get_y, K0 = math_optimized.get_y(A, gamma, X, D, j)
+    try:
+        result_get_y, K0 = math_optimized.get_y(A, gamma, X, D, j)
+    except Exception as e:
+        if "unsafe value" in str(e):
+            # The only possibility for old one to not revert and new one to revert is to have
+            # very small difference near the unsafe y value boundary.
+            # So, here we check if it was indeed small
+            lim_mul = 100 * 10**18
+            if gamma > 2 * 10**16:
+                lim_mul = lim_mul * 2 * 10**16 // gamma
+            frac = result_original * 10**18 // D
+            if abs(frac - 10**36 // 2 // lim_mul) < 100 or abs(frac - lim_mul // 2) < 100:
+                return
+            else:
+                raise
+        else:
+            raise
     pytest.gas_new += math_optimized._computation.get_gas_used()
 
     note(
