@@ -26,5 +26,5 @@ matplotlib
 cytoolz
 
 # vyper and dev framework:
-git+https://github.com/vyperlang/titanoboa@8c2f673c10439d13b976d1f1667462810379f010
+git+https://github.com/vyperlang/titanoboa@409d8b19be851ba39018188014e1babc1781e0d8
 vyper>=0.3.10
