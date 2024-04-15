@@ -47,7 +47,7 @@ def test_iteration_diff(math_large_gamma, A, D, xD, yD, gamma, j):
     # - measures how many iterations it takes for the
     #   old value to converge between the two versions
     # - makes sure that we're converging to the correct value
-    # - use hypothesis.note to have some clear statistics about
+    # - use hypothesis.event to have some clear statistics about
     #   the differences in divergence
     # X = [D * xD // 10**18, D * yD // 10**18]
     # math_large_gamma.newton_y(A, gamma, X, D, j)

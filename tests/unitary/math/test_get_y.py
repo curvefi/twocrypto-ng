@@ -65,7 +65,7 @@ def test_get_y_revert(math_contract):
 
 @pytest.mark.parametrize(
     "_tmp", range(N_CASES)
-)  # Create N_CASES independent test instances.
+)  # Parallelisation hack (more details in folder's README)
 @given(
     A=st.integers(min_value=MIN_A, max_value=MAX_A),
     D=st.integers(
@@ -100,7 +100,7 @@ def test_get_y(math_unoptimized, math_optimized, A, D, xD, yD, gamma, j, _tmp):
             assert gamma > 2 * 10**16
             return
         else:  # Did not converge?
-           raise
+            raise
     pytest.gas_original += math_unoptimized._computation.get_gas_used()
 
     try:
@@ -114,7 +114,10 @@ def test_get_y(math_unoptimized, math_optimized, A, D, xD, yD, gamma, j, _tmp):
             if gamma > 2 * 10**16:
                 lim_mul = lim_mul * 2 * 10**16 // gamma
             frac = result_original * 10**18 // D
-            if abs(frac - 10**36 // 2 // lim_mul) < 100 or abs(frac - lim_mul // 2) < 100:
+            if (
+                abs(frac - 10**36 // 2 // lim_mul) < 100
+                or abs(frac - lim_mul // 2) < 100
+            ):
                 return
             else:
                 raise

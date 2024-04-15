@@ -171,7 +171,11 @@ def _test_newton_D(
         raise  # this is a problem
 
     # dy should be positive
-    if result_get_y < X[j] and result_get_y / D > MIN_XD / 1e18 and result_get_y / D < MAX_XD / 1e18:
+    if (
+        result_get_y < X[j]
+        and result_get_y / D > MIN_XD / 1e18
+        and result_get_y / D < MAX_XD / 1e18
+    ):
 
         price_scale = (btcScalePrice, ethScalePrice)
         y = X[j]
