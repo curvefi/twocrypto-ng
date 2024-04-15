@@ -59,7 +59,7 @@ pytest.t_start = time.time()
 
 @pytest.mark.parametrize(
     "_tmp", range(N_CASES)
-)  # Create N_CASES independent test instances.
+)  # Parallelisation hack (more details in folder's README)
 @given(
     A=st.integers(min_value=MIN_A, max_value=MAX_A),
     D=st.integers(
