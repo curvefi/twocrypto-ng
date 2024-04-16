@@ -92,8 +92,8 @@ def newton_y(ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: u
     if gamma > MAX_GAMMA_SMALL:
         lim_mul = unsafe_div(unsafe_mul(lim_mul, MAX_GAMMA_SMALL), gamma)  # smaller than 100.0
 
-    iterations: uint256 = 0
     y: uint256 = 0
+    iterations: uint256 = 0
 
     y, iterations = self._newton_y(ANN, gamma, x, D, i, lim_mul)
     frac: uint256 = y * 10**18 / D
