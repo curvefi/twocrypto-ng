@@ -7,6 +7,13 @@ A_MULTIPLIER = 10000
 
 
 def get_y_n2_dec(ANN, gamma, x, D, i):
+    """
+    Analytical solution to obtain the value of y
+    Equivalent to get_y in the math smart contract,
+    except that it doesn't fallback to newton_y.
+    This function is a draft and should not be used
+    as expected value for y in testing.
+    """
 
     if i == 0:
         m = 1
@@ -174,8 +181,7 @@ def newton_y(A, gamma, x, D, i):
 
 
 def solve_x(A, gamma, x, D, i):
-    return int(get_y_n2_dec(A, gamma, x, D, i)[0] * 10**18)
-    # return newton_y(A, gamma, x, D, i)
+    return newton_y(A, gamma, x, D, i)
 
 
 def solve_D(A, gamma, x):
