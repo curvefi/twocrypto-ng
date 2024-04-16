@@ -80,7 +80,6 @@ def get_fee(x, fee_gamma, mid_fee, out_fee):
 
 def newton_D(A, gamma, x, D0):
     D = D0
-    i = 0
 
     S = sum(x)
     x = sorted(x, reverse=True)
@@ -184,13 +183,15 @@ def solve_D(A, gamma, x):
     return newton_D(A, gamma, x, D0)
 
 
+N_COINS = 2
+
+
 class Curve:
-    def __init__(self, A, gamma, D, n, p):
+    def __init__(self, A, gamma, D, p):
         self.A = A
         self.gamma = gamma
-        self.n = n
         self.p = p
-        self.x = [D // n * 10**18 // self.p[i] for i in range(n)]
+        self.x = [D // N_COINS * 10**18 // self.p[i] for i in range(N_COINS)]
 
     def xp(self):
         return [x * p // 10**18 for x, p in zip(self.x, self.p)]
@@ -208,7 +209,6 @@ class Curve:
         return yp * 10**18 // self.p[j]
 
     def get_p(self):
-
         A = self.A
         gamma = self.gamma
         xp = self.xp()
@@ -249,7 +249,7 @@ class Trader:
         self.p0 = p0[:]
         self.price_oracle = self.p0[:]
         self.last_price = self.p0[:]
-        self.curve = Curve(A, gamma, D, n, p=p0[:])
+        self.curve = Curve(A, gamma, D, p=p0[:])
         self.dx = int(D * 1e-8)
         self.mid_fee = int(mid_fee * 1e10)
         self.out_fee = int(out_fee * 1e10)
