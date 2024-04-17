@@ -454,7 +454,7 @@ def newton_D(ANN: uint256, gamma: uint256, x_unsorted: uint256[N_COINS], K0_prev
 
             for _x in x:
                 frac: uint256 = _x * 10**18 / D
-                assert (frac >= 10**16 - 1) and (frac < 10**20 + 1)  # dev: unsafe values x[i]
+                assert (frac > 10**16 / N_COINS - 1) and (frac < 10**20 / N_COINS + 1)  # dev: unsafe values x[i]
             return D
 
     raise "Did not converge"
