@@ -1,20 +1,19 @@
-# Minimized version of the math contracts before the gamma value expansion.
-# Additionally to the final value it also returns the number of iterations it took to find the value.
-# For testing purposes only.
-# From commit: 1c800bd7937f63a9c278a220af846d322f356dd5
+# Minimized version of the math contracts that expose some inner details of newton_y for testing purposes:
+# - Additionally to the final value it also returns the number of iterations it took to find the value.
+# From commit: 6dec22f6956cc04fb865d93c1e521f146e066cab
 
 N_COINS: constant(uint256) = 2
 A_MULTIPLIER: constant(uint256) = 10000
 
 MIN_GAMMA: constant(uint256) = 10**10
-MAX_GAMMA: constant(uint256) = 2 * 10**15
+MAX_GAMMA: constant(uint256) = 3 * 10**17
 
 MIN_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER / 10
 MAX_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER * 1000
 
 @internal
 @pure
-def _newton_y(ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: uint256) -> (uint256, uint256):
+def _newton_y(ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: uint256, lim_mul: uint256) -> (uint256, uint256):
     """
     Calculating x[i] given other balances x[0..N_COINS-1] and invariant D
     ANN = A * N**N
@@ -25,7 +24,7 @@ def _newton_y(ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: 
     y: uint256 = D**2 / (x_j * N_COINS**2)
     K0_i: uint256 = (10**18 * N_COINS) * x_j / D
 
-    assert (K0_i > 10**16*N_COINS - 1) and (K0_i < 10**20*N_COINS + 1)  # dev: unsafe values x[i]
+    assert (K0_i >= unsafe_div(10**36, lim_mul)) and (K0_i <= lim_mul)  # dev: unsafe values x[i]
 
     convergence_limit: uint256 = max(max(x_j / 10**14, D / 10**14), 100)
 
@@ -77,22 +76,3 @@ def _newton_y(ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: 
             return y, j
 
     raise "Did not converge"
-
-
-@external
-@pure
-def newton_y(ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: uint256) -> (uint256, uint256):
-
-    # Safety checks
-    assert ANN > MIN_A - 1 and ANN < MAX_A + 1  # dev: unsafe values A
-    assert gamma > MIN_GAMMA - 1 and gamma < MAX_GAMMA + 1  # dev: unsafe values gamma
-    assert D > 10**17 - 1 and D < 10**15 * 10**18 + 1 # dev: unsafe values D
-
-    y: uint256 = 0
-    iterations: uint256 = 0
-
-    y, iterations = self._newton_y(ANN, gamma, x, D, i)
-    frac: uint256 = y * 10**18 / D
-    assert (frac >= 10**16 - 1) and (frac < 10**20 + 1)  # dev: unsafe value for y
-
-    return y, iterations
