@@ -5,7 +5,7 @@ from hypothesis import given, settings
 
 from tests.fixtures.pool import INITIAL_PRICES
 from tests.utils import approx
-from tests.utils import simulation_int_many as sim
+from tests.utils import simulator as sim
 from tests.utils.tokens import mint_for_testing
 
 SETTINGS = {"max_examples": 100, "deadline": None}
@@ -149,18 +149,12 @@ def test_second_deposit(
         calculated = swap_with_deposit.calc_token_amount(amounts, True)
         measured = swap_with_deposit.balanceOf(user)
         d_balances = [swap_with_deposit.balances(i) for i in range(len(coins))]
-        claimed_fees = [0] * len(coins)
 
         with boa.env.prank(user):
             swap_with_deposit.add_liquidity(amounts, int(calculated * 0.999))
 
-        logs = swap_with_deposit.get_logs()
-        for log in logs:
-            if log.event_type.name == "ClaimAdminFee":
-                claimed_fees = log.args[0]
-
         d_balances = [
-            swap_with_deposit.balances(i) - d_balances[i] + claimed_fees[i]
+            swap_with_deposit.balances(i) - d_balances[i]
             for i in range(len(coins))
         ]
         measured = swap_with_deposit.balanceOf(user) - measured
@@ -205,18 +199,12 @@ def test_second_deposit_one(
         )
         measured = swap_with_deposit.balanceOf(user)
         d_balances = [swap_with_deposit.balances(i) for i in range(len(coins))]
-        claimed_fees = [0] * len(coins)
 
         with boa.env.prank(user):
             swap_with_deposit.add_liquidity(amounts, int(calculated * 0.999))
 
-        logs = swap_with_deposit.get_logs()
-        for log in logs:
-            if log.event_type.name == "ClaimAdminFee":
-                claimed_fees = log.args[0]
-
         d_balances = [
-            swap_with_deposit.balances(i) - d_balances[i] + claimed_fees[i]
+            swap_with_deposit.balances(i) - d_balances[i]
             for i in range(len(coins))
         ]
         measured = swap_with_deposit.balanceOf(user) - measured
