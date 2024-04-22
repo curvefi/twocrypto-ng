@@ -7,7 +7,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-import tests.utils.simulation_int_many as sim
+import tests.utils.simulator as sim
 
 # Uncomment to be able to print when parallelized
 # sys.stdout = sys.stderr

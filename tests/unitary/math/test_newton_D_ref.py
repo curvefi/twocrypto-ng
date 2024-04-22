@@ -7,7 +7,7 @@ from boa import BoaError
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-import tests.utils.simulation_int_many as sim
+import tests.utils.simulator as sim
 
 # sys.stdout = sys.stderr
 
