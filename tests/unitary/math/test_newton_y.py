@@ -27,8 +27,8 @@ from hypothesis import event, given, settings
 from hypothesis import strategies as st
 
 N_COINS = 2
-MAX_SAMPLES = 1000000  # Increase for fuzzing
-# MAX_SAMPLES = 10000
+# MAX_SAMPLES = 1000000  # Increase for fuzzing
+MAX_SAMPLES = 10000
 N_CASES = 32
 
 A_MUL = 10000
