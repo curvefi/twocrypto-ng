@@ -181,6 +181,13 @@ def newton_y(A, gamma, x, D, i):
 
 
 def solve_x(A, gamma, x, D, i):
+    """
+    Solving for x or y in the AMM equation.
+
+    Even though we have an analytical solution we consider
+    the newton method to be a ground truth. The analytical
+    solution does not always work.
+    """
     return newton_y(A, gamma, x, D, i)
 
 
@@ -241,38 +248,26 @@ class Trader:
         A,
         gamma,
         D,
-        n,
         p0,
         mid_fee=1e-3,
         out_fee=3e-3,
-        allowed_extra_profit=2 * 10**13,
         fee_gamma=None,
         adjustment_step=0.003,
         ma_time=866,
-        log=True,
     ):
-        # allowed_extra_profit is actually not used
-        self.p0 = p0[:]
-        self.price_oracle = self.p0[:]
-        self.last_price = self.p0[:]
+        self.price_oracle = p0[:]
+        self.last_price = p0[:]
         self.curve = Curve(A, gamma, D, p=p0[:])
-        self.dx = int(D * 1e-8)
         self.mid_fee = int(mid_fee * 1e10)
         self.out_fee = int(out_fee * 1e10)
-        self.D0 = self.curve.D()
-        self.xcp_0 = self.get_xcp()
         self.xcp_profit = 10**18
         self.xcp_profit_real = 10**18
-        self.xcp = self.xcp_0
-        self.allowed_extra_profit = allowed_extra_profit
+        self.xcp = self.get_xcp()
         self.adjustment_step = int(10**18 * adjustment_step)
-        self.log = log
-        self.fee_gamma = fee_gamma or gamma
-        self.total_vol = 0.0
+        self.fee_gamma = (
+            fee_gamma or gamma
+        )  # why can gamma be used as fee_gamma?
         self.ma_time = ma_time
-        self.ext_fee = 0  # 0.03e-2
-        self.slippage = 0
-        self.slippage_count = 0
 
     def fee(self):
         f = reduction_coefficient(self.curve.xp(), self.fee_gamma)
