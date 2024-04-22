@@ -4,7 +4,7 @@ from decimal import Decimal
 
 import boa
 import pytest
-from hypothesis import given, note, settings
+from hypothesis import event, given, note, settings
 from hypothesis import strategies as st
 
 N_COINS = 2
@@ -132,6 +132,7 @@ def test_get_y(math_unoptimized, math_optimized, A, D, xD, yD, gamma, j, _tmp):
     )
 
     if K0 == 0:
+        event("fallback to newton_y")
         pytest.negative_sqrt_arg += 1
         return
 
