@@ -8,7 +8,6 @@ math
 ├── test_get_p.py
 ├── test_get_y.py
 ├── test_log2.py
-├── test_multicoin_curve.py - "Tests for a minimal reference implementation in python"
 ├── test_newton_D.py
 ├── test_newton_D_ref.py
 ├── test_newton_y.py - "Verify that newton_y always convergees to the correct values quickly enough"
