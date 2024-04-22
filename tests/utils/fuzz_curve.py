@@ -1,10 +1,18 @@
 # flake8: noqa
+
+"""
+This file was originally used to find the initial bounds for A and gamma in the Curve contract.
+It is now used to test contract with Hypothesis stateful testing. Some unused parts are broken
+and kept for reference.
+
+Original file: https://github.com/curvefi/curve-crypto-contract/blob/d7d04cd9ae038970e40be850df99de8c1ff7241b/tests/simulation_int_many.py
+"""
 from itertools import permutations
 
 import hypothesis.strategies as st
 from hypothesis import given, settings
 
-from tests.utils.simulation_int_many import (
+from tests.utils.simulator import (
     Curve,
     geometric_mean,
     reduction_coefficient,
@@ -76,7 +84,7 @@ def test_D_convergence(A, x, yx, perm, gamma):
     pmap = list(permutations(range(2)))
 
     y = x * yx // 10**18
-    curve = Curve(A, gamma, 10**18, 2)
+    curve = Curve(A, gamma, 10**18, p)
     curve.x = [0] * 2
     i, j = pmap[perm]
     curve.x[i] = x
@@ -97,7 +105,7 @@ def test_y_convergence(A, x, yx, gamma, i, inx):
     j = 1 - i
     in_amount = x * inx // 10**18
     y = x * yx // 10**18
-    curve = Curve(A, gamma, 10**18, 2)
+    curve = Curve(A, gamma, 10**18, p)
     curve.x = [x, y]
     out_amount = curve.y(in_amount, i, j)
     assert out_amount > 0
@@ -115,7 +123,7 @@ def test_y_convergence(A, x, yx, gamma, i, inx):
 def test_y_noloss(A, x, yx, gamma, i, inx):
     j = 1 - i
     y = x * yx // 10**18
-    curve = Curve(A, gamma, 10**18, 2)
+    curve = Curve(A, gamma, 10**18, p)
     curve.x = [x, y]
     in_amount = x * inx // 10**18
     try:
