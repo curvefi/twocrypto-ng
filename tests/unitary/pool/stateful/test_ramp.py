@@ -35,14 +35,6 @@ class RampTest(NumbaGoUp):
             sender=self.swap_admin,
         )
 
-    @rule(user=user, deposit_amounts=deposit_amounts)
-    def deposit(self, deposit_amounts, user):
-        deposit_amounts[1:] = [
-            deposit_amounts[0],
-            deposit_amounts[1] * 10**18 // self.swap.price_oracle(),
-        ]
-        super().deposit(deposit_amounts, user)
-
     @rule(
         user=user,
         exchange_i=exchange_i,
