@@ -23,6 +23,9 @@ Due to the nature of the math involved in curve pools (i.e. analytical solutions
 )  # Parallelisation hack (more details in folder's README)
 ```
 
+### Useful info
+- We have proven that in (0, x + y) newton_D either converges or reverts. Converging to a wrong value is not possible since there's only one root in (0, x + y).
+
 ### Checklist when modifying functions using on Newton's method
-- The number of iterations required to converge should not increase significantly
-- Make sure values converge to the correct value (some initial guesses might lead to wrong results)
+- Make sure that the function still converges in all instances where it used to before.
+- The number of iterations required to converge should not increase significantly.
