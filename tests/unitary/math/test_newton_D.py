@@ -4,6 +4,7 @@ import time
 from decimal import Decimal
 
 import pytest
+from constants import MAX_GAMMA, MIN_GAMMA
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -46,8 +47,6 @@ MIN_A = int(N_COINS**N_COINS * A_MUL / 10)
 MAX_A = int(N_COINS**N_COINS * A_MUL * 1000)
 
 # gamma from 1e-8 up to 0.3
-MIN_GAMMA = 10**10
-MAX_GAMMA = 3 * 10**17
 
 MIN_XD = 10**17
 MAX_XD = 10**19

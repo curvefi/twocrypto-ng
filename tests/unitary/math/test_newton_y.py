@@ -23,6 +23,7 @@ converge to the correct value (or not converge at all otherwise).
 """
 
 import pytest
+from constants import MAX_GAMMA, MAX_GAMMA_SMALL, MIN_GAMMA
 from hypothesis import event, given, settings
 from hypothesis import strategies as st
 
@@ -36,16 +37,7 @@ MIN_A = int(N_COINS**N_COINS * A_MUL / 10)
 MAX_A = int(N_COINS**N_COINS * A_MUL * 1000)
 
 # Old bounds for gamma
-MIN_GAMMA = 10**10
 MAX_GAMMA_OLD = 2 * 10**15
-
-# New bounds for gamma (min is unchanged)
-MAX_GAMMA_SMALL = 2 * 10**16  # becomes stricter after MAX_GAMMA_SMALL
-# TODO for now this is how far we
-# we managed to push the bounds without a revert.
-MAX_GAMMA = int(1.99 * 10**17)
-# ideally we want:
-# MAX_GAMMA = 3 * 10**17
 
 
 @pytest.fixture(scope="module")
