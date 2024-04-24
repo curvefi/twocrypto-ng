@@ -4,6 +4,7 @@ from decimal import Decimal
 
 import boa
 import pytest
+from constants import MAX_GAMMA, MIN_GAMMA
 from hypothesis import event, given, note, settings
 from hypothesis import strategies as st
 
@@ -16,8 +17,6 @@ A_MUL = 10000
 MIN_A = int(N_COINS**N_COINS * A_MUL / 10)
 MAX_A = int(N_COINS**N_COINS * A_MUL * 1000)
 
-MIN_GAMMA = 10**10
-MAX_GAMMA = 3 * 10**17
 
 pytest.current_case_id = 0
 pytest.negative_sqrt_arg = 0
