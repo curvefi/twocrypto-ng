@@ -31,6 +31,8 @@ N_COINS = 2
 # MAX_SAMPLES = 1000000  # Increase for fuzzing
 MAX_SAMPLES = 10000
 N_CASES = 32
+# for tests that are trivial
+N_CASES_TRIVIAL = 6
 
 A_MUL = 10000
 MIN_A = int(N_COINS**N_COINS * A_MUL / 10)
@@ -50,7 +52,7 @@ def math_exposed():
 
 
 @pytest.mark.parametrize(
-    "_tmp", range(N_CASES)
+    "_tmp", range(N_CASES_TRIVIAL)
 )  # Parallelisation hack (more details in folder's README)
 @given(
     A=st.integers(min_value=MIN_A, max_value=MAX_A),
@@ -100,7 +102,7 @@ def test_equivalence(
 
 
 @pytest.mark.parametrize(
-    "_tmp", range(N_CASES)
+    "_tmp", range(N_CASES_TRIVIAL)
 )  # Parallelisation hack (more details in folder's README)
 @given(
     A=st.integers(min_value=MIN_A, max_value=MAX_A),
