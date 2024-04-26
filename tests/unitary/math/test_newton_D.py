@@ -4,11 +4,11 @@ import time
 from decimal import Decimal
 
 import pytest
-from constants import MAX_GAMMA, MIN_GAMMA
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
 import tests.utils.simulator as sim
+from tests.utils.constants import MAX_GAMMA, MIN_GAMMA
 
 # Uncomment to be able to print when parallelized
 # sys.stdout = sys.stderr

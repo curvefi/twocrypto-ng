@@ -4,9 +4,10 @@ from decimal import Decimal
 
 import boa
 import pytest
-from constants import MAX_GAMMA, MIN_GAMMA
 from hypothesis import event, given, note, settings
 from hypothesis import strategies as st
+
+from tests.utils.constants import MAX_GAMMA, MIN_GAMMA
 
 N_COINS = 2
 # MAX_SAMPLES = 1000000  # Increase for fuzzing
