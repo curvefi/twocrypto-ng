@@ -167,4 +167,5 @@ def test_numba_go_up(users, coins, swap):
     for k, v in locals().items():
         setattr(NumbaGoUp, k, v)
 
+    # because of this hypothesis.event does not work
     run_state_machine_as_test(NumbaGoUp)

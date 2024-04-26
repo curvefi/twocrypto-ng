@@ -51,4 +51,5 @@ def test_multiprecision(users, coins, swap):
     for k, v in locals().items():
         setattr(Multiprecision, k, v)
 
+    # because of this hypothesis.event does not work
     run_state_machine_as_test(Multiprecision)
