@@ -36,11 +36,9 @@ class StatefulSimulation(StatefulBase):
             self.swap.A(),
             self.swap.gamma(),
             self.swap.D(),
-            2,
             [10**18, self.swap.price_scale()],
             self.swap.mid_fee() / 1e10,
             self.swap.out_fee() / 1e10,
-            self.swap.allowed_extra_profit(),
             self.swap.fee_gamma(),
             self.swap.adjustment_step() / 1e18,
             int(
