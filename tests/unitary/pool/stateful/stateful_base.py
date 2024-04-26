@@ -114,9 +114,7 @@ class StatefulBase(RuleBasedStateMachine):
             return
         self.swap_out = None
 
-    def _exchange(
-        self, exchange_amount_in, exchange_i, user, check_out_amount=True
-    ):
+    def _exchange(self, exchange_amount_in, exchange_i, user):
         exchange_j = 1 - exchange_i
         try:
             calc_amount = self.swap.get_dy(
@@ -169,15 +167,7 @@ class StatefulBase(RuleBasedStateMachine):
         d_balance_j -= self.coins[exchange_j].balanceOf(user)
 
         assert d_balance_i == exchange_amount_in
-        if check_out_amount:
-            if check_out_amount is True:
-                assert (
-                    -d_balance_j == calc_amount
-                ), f"{-d_balance_j} vs {calc_amount}"
-            else:
-                assert abs(d_balance_j + calc_amount) < max(
-                    check_out_amount * calc_amount, 3
-                ), f"{-d_balance_j} vs {calc_amount}"
+        assert -d_balance_j == calc_amount, f"{-d_balance_j} vs {calc_amount}"
 
         self.balances[exchange_i] += d_balance_i
         self.balances[exchange_j] += d_balance_j
