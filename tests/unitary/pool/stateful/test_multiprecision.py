@@ -1,5 +1,6 @@
 import pytest
 from boa.test import strategy
+from hypothesis import HealthCheck, settings
 from hypothesis.stateful import rule, run_state_machine_as_test
 
 from tests.unitary.pool.stateful.test_stateful import NumbaGoUp
@@ -38,9 +39,6 @@ class Multiprecision(NumbaGoUp):
 
 
 def test_multiprecision(users, coins, swap):
-    from hypothesis import settings
-    from hypothesis._settings import HealthCheck
-
     Multiprecision.TestCase.settings = settings(
         max_examples=MAX_SAMPLES,
         stateful_step_count=STEP_COUNT,

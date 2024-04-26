@@ -1,5 +1,6 @@
 import boa
 from boa.test import strategy
+from hypothesis import HealthCheck, settings
 from hypothesis.stateful import invariant, rule, run_state_machine_as_test
 
 from tests.unitary.pool.stateful.stateful_base import StatefulBase
@@ -102,9 +103,6 @@ class StatefulSimulation(StatefulBase):
 
 
 def test_sim(users, coins, swap):
-    from hypothesis import settings
-    from hypothesis._settings import HealthCheck
-
     StatefulSimulation.TestCase.settings = settings(
         max_examples=MAX_SAMPLES,
         stateful_step_count=STEP_COUNT,
