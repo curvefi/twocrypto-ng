@@ -1,5 +1,6 @@
 import boa
 from boa.test import strategy
+from hypothesis import HealthCheck, settings
 from hypothesis.stateful import rule, run_state_machine_as_test
 
 from tests.fixtures.pool import INITIAL_PRICES
@@ -89,12 +90,8 @@ class NumbaGoUp(StatefulBase):
         token_amount=token_amount,
         exchange_i=exchange_i,
         user=user,
-        check_out_amount=check_out_amount,
     )
-    def remove_liquidity_one_coin(
-        self, token_amount, exchange_i, user, check_out_amount
-    ):
-
+    def remove_liquidity_one_coin(self, token_amount, exchange_i, user):
         try:
             calc_out_amount = self.swap.calc_withdraw_one_coin(
                 token_amount, exchange_i
@@ -147,15 +144,9 @@ class NumbaGoUp(StatefulBase):
         d_balance = self.coins[exchange_i].balanceOf(user) - d_balance
         d_token = d_token - self.swap.balanceOf(user)
 
-        if check_out_amount:
-            if check_out_amount is True:
-                assert (
-                    calc_out_amount == d_balance
-                ), f"{calc_out_amount} vs {d_balance} for {token_amount}"
-            else:
-                assert abs(calc_out_amount - d_balance) <= max(
-                    check_out_amount * calc_out_amount, 5
-                ), f"{calc_out_amount} vs {d_balance} for {token_amount}"
+        assert (
+            calc_out_amount == d_balance
+        ), f"{calc_out_amount} vs {d_balance} for {token_amount}"
 
         self.balances[exchange_i] -= d_balance
         self.total_supply -= d_token
@@ -166,9 +157,6 @@ class NumbaGoUp(StatefulBase):
 
 
 def test_numba_go_up(users, coins, swap):
-    from hypothesis import settings
-    from hypothesis._settings import HealthCheck
-
     NumbaGoUp.TestCase.settings = settings(
         max_examples=MAX_SAMPLES,
         stateful_step_count=STEP_COUNT,
