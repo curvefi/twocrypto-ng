@@ -23,9 +23,10 @@ converge to the correct value (or not converge at all otherwise).
 """
 
 import pytest
-from constants import MAX_GAMMA, MAX_GAMMA_SMALL, MIN_GAMMA
 from hypothesis import event, given, settings
 from hypothesis import strategies as st
+
+from tests.utils.constants import MAX_GAMMA, MAX_GAMMA_SMALL, MIN_GAMMA
 
 N_COINS = 2
 # MAX_SAMPLES = 1000000  # Increase for fuzzing

@@ -4,11 +4,11 @@ from decimal import Decimal
 
 import pytest
 from boa import BoaError
-from constants import MAX_GAMMA, MIN_GAMMA
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
 import tests.utils.simulator as sim
+from tests.utils.constants import MAX_GAMMA, MIN_GAMMA
 
 # sys.stdout = sys.stderr
 
