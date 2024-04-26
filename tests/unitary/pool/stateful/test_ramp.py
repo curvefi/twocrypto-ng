@@ -96,4 +96,5 @@ def test_ramp(users, coins, swap):
     for k, v in locals().items():
         setattr(RampTest, k, v)
 
+    # because of this hypothesis.event does not work
     run_state_machine_as_test(RampTest)
