@@ -4,6 +4,7 @@ from decimal import Decimal
 
 import pytest
 from boa import BoaError
+from constants import MAX_GAMMA, MIN_GAMMA
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -12,32 +13,9 @@ import tests.utils.simulator as sim
 # sys.stdout = sys.stderr
 
 
-def inv_target_decimal_n2(A, gamma, x, D):
-    N = len(x)
-
-    x_prod = Decimal(1)
-    for x_i in x:
-        x_prod *= x_i
-    K0 = x_prod / (Decimal(D) / N) ** N
-    K0 *= 10**18
-
-    if gamma > 0:
-        # K = gamma**2 * K0 / (gamma + 10**18*(Decimal(1) - K0))**2
-        K = gamma**2 * K0 / (gamma + 10**18 - K0) ** 2 / 10**18
-    K *= A
-
-    f = (
-        K * D ** (N - 1) * sum(x)
-        + x_prod
-        - (K * D**N + (Decimal(D) / N) ** N)
-    )
-
-    return f
-
-
 N_COINS = 2
 # MAX_SAMPLES = 300000  # Increase for fuzzing
-MAX_SAMPLES = 300  # Increase for fuzzing
+MAX_SAMPLES = 300
 N_CASES = 1
 
 A_MUL = 10000
@@ -45,8 +23,8 @@ MIN_A = int(N_COINS**N_COINS * A_MUL / 10)
 MAX_A = int(N_COINS**N_COINS * A_MUL * 1000)
 
 # gamma from 1e-8 up to 0.05
-MIN_GAMMA = 10**10
-MAX_GAMMA = 2 * 10**15
+# MIN_GAMMA = 10**10
+# MAX_GAMMA = 2 * 10**15
 
 MIN_XD = 10**17
 MAX_XD = 10**19
@@ -100,41 +78,6 @@ def test_newton_D(
     fee_gamma,
     _tmp,
 ):
-    _test_newton_D(
-        math_optimized,
-        math_unoptimized,
-        A,
-        D,
-        xD,
-        yD,
-        gamma,
-        j,
-        asset_x_scale_price,
-        asset_y_scale_price,
-        mid_fee,
-        out_fee,
-        fee_gamma,
-        _tmp,
-    )
-
-
-def _test_newton_D(
-    math_optimized,
-    math_unoptimized,
-    A,
-    D,
-    xD,
-    yD,
-    gamma,
-    j,
-    asset_x_scale_price,
-    asset_y_scale_price,
-    mid_fee,
-    out_fee,
-    fee_gamma,
-    _tmp,
-):
-
     pytest.cases += 1
     X = [D * xD // 10**18, D * yD // 10**18]
     is_safe = all(
