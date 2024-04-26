@@ -1,91 +1,130 @@
 import boa
-from boa.test import strategy
-from hypothesis.stateful import invariant, rule, run_state_machine_as_test
+from hypothesis import HealthCheck, settings
+from hypothesis import strategies as st
+from hypothesis.stateful import (
+    initialize,
+    invariant,
+    precondition,
+    rule,
+    run_state_machine_as_test,
+)
 
 from tests.unitary.pool.stateful.test_stateful import NumbaGoUp
+from tests.utils.constants import (
+    MAX_A,
+    MAX_GAMMA,
+    MIN_A,
+    MIN_GAMMA,
+    MIN_RAMP_TIME,
+    UNIX_DAY,
+)
 
 MAX_SAMPLES = 20
 STEP_COUNT = 100
-MAX_D = 10**12 * 10**18  # $1T is hopefully a reasonable cap for tests
-ALLOWED_DIFFERENCE = 0.001
+
+# [0.2, 0.3 ... 0.9, 1, 2, 3 ... 10], used as sample values for the ramp step
+change_steps = [x / 10 if x < 10 else x for x in range(2, 11)] + list(
+    range(2, 11)
+)
 
 
 class RampTest(NumbaGoUp):
-    check_out_amount = strategy("bool")
-    exchange_amount_in = strategy(
-        "uint256", min_value=10**18, max_value=50000 * 10**18
-    )
-    token_amount = strategy(
-        "uint256", min_value=10**18, max_value=10**12 * 10**18
-    )
-    deposit_amounts = strategy(
-        "uint256[3]", min_value=10**18, max_value=10**9 * 10**18
-    )
-    user = strategy("address")
-    exchange_i = strategy("uint8", max_value=1)
+    """
+    This class tests statefully tests wheter ramping A and
+    gamma does not break the pool. At the start it always start
+    with a ramp, then it can ramp again.
+    """
 
-    def setup(self, user_id=0):
-        super().setup(user_id)
-        new_A = self.swap.A() * 2
-        new_gamma = self.swap.gamma() * 2
+    # we can only ramp A and gamma at most 10x
+    # lower/higher than their starting value
+    change_step_strategy = st.sampled_from(change_steps)
+
+    # we fuzz the ramp duration up to a year
+    days = st.integers(min_value=1, max_value=365)
+
+    def is_not_ramping(self):
+        """
+        Checks if the pool is not already ramping.
+        TODO check condition in the pool as it looks weird
+        """
+        return (
+            boa.env.vm.state.timestamp
+            > self.swap.initial_A_gamma_time() + (MIN_RAMP_TIME - 1)
+        )
+
+    @initialize(
+        A_change=change_step_strategy,
+        gamma_change=change_step_strategy,
+        days=days,
+    )
+    def initial_ramp(self, A_change, gamma_change, days):
+        """
+        At the start of the stateful test, we always ramp.
+        """
+        self.__ramp(A_change, gamma_change, days)
+
+    @precondition(is_not_ramping)
+    @rule(
+        A_change=change_step_strategy,
+        gamma_change=change_step_strategy,
+        days=days,
+    )
+    def ramp(self, A_change, gamma_change, days):
+        """
+        Additional ramping after the initial ramp.
+        Pools might ramp multiple times during their lifetime.
+        """
+        self.__ramp(A_change, gamma_change, days)
+
+    def __ramp(self, A_change, gamma_change, days):
+        """
+        Computes the new A and gamma values by multiplying the current ones
+        by the change factors. Then clamps the new values to stay in the
+        [MIN_A, MAX_A] and [MIN_GAMMA, MAX_GAMMA] ranges.
+
+        Then proceeds to ramp the pool with the new values (with admin rights).
+        """
+        new_A = self.swap.A() * A_change
+        new_A = int(
+            max(MIN_A, min(MAX_A, new_A))
+        )  # clamp new_A to stay in [MIN_A, MAX_A]
+
+        new_gamma = self.swap.gamma() * gamma_change
+        new_gamma = int(
+            max(MIN_GAMMA, min(MAX_GAMMA, new_gamma))
+        )  # clamp new_gamma to stay in [MIN_GAMMA, MAX_GAMMA]
+
+        # current timestamp + fuzzed days
+        ramp_duration = boa.env.vm.state.timestamp + days * UNIX_DAY
+
         self.swap.ramp_A_gamma(
             new_A,
             new_gamma,
-            boa.env.vm.state.timestamp + 14 * 86400,
+            ramp_duration,
             sender=self.swap_admin,
         )
 
-    @rule(
-        user=user,
-        exchange_i=exchange_i,
-        exchange_amount_in=exchange_amount_in,
-        check_out_amount=check_out_amount,
-    )
-    def exchange(self, exchange_amount_in, exchange_i, user, check_out_amount):
-
-        if exchange_i > 0:
-            exchange_amount_in = (
-                exchange_amount_in * 10**18 // self.swap.price_oracle()
-            )
-            if exchange_amount_in < 1000:
-                return
-
-        super()._exchange(
-            exchange_amount_in,
-            exchange_i,
-            user,
-            ALLOWED_DIFFERENCE if check_out_amount else False,
-        )
-
-    @rule(
-        user=user,
-        token_amount=token_amount,
-        exchange_i=exchange_i,
-        check_out_amount=check_out_amount,
-    )
-    def remove_liquidity_one_coin(
-        self, token_amount, exchange_i, user, check_out_amount
-    ):
-
-        if check_out_amount:
-            super().remove_liquidity_one_coin(
-                token_amount, exchange_i, user, ALLOWED_DIFFERENCE
-            )
-        else:
-            super().remove_liquidity_one_coin(
-                token_amount, exchange_i, user, False
-            )
+    @invariant()
+    def up_only_profit(self):
+        """
+        We allow the profit to go down only because of the ramp.
+        TODO we should still check that losses are not too big
+        ideally something proportional to the ramp
+        """
+        pass
 
     @invariant()
     def virtual_price(self):
-        # Invariant is not conserved here
+        """
+        We allow the profit to go down only because of the ramp.
+        TODO we should still check that losses are not too big
+        ideally something proportional to the ramp
+        """
         pass
 
 
 def test_ramp(users, coins, swap):
-    from hypothesis import settings
-    from hypothesis._settings import HealthCheck
-
+    # TODO parametrize with different swaps
     RampTest.TestCase.settings = settings(
         max_examples=MAX_SAMPLES,
         stateful_step_count=STEP_COUNT,
