@@ -10,13 +10,12 @@ pre-commit
 eip712
 eth_account
 ipython
-hypothesis
+hypothesis==6.74.0
 pytest
 pytest-xdist
 pytest-forked
 pytest-repeat
 pdbpp
-hypothesis>=6.68.1
 
 # analytics
 pandas
