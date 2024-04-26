@@ -89,7 +89,7 @@ def test_ramp(users, coins, swap):
     RampTest.TestCase.settings = settings(
         max_examples=MAX_SAMPLES,
         stateful_step_count=STEP_COUNT,
-        suppress_health_check=HealthCheck.all(),
+        suppress_health_check=list(HealthCheck),
         deadline=None,
     )
 
