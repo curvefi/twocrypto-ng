@@ -5,6 +5,7 @@ fixtures in stateful testing (without compromises).
 """
 
 import boa
+from hypothesis import note
 from hypothesis.strategies import (
     composite,
     integers,
@@ -14,10 +15,10 @@ from hypothesis.strategies import (
 )
 
 # compiling contracts
-from contracts.main import CurveCryptoMathOptimized2 as amm_deployer
 from contracts.main import CurveCryptoMathOptimized2 as math_deployer
 from contracts.main import CurveCryptoViews2Optimized as view_deployer
 from contracts.main import CurveTwocryptoFactory as factory_deployer
+from contracts.main import CurveTwocryptoOptimized as amm_deployer
 from contracts.main import LiquidityGauge as gauge_deployer
 from tests.utils.constants import (
     MAX_A,
@@ -31,7 +32,6 @@ from tests.utils.constants import (
 # ---------------- addresses ----------------
 # TODO this should use the boa address strategy
 # when the recurring address feature gets added
-# otherwise its not that useful to have a strategy
 deployer = just(boa.env.generate_address())
 fee_receiver = just(boa.env.generate_address())
 owner = just(boa.env.generate_address())
@@ -88,40 +88,46 @@ allowed_extra_profit = integers(min_value=0, max_value=1e18)
 adjustment_step = integers(min_value=1, max_value=1e18)
 ma_exp_time = integers(min_value=87, max_value=872541)
 
-# TODO figure out why the upper bound reverts (had to reduce
-# because fuzzing seems incorrect)
-price = integers(min_value=1e6 + 1, max_value=1e29)
+MIN_PRICE = 1e6 + 1
+MAX_PRICE = 1e29
+
+price = integers(min_value=MIN_PRICE, max_value=MAX_PRICE)
 
 # -------------------- tokens --------------------
-# fuzzes a mock ERC20 with variable decimals
-token = integers(min_value=0, max_value=18).map(
+# TODO restore variable decimals
+# token = integers(min_value=0, max_value=18).map(
+token = just(18).map(  # TODO restore variable decimals
     lambda x: boa.load("contracts/mocks/ERC20Mock.vy", "USD", "USD", x)
 )
+# TODO add more tokens
 weth = just(boa.load("contracts/mocks/WETH.vy"))
 
 
 # ---------------- pool ----------------
 @composite
-def pool(draw):
+def pool(
+    draw,
+    A=A,
+    gamma=gamma,
+    fees=fees,
+    fee_gamma=fee_gamma,
+    allowed_extra_profit=allowed_extra_profit,
+    adjustment_step=adjustment_step,
+    ma_exp_time=ma_exp_time,
+    price=price,
+):
+    """Creates a factory based pool with the following fuzzed parameters:
+    Custom strategies can be passed as argument to override the default
     """
-    Creates a factory based pool with the following fuzzed parameters:
-    - A
-    - gamma
-    - mid_fee
-    - out_fee
-    - tokens: can be a mock erc20 with variable decimals or WETH
-    - allowed_extra_profit
-    - adjustment_step
-    - ma_exp_time
-    - initial_price
-    """
+
+    # Creates a factory based pool with the following fuzzed parameters:
     _factory = draw(factory())
     mid_fee, out_fee = draw(fees())
 
-    # TODO this should have a lot of tokens with weird behaviors
+    # TODO this should have a lot of tokens with weird behaviors and weth
     tokens = draw(
         lists(
-            sampled_from([draw(token), draw(weth)]),
+            sampled_from([draw(token), draw(token)]),
             min_size=2,
             max_size=2,
             unique=True,
@@ -145,4 +151,15 @@ def pool(draw):
             draw(price),
         )
 
-    return amm_deployer.at(swap)
+    swap = amm_deployer.at(swap)
+
+    note(
+        "deployed pool with "
+        + "A: {:.2e}".format(swap.A())
+        + ", gamma: {:.2e}".format(swap.gamma())
+        + ", price: {:.2e}".format(swap.price_oracle())
+        + ", fee_gamma: {:.2e}".format(swap.fee_gamma())
+        + ", allowed_extra_profit: {:.2e}".format(swap.allowed_extra_profit())
+        + ", adjustment_step: {:.2e}".format(swap.adjustment_step())
+    )
+    return swap
