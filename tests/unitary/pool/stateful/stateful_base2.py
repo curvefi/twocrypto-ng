@@ -12,6 +12,7 @@ from hypothesis.strategies import integers
 from strategies import pool as pool_strategy
 
 from contracts.mocks import ERC20Mock as ERC20
+from tests.utils.constants import UNIX_DAY
 from tests.utils.tokens import mint_for_testing
 
 
@@ -160,7 +161,7 @@ class StatefulBase(RuleBasedStateMachine):
     def remove_liquidity_one_coin(self, percentage):
         pass
 
-    @rule(time_increase=integers(min_value=1, max_value=86400 * 7))
+    @rule(time_increase=integers(min_value=1, max_value=UNIX_DAY * 7))
     def time_forward(self, time_increase):
         """Make the time moves forward by `sleep_time` seconds.
         Useful for ramping, oracle updates, etc.

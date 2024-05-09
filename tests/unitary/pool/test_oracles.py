@@ -7,6 +7,7 @@ from hypothesis import given, settings
 
 from tests.fixtures.pool import INITIAL_PRICES
 from tests.utils import approx
+from tests.utils.constants import UNIX_DAY
 from tests.utils.tokens import mint_for_testing
 
 SETTINGS = {"max_examples": 1000, "deadline": None}
@@ -50,7 +51,7 @@ def test_last_price_remove_liq(swap_with_deposit, user, token_frac, i):
         "uint256", min_value=10**10, max_value=2 * 10**6 * 10**18
     ),  # Can be more than we have
     i=strategy("uint8", min_value=0, max_value=1),
-    t=strategy("uint256", min_value=10, max_value=10 * 86400),
+    t=strategy("uint256", min_value=10, max_value=10 * UNIX_DAY),
 )
 @settings(**SETTINGS)
 def test_ma(swap_with_deposit, coins, user, amount, i, t):
@@ -89,7 +90,7 @@ def test_ma(swap_with_deposit, coins, user, amount, i, t):
         "uint256", min_value=10**10, max_value=2 * 10**6 * 10**18
     ),  # Can be more than we have
     i=strategy("uint8", min_value=0, max_value=1),
-    t=strategy("uint256", min_value=10, max_value=10 * 86400),
+    t=strategy("uint256", min_value=10, max_value=10 * UNIX_DAY),
 )
 @settings(**SETTINGS)
 def test_xcp_ma(swap_with_deposit, coins, user, amount, i, t):
@@ -142,7 +143,7 @@ def test_xcp_ma(swap_with_deposit, coins, user, amount, i, t):
         "uint256", min_value=10**10, max_value=2 * 10**6 * 10**18
     ),  # Can be more than we have
     i=strategy("uint8", min_value=0, max_value=1),
-    t=strategy("uint256", max_value=10 * 86400),
+    t=strategy("uint256", max_value=10 * UNIX_DAY),
 )
 @settings(**SETTINGS)
 def test_price_scale_range(swap_with_deposit, coins, user, amount, i, t):
@@ -172,7 +173,7 @@ def test_price_scale_range(swap_with_deposit, coins, user, amount, i, t):
 def test_price_scale_change(swap_with_deposit, i, coins, users):
     j = 1 - i
     amount = 10**6 * 10**18
-    t = 86400
+    t = UNIX_DAY
     user = users[1]
     prices1 = INITIAL_PRICES
     amount = amount * 10**18 // prices1[i]

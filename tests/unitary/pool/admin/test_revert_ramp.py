@@ -1,5 +1,7 @@
 import boa
 
+from tests.utils.constants import UNIX_DAY
+
 
 def test_revert_unauthorised_ramp(swap, user):
 
@@ -13,7 +15,7 @@ def test_revert_ramp_while_ramping(swap, factory_admin):
     assert swap.initial_A_gamma_time() == 0
 
     A_gamma = [swap.A(), swap.gamma()]
-    future_time = boa.env.vm.state.timestamp + 86400 + 1
+    future_time = boa.env.vm.state.timestamp + UNIX_DAY + 1
     with boa.env.prank(factory_admin):
         swap.ramp_A_gamma(A_gamma[0] + 1, A_gamma[1] + 1, future_time)
 
@@ -35,7 +37,7 @@ def test_revert_unauthorised_stop_ramp(swap, factory_admin, user):
     assert swap.initial_A_gamma_time() == 0
 
     A_gamma = [swap.A(), swap.gamma()]
-    future_time = boa.env.vm.state.timestamp + 86400 + 1
+    future_time = boa.env.vm.state.timestamp + UNIX_DAY + 1
     with boa.env.prank(factory_admin):
         swap.ramp_A_gamma(A_gamma[0] + 1, A_gamma[1] + 1, future_time)
 
@@ -50,7 +52,7 @@ def test_revert_ramp_too_far(swap, factory_admin):
 
     A = swap.A()
     gamma = swap.gamma()
-    future_time = boa.env.vm.state.timestamp + 86400 + 1
+    future_time = boa.env.vm.state.timestamp + UNIX_DAY + 1
 
     with boa.env.prank(factory_admin), boa.reverts("A change too high"):
         future_A = A * 11  # can at most increase by 10x
