@@ -2,13 +2,15 @@ import copy
 
 import boa
 
+from tests.utils.constants import UNIX_DAY
+
 
 def test_ramp_A_gamma_up(swap, factory_admin, params):
 
     p = copy.deepcopy(params)
     future_A = p["A"] + 10000
     future_gamma = p["gamma"] + 10000
-    future_time = boa.env.vm.state.timestamp + 86400
+    future_time = boa.env.vm.state.timestamp + UNIX_DAY
 
     initial_A_gamma = [swap.A(), swap.gamma()]
     swap.ramp_A_gamma(
@@ -31,7 +33,7 @@ def test_ramp_A_gamma_down(swap, factory_admin, params):
     p = copy.deepcopy(params)
     future_A = p["A"] - 10000
     future_gamma = p["gamma"] - 10000
-    future_time = boa.env.vm.state.timestamp + 86400
+    future_time = boa.env.vm.state.timestamp + UNIX_DAY
 
     initial_A_gamma = [swap.A(), swap.gamma()]
     swap.ramp_A_gamma(

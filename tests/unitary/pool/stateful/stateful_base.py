@@ -6,6 +6,7 @@ from boa.test import strategy
 from hypothesis.stateful import RuleBasedStateMachine, invariant, rule
 
 from tests.fixtures.pool import INITIAL_PRICES
+from tests.utils.constants import UNIX_DAY
 from tests.utils.tokens import mint_for_testing
 
 MAX_SAMPLES = 20
@@ -15,7 +16,7 @@ MAX_D = 10**12 * 10**18  # $1T is hopefully a reasonable cap for tests
 class StatefulBase(RuleBasedStateMachine):
     exchange_amount_in = strategy("uint256", max_value=10**9 * 10**18)
     exchange_i = strategy("uint8", max_value=1)
-    sleep_time = strategy("uint256", max_value=86400 * 7)
+    sleep_time = strategy("uint256", max_value=UNIX_DAY * 7)
     user = strategy("address")
 
     def __init__(self):
