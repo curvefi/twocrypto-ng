@@ -5,7 +5,8 @@ fixtures in stateful testing (without compromises).
 """
 
 import boa
-from hypothesis import note
+from boa.test import strategy
+from hypothesis import assume, note
 from hypothesis.strategies import (
     composite,
     integers,
@@ -29,12 +30,14 @@ from tests.utils.constants import (
     MIN_GAMMA,
 )
 
+# just a more hyptohesis-like way to get an address
+# from boa's search strategy
+address = strategy("address")
+
 # ---------------- addresses ----------------
-# TODO this should use the boa address strategy
-# when the recurring address feature gets added
-deployer = just(boa.env.generate_address())
-fee_receiver = just(boa.env.generate_address())
-owner = just(boa.env.generate_address())
+deployer = address
+fee_receiver = address
+owner = address
 
 
 # ---------------- factory ----------------
@@ -45,6 +48,8 @@ def factory(
     _deployer = draw(deployer)
     _fee_receiver = draw(fee_receiver)
     _owner = draw(owner)
+
+    assume(_fee_receiver != _owner != _deployer)
 
     with boa.env.prank(_deployer):
         amm_implementation = amm_deployer.deploy_as_blueprint()
