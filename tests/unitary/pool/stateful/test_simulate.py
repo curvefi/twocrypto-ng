@@ -52,7 +52,7 @@ class StatefulSimulation(StatefulBase):
         # Adjust virtual prices
         self.trader.xcp_profit = self.swap.xcp_profit()
         self.trader.xcp_profit_real = self.swap.virtual_price()
-        self.trader.t = boa.env.vm.state.timestamp
+        self.trader.t = boa.env.evm.patch.timestamp
         self.swap_no = 0
 
     @rule(
@@ -74,7 +74,7 @@ class StatefulSimulation(StatefulBase):
             return  # if swap breaks, dont check.
 
         dy_trader = self.trader.buy(dx, exchange_i, 1 - exchange_i)
-        self.trader.tweak_price(boa.env.vm.state.timestamp)
+        self.trader.tweak_price(boa.env.evm.patch.timestamp)
 
         # exchange checks:
         assert approx(self.swap_out, dy_trader, 1e-3)

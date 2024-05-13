@@ -48,7 +48,7 @@ class RampTest(NumbaGoUp):
         TODO check condition in the pool as it looks weird
         """
         return (
-            boa.env.vm.state.timestamp
+            boa.env.evm.patch.timestamp
             > self.swap.initial_A_gamma_time() + (MIN_RAMP_TIME - 1)
         )
 
@@ -95,7 +95,7 @@ class RampTest(NumbaGoUp):
         )  # clamp new_gamma to stay in [MIN_GAMMA, MAX_GAMMA]
 
         # current timestamp + fuzzed days
-        ramp_duration = boa.env.vm.state.timestamp + days * UNIX_DAY
+        ramp_duration = boa.env.evm.patch.timestamp + days * UNIX_DAY
 
         self.swap.ramp_A_gamma(
             new_A,

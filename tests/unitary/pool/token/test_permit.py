@@ -12,7 +12,7 @@ ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 def test_permit_success(eth_acc, bob, swap, sign_permit):
 
     value = 2**256 - 1
-    deadline = boa.env.vm.state.timestamp + 600
+    deadline = boa.env.evm.patch.timestamp + 600
 
     sig = sign_permit(
         swap=swap,
@@ -51,7 +51,7 @@ def test_permit_reverts_owner_is_invalid(bob, swap):
             ZERO_ADDRESS,
             bob,
             2**256 - 1,
-            boa.env.vm.state.timestamp + 600,
+            boa.env.evm.patch.timestamp + 600,
             27,
             b"\x00" * 32,
             b"\x00" * 32,
@@ -64,7 +64,7 @@ def test_permit_reverts_deadline_is_invalid(bob, swap):
             bob,
             bob,
             2**256 - 1,
-            boa.env.vm.state.timestamp - 600,
+            boa.env.evm.patch.timestamp - 600,
             27,
             b"\x00" * 32,
             b"\x00" * 32,
@@ -77,7 +77,7 @@ def test_permit_reverts_signature_is_invalid(bob, swap):
             bob,
             bob,
             2**256 - 1,
-            boa.env.vm.state.timestamp + 600,
+            boa.env.evm.patch.timestamp + 600,
             27,
             b"\x00" * 32,
             b"\x00" * 32,
@@ -88,5 +88,5 @@ def test_domain_separator_updates_when_chain_id_updates(swap):
 
     domain_separator = swap.DOMAIN_SEPARATOR()
     with boa.env.anchor():
-        boa.env.vm.patch.chain_id = 42
+        boa.env.evm.patch.chain_id = 42
         assert domain_separator != swap.DOMAIN_SEPARATOR()
