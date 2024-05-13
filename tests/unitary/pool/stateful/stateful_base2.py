@@ -160,14 +160,17 @@ class StatefulBase(RuleBasedStateMachine):
 
     def remove_liquidity(self, amount, user):
         amounts = [c.balanceOf(user) for c in self.coins]
-        tokens = self.swap.balanceOf(user)
         self.pool.remove_liquidity(amount, [0] * 2, sender=user)
         amounts = [
             (c.balanceOf(user) - a) for c, a in zip(self.coins, amounts)
         ]
-        self.total_supply -= tokens
-        tokens -= self.swap.balanceOf(user)
+        self.total_supply -= amount
         self.balances = [b - a for a, b in zip(amounts, self.balances)]
+
+        # we don't want to keep track of users with low liquidity because
+        # it would approximate to 0 tokens and break the invariants.
+        if self.pool.balanceOf(user) <= 1e0:
+            self.depositors.remove(user)
 
         # virtual price resets if everything is withdrawn
         if self.total_supply == 0:
@@ -223,10 +226,25 @@ class StatefulBase(RuleBasedStateMachine):
                 # assert current balances are less as the previous ones
                 for c, b in zip(self.coins, prev_balances):
                     # check that the balance of the pool is less than before
-                    assert c.balanceOf(self.pool) < b
+                    if c.balanceOf(self.pool) == b:
+                        assert self.pool.balanceOf(d) < 10, (
+                            "balance of the depositor is not small enough to"
+                            "justify a withdrawal that does not affect the"
+                            "pool token balance"
+                        )
+                    else:
+                        assert c.balanceOf(self.pool) < b, (
+                            "one withdrawal didn't reduce the liquidity"
+                            "of the pool"
+                        )
             for c in self.coins:
                 # there should not be any liquidity left in the pool
-                assert c.balanceOf(self.pool) == 0
+                assert (
+                    # 1e7 is an arbitrary number that should be small enough
+                    # not to worry about the pool actually not being empty.
+                    c.balanceOf(self.pool)
+                    <= 1e7
+                ), "pool still has signficant liquidity after all withdrawals"
 
     @invariant()
     def balances(self):

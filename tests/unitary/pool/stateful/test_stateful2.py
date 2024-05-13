@@ -1,10 +1,8 @@
-from hypothesis import note, settings
+from hypothesis import note
 from hypothesis.stateful import precondition, rule
-from hypothesis.strategies import data, integers
+from hypothesis.strategies import data, integers, sampled_from
 from stateful_base2 import StatefulBase
 from strategies import address
-
-settings.register_profile("no_shrinking", settings(phases=[]))
 
 
 class OnlySwapStateful(StatefulBase):
@@ -62,8 +60,44 @@ class OnlyBalancedLiquidityStateful(UpOnlyLiquidityStateful):
     are balanced.
     """
 
-    # TODO
-    pass
+    @precondition(
+        # we need to have enough liquidity before removing
+        # leaving the pool with shallow liquidity can break the amm
+        lambda self: self.pool.totalSupply() > 10e20
+        # we should not empty the pool
+        # (we still check that we can in the invariants)
+        and len(self.depositors) > 1
+    )
+    @rule(
+        data=data(),
+    )
+    def remove_liquidity_balanced_rule(self, data):
+        # we use a data strategy since the amount we want to remove
+        # depends on the pool liquidity and the depositor balance
+        # which are only known at runtime
+        depositor = data.draw(
+            sampled_from(list(self.depositors)), label="depositor"
+        )
+        depositor_balance = self.pool.balanceOf(depositor)
+        # we can remove between 10% and 100% of the depositor balance
+        amount = data.draw(
+            integers(
+                min_value=int(depositor_balance * 0.10),
+                max_value=depositor_balance,
+            ),
+            label="amount to withdraw",
+        )
+        note(
+            "Removing {:.2e} from the pool ".format(amount)
+            + "that is {:.1%} of address balance".format(
+                amount / depositor_balance
+            )
+            + " and {:.1%} of pool liquidity".format(
+                amount / self.pool.totalSupply()
+            )
+        )
+
+        self.remove_liquidity(amount, depositor)
 
 
 class UnbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
@@ -89,8 +123,8 @@ class RampingStateful(UnbalancedLiquidityStateful):
 
 
 # TestOnlySwap = OnlySwapStateful.TestCase
-TestUpOnlyLiquidity = UpOnlyLiquidityStateful.TestCase
-# TestOnlyBalancedLiquidity = OnlyBalancedLiquidityStateful.TestCase
+# TestUpOnlyLiquidity = UpOnlyLiquidityStateful.TestCase
+TestOnlyBalancedLiquidity = OnlyBalancedLiquidityStateful.TestCase
 # TestUnbalancedLiquidity = UnbalancedLiquidityStateful.TestCase
 # RampingStateful = RampingStateful.TestCase
 # TODO variable decimals
