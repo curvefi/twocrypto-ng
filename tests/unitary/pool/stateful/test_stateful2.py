@@ -122,8 +122,8 @@ class RampingStateful(UnbalancedLiquidityStateful):
     pass
 
 
-# TestOnlySwap = OnlySwapStateful.TestCase
-# TestUpOnlyLiquidity = UpOnlyLiquidityStateful.TestCase
+TestOnlySwap = OnlySwapStateful.TestCase
+TestUpOnlyLiquidity = UpOnlyLiquidityStateful.TestCase
 TestOnlyBalancedLiquidity = OnlyBalancedLiquidityStateful.TestCase
 # TestUnbalancedLiquidity = UnbalancedLiquidityStateful.TestCase
 # RampingStateful = RampingStateful.TestCase
