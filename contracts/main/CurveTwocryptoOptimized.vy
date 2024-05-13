@@ -1,5 +1,4 @@
 # pragma version 0.3.10
-# pragma optimize gas
 # pragma evm-version paris
 """
 @title CurveTwocryptoOptimized
@@ -317,7 +316,7 @@ def _transfer_in(
         # If we checked for received_amounts == dx, an extra transfer without a
         # call to exchange_received will break the method.
         dx: uint256 = coin_balance - self.balances[_coin_idx]
-        assert dx >= _dx  # dev: user didn't give us coins
+        assert dx >= _dx, "dev: user didn't give us coins"
 
         # Adjust balances
         self.balances[_coin_idx] += dx
@@ -479,7 +478,7 @@ def add_liquidity(
     d_token_fee: uint256 = 0
     old_D: uint256 = 0
 
-    assert amounts[0] + amounts[1] > 0  # dev: no coins to add
+    assert amounts[0] + amounts[1] > 0, "dev: no coins to add"
 
     # --------------------- Get prices, balances -----------------------------
 
@@ -534,7 +533,7 @@ def add_liquidity(
     else:
         d_token = self.get_xcp(D, price_scale)  # <----- Making initial virtual price equal to 1.
 
-    assert d_token > 0  # dev: nothing minted
+    assert d_token > 0, "dev: nothing minted"
 
     if old_D > 0:
 
@@ -789,8 +788,8 @@ def _exchange(
     min_dy: uint256,
 ) -> uint256[3]:
 
-    assert i != j  # dev: coin index out of range
-    assert dx_received > 0  # dev: do not exchange 0 coins
+    assert i != j, "dev: coin index out of range"
+    assert dx_received > 0, "dev: do not exchange 0 coins"
 
     A_gamma: uint256[2] = self._A_gamma()
     xp: uint256[N_COINS] = self.balances
@@ -1294,8 +1293,8 @@ def _calc_withdraw_one_coin(
 ) -> (uint256, uint256, uint256[N_COINS], uint256):
 
     token_supply: uint256 = self.totalSupply
-    assert token_amount <= token_supply  # dev: token amount more than supply
-    assert i < N_COINS  # dev: coin out of range
+    assert token_amount <= token_supply, "dev: token amount more than supply"
+    assert i < N_COINS, "dev: coin out of range"
 
     xx: uint256[N_COINS] = self.balances
     D0: uint256 = 0
@@ -1460,8 +1459,8 @@ def permit(
     @param _s The second 32 bytes of the ECDSA signature.
     @return bool Success.
     """
-    assert _owner != empty(address)  # dev: invalid owner
-    assert block.timestamp <= _deadline  # dev: permit expired
+    assert _owner != empty(address), "dev: invalid owner"
+    assert block.timestamp <= _deadline, "dev: permit expired"
 
     nonce: uint256 = self.nonces[_owner]
     digest: bytes32 = keccak256(
@@ -1475,7 +1474,7 @@ def permit(
             ),
         )
     )
-    assert ecrecover(digest, _v, _r, _s) == _owner  # dev: invalid signature
+    assert ecrecover(digest, _v, _r, _s) == _owner, "dev: invalid signature"
 
     self.nonces[_owner] = unsafe_add(nonce, 1)  # <-- Unsafe add is safe here.
     self._approve(_owner, _spender, _value)
@@ -1883,9 +1882,9 @@ def ramp_A_gamma(
     @param future_gamma The future gamma value.
     @param future_time The timestamp at which the ramping will end.
     """
-    assert msg.sender == factory.admin()  # dev: only owner
-    assert block.timestamp > self.initial_A_gamma_time + (MIN_RAMP_TIME - 1)  # dev: ramp undergoing
-    assert future_time > block.timestamp + MIN_RAMP_TIME - 1  # dev: insufficient time
+    assert msg.sender == factory.admin(), "dev: only owner"
+    assert block.timestamp > self.initial_A_gamma_time + (MIN_RAMP_TIME - 1), "dev: ramp undergoing"
+    assert future_time > block.timestamp + MIN_RAMP_TIME - 1, "dev: insufficient time"
 
     A_gamma: uint256[2] = self._A_gamma()
     initial_A_gamma: uint256 = A_gamma[0] << 128
@@ -1928,7 +1927,7 @@ def stop_ramp_A_gamma():
     @notice Stop Ramping A and gamma parameters immediately.
     @dev Only accessible by factory admin.
     """
-    assert msg.sender == factory.admin()  # dev: only owner
+    assert msg.sender == factory.admin(), "dev: only owner"
 
     A_gamma: uint256[2] = self._A_gamma()
     current_A_gamma: uint256 = A_gamma[0] << 128
@@ -1965,7 +1964,7 @@ def apply_new_parameters(
     @param _new_ma_time The new ma time. ma_time is time_in_seconds/ln(2).
     @param _new_xcp_ma_time The new ma time for xcp oracle.
     """
-    assert msg.sender == factory.admin()  # dev: only owner
+    assert msg.sender == factory.admin(), "dev: only owner"
 
     # ----------------------------- Set fee params ---------------------------
 
@@ -1976,16 +1975,16 @@ def apply_new_parameters(
     current_fee_params: uint256[3] = self._unpack_3(self.packed_fee_params)
 
     if new_out_fee < MAX_FEE + 1:
-        assert new_out_fee > MIN_FEE - 1  # dev: fee is out of range
+        assert new_out_fee > MIN_FEE - 1, "dev: fee is out of range"
     else:
         new_out_fee = current_fee_params[1]
 
     if new_mid_fee > MAX_FEE:
         new_mid_fee = current_fee_params[0]
-    assert new_mid_fee <= new_out_fee  # dev: mid-fee is too high
+    assert new_mid_fee <= new_out_fee, "dev: mid-fee is too high"
 
     if new_fee_gamma < 10**18:
-        assert new_fee_gamma > 0  # dev: fee_gamma out of range [1 .. 10**18]
+        assert new_fee_gamma > 0, "dev: fee_gamma out of range [1 .. 10**18]"
     else:
         new_fee_gamma = current_fee_params[2]
 
@@ -2006,7 +2005,7 @@ def apply_new_parameters(
         new_adjustment_step = current_rebalancing_params[1]
 
     if new_ma_time < 872542:  # <----- Calculated as: 7 * 24 * 60 * 60 / ln(2)
-        assert new_ma_time > 86  # dev: MA time should be longer than 60/ln(2)
+        assert new_ma_time > 86, "dev: MA time should be longer than 60/ln(2)"
     else:
         new_ma_time = current_rebalancing_params[2]
 
@@ -2017,7 +2016,7 @@ def apply_new_parameters(
     # Set xcp oracle moving average window time:
     new_xcp_ma_time: uint256 = _new_xcp_ma_time
     if new_xcp_ma_time < 872542:
-        assert new_xcp_ma_time > 86  # dev: xcp MA time should be longer than 60/ln(2)
+        assert new_xcp_ma_time > 86, "dev: xcp MA time should be longer than 60/ln(2)"
     else:
         new_xcp_ma_time = self.xcp_ma_time
     self.xcp_ma_time = new_xcp_ma_time

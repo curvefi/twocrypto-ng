@@ -1,5 +1,4 @@
 # pragma version 0.3.10
-# pragma optimize gas
 
 N_COINS: constant(uint256) = 2
 A_MULTIPLIER: constant(uint256) = 10000

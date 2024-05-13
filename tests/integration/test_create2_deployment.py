@@ -2,6 +2,7 @@ import os
 
 import boa
 import pytest
+from boa_zksync import ZksyncDeployer
 from eth_utils import keccak
 
 
@@ -12,6 +13,12 @@ def forked_chain():
         rpc_url is not None
     ), "Provider url is not set, add RPC_ETHEREUM param to env"
     boa.env.fork(url=rpc_url)
+
+
+@pytest.fixture(autouse=True)
+def set_balances(forked_chain):
+    for acc in boa.env._accounts:
+        boa.env.set_balance(acc, 10 ** 25)
 
 
 @pytest.fixture(scope="module")
@@ -28,9 +35,10 @@ def get_create2_deployment_address(
     salt,
     blueprint=False,
     blueprint_preamble=b"\xFE\x71\x00",
+    is_zksync=False,
 ):
     deployment_bytecode = compiled_bytecode + abi_encoded_ctor
-    if blueprint:
+    if blueprint and not is_zksync:
         # Add blueprint preamble to disable calling the contract:
         blueprint_bytecode = blueprint_preamble + deployment_bytecode
         # Add code for blueprint deployment:
@@ -60,23 +68,23 @@ def deploy_contract(
     deployer=boa.env.generate_address(),
     blueprint: bool = False,
 ):
+    salt = keccak(42069)
+    compiled_bytecode = contract_obj.compiler_data.bytecode
+    (
+        precomputed_address,
+        deployment_bytecode,
+    ) = get_create2_deployment_address(
+        create2deployer,
+        compiled_bytecode,
+        abi_encoded_args,
+        salt,
+        blueprint=blueprint,
+        blueprint_preamble=b"\xFE\x71\x00",
+        is_zksync=isinstance(contract_obj, ZksyncDeployer),
+    )
+    assert precomputed_address == calculated_address
 
     try:
-        salt = keccak(42069)
-        compiled_bytecode = contract_obj.compiler_data.bytecode
-        (
-            precomputed_address,
-            deployment_bytecode,
-        ) = get_create2_deployment_address(
-            create2deployer,
-            compiled_bytecode,
-            abi_encoded_args,
-            salt,
-            blueprint=blueprint,
-            blueprint_preamble=b"\xFE\x71\x00",
-        )
-        assert precomputed_address == calculated_address
-
         with boa.env.prank(deployer):
             deploy_via_create2_factory(
                 create2deployer, deployment_bytecode, salt

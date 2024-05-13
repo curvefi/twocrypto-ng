@@ -1,5 +1,4 @@
 # pragma version 0.3.10
-# pragma optimize gas
 # pragma evm-version paris
 # (c) Curve.Fi, 2020-2023
 # AMM Math for 2-coin Curve Cryptoswap Pools

@@ -23,5 +23,6 @@ pandas
 matplotlib
 
 # vyper and dev framework:
-git+https://github.com/vyperlang/titanoboa@8c2f673c10439d13b976d1f1667462810379f010
+git+https://github.com/DanielSchiavini/titanoboa-zksync
+titanoboa@git+https://github.com/DanielSchiavini/titanoboa@zksync
 vyper>=0.3.10
