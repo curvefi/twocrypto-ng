@@ -4,8 +4,8 @@ import boa
 import pytest
 from eth_utils import keccak
 
-
 pytestmark = pytest.mark.ignore_isolation
+
 
 @pytest.fixture(scope="module")
 def forked_chain():
