@@ -24,6 +24,6 @@ matplotlib
 # other deps (needed for pypy)
 cytoolz
 
-# vyper and dev framework:
-git+https://github.com/vyperlang/titanoboa@409d8b19be851ba39018188014e1babc1781e0d8
+# vyper and dev framework (boa interpreter):
+git+https://github.com/vyperlang/titanoboa@1bf16f916b91aab299e293b4148be455c1674706
 vyper>=0.3.10
