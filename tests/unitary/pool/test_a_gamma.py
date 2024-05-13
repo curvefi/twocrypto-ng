@@ -17,7 +17,7 @@ def test_revert_ramp_A_gamma(swap, factory_admin):
     gamma = swap.gamma()
     future_A = A * 10  # 10 is too large of a jump
     future_gamma = gamma // 100
-    t0 = boa.env.vm.state.timestamp
+    t0 = boa.env.evm.patch.timestamp
     t1 = t0 + 7 * UNIX_DAY
 
     with boa.env.prank(factory_admin), boa.reverts():
@@ -33,7 +33,7 @@ def test_ramp_A_gamma(swap, factory_admin):
 
     future_A = A * 9
     future_gamma = gamma // 10
-    t0 = boa.env.vm.state.timestamp
+    t0 = boa.env.evm.patch.timestamp
     t1 = t0 + 7 * UNIX_DAY
 
     with boa.env.prank(factory_admin):
