@@ -1,18 +1,24 @@
 import os
 
 import boa
+import boa_zksync
 import pytest
+from boa.util.abi import Address
 from boa_zksync import ZksyncDeployer
 from eth_utils import keccak
 
 
 @pytest.fixture(scope="module")
-def forked_chain():
+def forked_chain(is_zksync):
     rpc_url = os.getenv("RPC_ETHEREUM")
     assert (
         rpc_url is not None
     ), "Provider url is not set, add RPC_ETHEREUM param to env"
-    boa.env.fork(url=rpc_url)
+    if is_zksync:
+        boa.interpret.disable_cache()
+        boa_zksync.set_zksync_fork(rpc_url)
+    else:
+        boa.set_network_env(rpc_url)
 
 
 @pytest.fixture(autouse=True)
@@ -22,7 +28,9 @@ def set_balances(forked_chain):
 
 
 @pytest.fixture(scope="module")
-def create2deployer():
+def create2deployer(is_zksync):
+    if is_zksync:
+        raise pytest.skip("Create2 deployer is not deployed to zksync")
     return boa.load_abi("abi/create2deployer.json").at(
         "0x13b0D85CcB8bf860b6b79AF3029fCA081AE9beF2"
     )
@@ -37,18 +45,20 @@ def get_create2_deployment_address(
     blueprint_preamble=b"\xFE\x71\x00",
     is_zksync=False,
 ):
-    deployment_bytecode = compiled_bytecode + abi_encoded_ctor
-    if blueprint and not is_zksync:
-        # Add blueprint preamble to disable calling the contract:
-        blueprint_bytecode = blueprint_preamble + deployment_bytecode
-        # Add code for blueprint deployment:
-        len_blueprint_bytecode = len(blueprint_bytecode).to_bytes(2, "big")
-        deployment_bytecode = (
-            b"\x61"
-            + len_blueprint_bytecode
-            + b"\x3d\x81\x60\x0a\x3d\x39\xf3"
-            + blueprint_bytecode
-        )
+    deployment_bytecode = compiled_bytecode
+    if not is_zksync:
+        deployment_bytecode += abi_encoded_ctor
+        if blueprint:
+            # Add blueprint preamble to disable calling the contract:
+            blueprint_bytecode = blueprint_preamble + deployment_bytecode
+            # Add code for blueprint deployment:
+            len_blueprint_bytecode = len(blueprint_bytecode).to_bytes(2, "big")
+            deployment_bytecode = (
+                b"\x61"
+                + len_blueprint_bytecode
+                + b"\x3d\x81\x60\x0a\x3d\x39\xf3"
+                + blueprint_bytecode
+            )
 
     return (
         create2deployer.computeAddress(salt, keccak(deployment_bytecode)),
@@ -82,7 +92,7 @@ def deploy_contract(
         blueprint_preamble=b"\xFE\x71\x00",
         is_zksync=isinstance(contract_obj, ZksyncDeployer),
     )
-    assert precomputed_address == calculated_address
+    assert precomputed_address == Address(calculated_address)
 
     try:
         with boa.env.prank(deployer):
