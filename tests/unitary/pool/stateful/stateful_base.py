@@ -277,6 +277,7 @@ class StatefulBase(RuleBasedStateMachine):
         still manages to find the correct value. If this is not the case
         the pool is broken and it can't execute swaps anymore.
         """
+        # TODO should this be even smaller? Or depend on the pool size?
         ARBITRARY_SMALL_AMOUNT = int(1e15)
         try:
             self.pool.get_dy(0, 1, ARBITRARY_SMALL_AMOUNT)
@@ -387,5 +388,3 @@ class StatefulBase(RuleBasedStateMachine):
 TestBase = StatefulBase.TestCase
 
 # TODO make sure that xcp goes down when claiming admin fees
-# TODO add an invariant with withdrawal simulations to make sure
-# it is always possible
