@@ -9,7 +9,7 @@ from hypothesis.stateful import (
     run_state_machine_as_test,
 )
 
-from tests.unitary.pool.stateful.test_stateful import NumbaGoUp
+from tests.unitary.pool.stateful.legacy.test_stateful import NumbaGoUp
 from tests.utils.constants import (
     MAX_A,
     MAX_GAMMA,

@@ -1,10 +1,14 @@
 import boa
-from boa.test import strategy
 from hypothesis import HealthCheck, settings
-from hypothesis.stateful import rule, run_state_machine_as_test
+from hypothesis.stateful import (
+    Bundle,
+    precondition,
+    rule,
+    run_state_machine_as_test,
+)
 
 from tests.fixtures.pool import INITIAL_PRICES
-from tests.unitary.pool.stateful.stateful_base import StatefulBase
+from tests.unitary.pool.stateful.legacy.stateful_base import StatefulBase
 from tests.utils.tokens import mint_for_testing
 
 MAX_SAMPLES = 20
@@ -17,23 +21,26 @@ class NumbaGoUp(StatefulBase):
     Test that profit goes up
     """
 
-    user = strategy("address")
-    exchange_i = strategy("uint8", max_value=1)
-    deposit_amounts = strategy(
-        "uint256[2]", min_value=0, max_value=10**9 * 10**18
+    depositor = Bundle("depositor")
+
+    def supply_not_too_big(self):
+        # TODO unsure about this condition
+        # this is not stableswap so hard
+        # to say what is a good limit
+        return self.swap.D() < MAX_D
+
+    def pool_not_empty(self):
+        return self.total_supply != 0
+
+    @precondition(supply_not_too_big)
+    @rule(
+        target=depositor,
+        deposit_amounts=StatefulBase.two_token_amounts,
+        user=StatefulBase.user,
     )
-    token_amount = strategy("uint256", max_value=10**12 * 10**18)
-    check_out_amount = strategy("bool")
-
-    @rule(deposit_amounts=deposit_amounts, user=user)
-    def deposit(self, deposit_amounts, user):
-
-        if self.swap.D() > MAX_D:
-            return
-
-        amounts = self.convert_amounts(deposit_amounts)
+    def add_liquidity(self, amounts, user):
         if sum(amounts) == 0:
-            return
+            return str(user)
 
         new_balances = [x + y for x, y in zip(self.balances, amounts)]
 
@@ -52,7 +59,7 @@ class NumbaGoUp(StatefulBase):
 
             if self.check_limits(amounts):
                 raise
-            return
+            return str(user)
 
         # This is to check that we didn't end up in a borked state after
         # an exchange succeeded
@@ -64,13 +71,20 @@ class NumbaGoUp(StatefulBase):
                 0,
                 10**16 * 10 ** self.decimals[1] // self.swap.price_scale(),
             )
+        return str(user)
 
-    @rule(token_amount=token_amount, user=user)
+    @precondition(pool_not_empty)
+    @rule(token_amount=StatefulBase.token_amount, user=depositor)
     def remove_liquidity(self, token_amount, user):
+        # TODO can we do something for slippage, maybe make it == token_amount?
         if self.swap.balanceOf(user) < token_amount or token_amount == 0:
+            print("Skipping")
+            # TODO this should be test with fuzzing
+            # no need to have this case in stateful
             with boa.reverts():
                 self.swap.remove_liquidity(token_amount, [0] * 2, sender=user)
         else:
+            print("Removing")
             amounts = [c.balanceOf(user) for c in self.coins]
             tokens = self.swap.balanceOf(user)
             with self.upkeep_on_claim():
@@ -86,10 +100,11 @@ class NumbaGoUp(StatefulBase):
             if self.total_supply == 0:
                 self.virtual_price = 10**18
 
+    @precondition(pool_not_empty)
     @rule(
-        token_amount=token_amount,
-        exchange_i=exchange_i,
-        user=user,
+        token_amount=StatefulBase.token_amount,
+        exchange_i=StatefulBase.exchange_i,
+        user=depositor,
     )
     def remove_liquidity_one_coin(self, token_amount, exchange_i, user):
         try:

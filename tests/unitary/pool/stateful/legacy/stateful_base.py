@@ -2,22 +2,44 @@ import contextlib
 from math import log
 
 import boa
-from boa.test import strategy
+from boa.test import strategy as boa_st
+from hypothesis import strategies as hyp_st
 from hypothesis.stateful import RuleBasedStateMachine, invariant, rule
 
 from tests.fixtures.pool import INITIAL_PRICES
-from tests.utils.constants import UNIX_DAY
 from tests.utils.tokens import mint_for_testing
 
-MAX_SAMPLES = 20
 MAX_D = 10**12 * 10**18  # $1T is hopefully a reasonable cap for tests
 
 
 class StatefulBase(RuleBasedStateMachine):
-    exchange_amount_in = strategy("uint256", max_value=10**9 * 10**18)
-    exchange_i = strategy("uint8", max_value=1)
-    sleep_time = strategy("uint256", max_value=UNIX_DAY * 7)
-    user = strategy("address")
+    # strategy to pick two random amount for the two tokens
+    # in the pool. Useful for depositing, withdrawing, etc.
+    two_token_amounts = boa_st(
+        "uint256[2]", min_value=0, max_value=10**9 * 10**18
+    )  # TODO check how this stuff is fuzzed
+
+    # strategy to pick a random amount for an action like exchange amounts,
+    # remove_liquidity (to determine the LP share),
+    # remove_liquidity_one_coin, etc.
+    token_amount = boa_st("uint256", max_value=10**12 * 10**18)
+
+    # TODO check bounds
+    # exchange_amount_in = strategy("uint256", max_value=10**9 * 10**18)
+
+    # strategy to pick which token should be exchanged for the other
+    exchange_i = boa_st("uint8", max_value=1)
+
+    # strategy to decide by how much we should move forward in time
+    # for ramping, oracle updates, etc.
+    sleep_time = boa_st("uint256", max_value=86400 * 7)
+
+    # strategy to pick which address should perform the action
+    user = boa_st("address")
+
+    percentage = hyp_st.integers(min_value=1, max_value=100).map(
+        lambda x: x / 100
+    )
 
     def __init__(self):
 
@@ -59,13 +81,6 @@ class StatefulBase(RuleBasedStateMachine):
         self.total_supply = self.swap.balanceOf(user)
         self.xcp_profit = 10**18
 
-    def convert_amounts(self, amounts):
-        prices = [10**18] + [self.swap.price_scale()]
-        return [
-            p * a // 10 ** (36 - d)
-            for p, a, d in zip(prices, amounts, self.decimals)
-        ]
-
     def check_limits(self, amounts, D=True, y=True):
         """
         Should be good if within limits, but if outside - can be either
@@ -104,18 +119,11 @@ class StatefulBase(RuleBasedStateMachine):
         return True
 
     @rule(
-        exchange_amount_in=exchange_amount_in,
+        exchange_amount_in=token_amount,
         exchange_i=exchange_i,
         user=user,
     )
     def exchange(self, exchange_amount_in, exchange_i, user):
-        out = self._exchange(exchange_amount_in, exchange_i, user)
-        if out:
-            self.swap_out = out
-            return
-        self.swap_out = None
-
-    def _exchange(self, exchange_amount_in, exchange_i, user):
         exchange_j = 1 - exchange_i
         try:
             calc_amount = self.swap.get_dy(
@@ -127,6 +135,7 @@ class StatefulBase(RuleBasedStateMachine):
             if self.check_limits(_amounts) and exchange_amount_in > 10000:
                 raise
             return None
+
         _amounts = [0] * 2
         _amounts[exchange_i] = exchange_amount_in
         _amounts[exchange_j] = -calc_amount
@@ -228,7 +237,7 @@ class StatefulBase(RuleBasedStateMachine):
             c.balanceOf(self.fee_receiver) for c in self.coins
         ]
         pool_is_ramping = (
-            self.swap.future_A_gamma_time() > boa.env.vm.state.timestamp
+            self.swap.future_A_gamma_time() > boa.env.evm.state.patch.timestamp
         )
 
         try:
