@@ -27,7 +27,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run Tests
-        run: python -m pytest tests/unitary -n auto -k 'not pool/stateful'
+        run: python -m pytest tests/unitary -n auto --ignore=tests/unitary/pool/stateful
 
   stateful-tests:
     runs-on: ubuntu-latest
