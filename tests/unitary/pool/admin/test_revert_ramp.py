@@ -54,16 +54,18 @@ def test_revert_ramp_too_far(swap, factory_admin):
     gamma = swap.gamma()
     future_time = boa.env.evm.patch.timestamp + UNIX_DAY + 1
 
-    with boa.env.prank(factory_admin), boa.reverts("A change too high"):
+    with boa.env.prank(factory_admin), boa.reverts(dev="A change too high"):
         future_A = A * 11  # can at most increase by 10x
         swap.ramp_A_gamma(future_A, gamma, future_time)
-    with boa.env.prank(factory_admin), boa.reverts("A change too low"):
+    with boa.env.prank(factory_admin), boa.reverts(dev="A change too low"):
         future_A = A // 11  # can at most decrease by 10x
         swap.ramp_A_gamma(future_A, gamma, future_time)
 
-    with boa.env.prank(factory_admin), boa.reverts("gamma change too high"):
-        future_gamma = gamma * 10  # can at most increase by 10x
+    with boa.env.prank(factory_admin), boa.reverts(
+        dev="gamma change too high"
+    ):
+        future_gamma = gamma * 11  # can at most increase by 10x
         swap.ramp_A_gamma(A, future_gamma, future_time)
-    with boa.env.prank(factory_admin), boa.reverts("gamma change too low"):
+    with boa.env.prank(factory_admin), boa.reverts(dev="gamma change too low"):
         future_gamma = gamma // 11  # can at most decrease by 10x
         swap.ramp_A_gamma(A, future_gamma, future_time)
