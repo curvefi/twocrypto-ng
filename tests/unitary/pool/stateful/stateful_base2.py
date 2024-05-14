@@ -12,6 +12,7 @@ from hypothesis.strategies import integers
 from strategies import address
 from strategies import pool as pool_strategy
 
+from contracts.main import CurveTwocryptoFactory as factory
 from contracts.mocks import ERC20Mock as ERC20
 from tests.utils.constants import UNIX_DAY
 from tests.utils.tokens import mint_for_testing
@@ -46,6 +47,10 @@ class StatefulBase(RuleBasedStateMachine):
 
         self.depositors = set()
 
+        self.equilibrium = 5e17
+
+        self.fee_receiver = factory.at(pool.factory()).fee_receiver()
+
         # deposit some initial liquidity
         balanced_amounts = self.get_balanced_deposit_amounts(amount)
         note(
@@ -54,6 +59,7 @@ class StatefulBase(RuleBasedStateMachine):
             )
         )
         self.add_liquidity(balanced_amounts, user)
+        self.report_equilibrium()
 
     # --------------- utility methods ---------------
 
@@ -177,8 +183,83 @@ class StatefulBase(RuleBasedStateMachine):
             event("full liquidity removal")
             self.virtual_price = 1e18
 
-    def remove_liquidity_one_coin(self, percentage):
-        pass
+    def remove_liquidity_one_coin(
+        self, percentage: float, coin_idx: int, user
+    ):
+        # upkeeping prepartion logic
+        admin_balances_pre = [
+            c.balanceOf(self.fee_receiver) for c in self.coins
+        ]
+        pool_is_ramping = (
+            self.pool.future_A_gamma_time() > boa.env.evm.patch.timestamp
+        )
+        # end of upkeeping prepartion logic
+
+        lp_tokens_balance = self.pool.balanceOf(user)
+        lp_tokens_to_withdraw = int(lp_tokens_balance * percentage)
+        # TODO what to do with this?
+        self.pool.calc_withdraw_one_coin(lp_tokens_to_withdraw, coin_idx)
+        self.pool.remove_liquidity_one_coin(
+            lp_tokens_to_withdraw,
+            coin_idx,
+            # TODO this can probably be made stricter
+            0,  # no slippage checks since we expect a loss
+            sender=user,
+        )
+
+        # TODO fix this (probably remove in favor of the one at the bottom)
+        # self.balances[coin_idx] -= expected_token_amount
+
+        self.total_supply -= lp_tokens_to_withdraw
+
+        # we don't want to keep track of users with low liquidity because
+        # it would approximate to 0 tokens and break the invariants.
+        if self.pool.balanceOf(user) <= 1e0:
+            self.depositors.remove(user)
+
+        # upkeeping logic
+
+        new_xcp_profit_a = self.pool.xcp_profit_a()
+        old_xcp_profit_a = self.xcp_profit_a
+
+        claimed = False
+        if new_xcp_profit_a > old_xcp_profit_a:
+            event("admin fees claim was detected")
+            claimed = True
+            self.xcp_profit_a = new_xcp_profit_a
+
+        admin_balances_post = [
+            c.balanceOf(self.fee_receiver) for c in self.coins
+        ]
+
+        if claimed:
+
+            for i in range(2):
+                claimed_amount = admin_balances_post[i] - admin_balances_pre[i]
+                assert claimed_amount > 0  # check if non zero amounts of claim
+                assert not pool_is_ramping  # cannot claim while ramping
+
+                # update self.balances
+                self.balances[i] -= claimed_amount
+
+        self.xcp_profit = self.pool.xcp_profit()
+
+    def report_equilibrium(self):
+        old_equilibrium = self.equilibrium
+        self.equilibrium = (
+            self.coins[0].balanceOf(self.pool)
+            + self.coins[1].balanceOf(self.pool) * self.pool.price_scale()
+        ) / self.pool.D()
+
+        percentage_change = (
+            (self.equilibrium - old_equilibrium) / old_equilibrium * 100
+        )
+        note(
+            "pool balance (center is at 5e17) {:.2e},".format(self.equilibrium)
+            + "percentage change from old equilibrium: {:.4%}".format(
+                percentage_change
+            )
+        )
 
     @rule(time_increase=integers(min_value=1, max_value=UNIX_DAY * 7))
     def time_forward(self, time_increase):
@@ -207,7 +288,7 @@ class StatefulBase(RuleBasedStateMachine):
             pass
 
     @invariant()
-    def can_always_withdraw(self):
+    def can_always_withdraw(self, imbalanced_operations_allowed=False):
         """Make sure that newton_D always works when withdrawing liquidity.
         No matter how imbalanced the pool is, it should always be possible
         to withdraw liquidity in a proportional way.
@@ -240,19 +321,24 @@ class StatefulBase(RuleBasedStateMachine):
             for c in self.coins:
                 # there should not be any liquidity left in the pool
                 assert (
+                    # when imbalanced withdrawal occurs the pool protects
+                    # itself by retaining some liquidity in the pool.
+                    # In such a scenario a pool can have some liquidity left
+                    # even after all withdrawals.
+                    imbalanced_operations_allowed
+                    or
                     # 1e7 is an arbitrary number that should be small enough
                     # not to worry about the pool actually not being empty.
-                    c.balanceOf(self.pool)
-                    <= 1e7
+                    c.balanceOf(self.pool) <= 1e7
                 ), "pool still has signficant liquidity after all withdrawals"
 
     @invariant()
     def balances(self):
         balances = [self.pool.balances(i) for i in range(2)]
-        balances_of = [c.balanceOf(self.pool) for c in self.coins]
+        balance_of = [c.balanceOf(self.pool) for c in self.coins]
         for i in range(2):
             assert self.balances[i] == balances[i]
-            assert self.balances[i] == balances_of[i]
+            assert self.balances[i] == balance_of[i]
 
     @invariant()
     def sanity_check(self):
