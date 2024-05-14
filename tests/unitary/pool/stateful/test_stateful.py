@@ -1,7 +1,7 @@
 from hypothesis import event, note
 from hypothesis.stateful import invariant, precondition, rule
 from hypothesis.strategies import data, floats, integers, sampled_from
-from stateful_base2 import StatefulBase
+from stateful_base import StatefulBase
 from strategies import address
 
 
@@ -54,6 +54,7 @@ class UpOnlyLiquidityStateful(OnlySwapStateful):
             + "{:.2e} {:.2e}".format(*balanced_amounts)
         )
         self.add_liquidity(balanced_amounts, user)
+        # TODO check equilibrium should be unchanged
 
 
 class OnlyBalancedLiquidityStateful(UpOnlyLiquidityStateful):
@@ -101,6 +102,7 @@ class OnlyBalancedLiquidityStateful(UpOnlyLiquidityStateful):
         )
 
         self.remove_liquidity(amount, depositor)
+        # TODO check equilibrium should be unchanged
 
 
 class UnbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
@@ -179,9 +181,9 @@ class RampingStateful(UnbalancedLiquidityStateful):
     pass
 
 
-TestOnlySwap = OnlySwapStateful.TestCase
-TestUpOnlyLiquidity = UpOnlyLiquidityStateful.TestCase
-TestOnlyBalancedLiquidity = OnlyBalancedLiquidityStateful.TestCase
-# TestUnbalancedLiquidity = UnbalancedLiquidityStateful.TestCase
+# TestOnlySwap = OnlySwapStateful.TestCase
+# TestUpOnlyLiquidity = UpOnlyLiquidityStateful.TestCase
+# TestOnlyBalancedLiquidity = OnlyBalancedLiquidityStateful.TestCase
+TestUnbalancedLiquidity = UnbalancedLiquidityStateful.TestCase
 # RampingStateful = RampingStateful.TestCase
 # TODO variable decimals
