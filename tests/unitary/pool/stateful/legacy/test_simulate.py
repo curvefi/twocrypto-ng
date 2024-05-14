@@ -3,7 +3,7 @@ from boa.test import strategy
 from hypothesis import HealthCheck, settings
 from hypothesis.stateful import invariant, rule, run_state_machine_as_test
 
-from tests.unitary.pool.stateful.stateful_base import StatefulBase
+from tests.unitary.pool.stateful.legacy.stateful_base import StatefulBase
 from tests.utils import approx
 from tests.utils import simulator as sim
 from tests.utils.tokens import mint_for_testing

@@ -3,7 +3,7 @@ from boa.test import strategy
 from hypothesis import HealthCheck, settings
 from hypothesis.stateful import rule, run_state_machine_as_test
 
-from tests.unitary.pool.stateful.test_stateful import NumbaGoUp
+from tests.unitary.pool.stateful.legacy.test_stateful import NumbaGoUp
 
 MAX_SAMPLES = 100
 STEP_COUNT = 100
