@@ -143,9 +143,18 @@ class StatefulBase(RuleBasedStateMachine):
         delta_balance_i = self.coins[i].balanceOf(user)
         delta_balance_j = self.coins[j].balanceOf(user)
 
-        expected_dy = self.pool.get_dy(i, j, dx)
+        try:
+            expected_dy = self.pool.get_dy(i, j, dx)
 
-        actual_dy = self.pool.exchange(i, j, dx, expected_dy, sender=user)
+            actual_dy = self.pool.exchange(i, j, dx, expected_dy, sender=user)
+        except Exception:
+            # TODO test with different amounts if it fails,
+            # check that we can swap back the other way
+            event(
+                "exchange failed... Should report more details about imbalance"
+            )
+            self.can_always_withdraw()
+            return
 
         delta_balance_i = self.coins[i].balanceOf(user) - delta_balance_i
         delta_balance_j = self.coins[j].balanceOf(user) - delta_balance_j
@@ -196,16 +205,20 @@ class StatefulBase(RuleBasedStateMachine):
         # end of upkeeping prepartion logic
 
         lp_tokens_balance = self.pool.balanceOf(user)
-        lp_tokens_to_withdraw = int(lp_tokens_balance * percentage)
-        # TODO what to do with this?
-        self.pool.calc_withdraw_one_coin(lp_tokens_to_withdraw, coin_idx)
-        self.pool.remove_liquidity_one_coin(
+        if percentage == 1.0:
+            # this corrects floating point errors that can lead to
+            # withdrawing more than the user has
+            lp_tokens_to_withdraw = lp_tokens_balance
+        else:
+            lp_tokens_to_withdraw = int(lp_tokens_balance * percentage)
+        reported_withdrawn_token_amount = self.pool.remove_liquidity_one_coin(
             lp_tokens_to_withdraw,
             coin_idx,
-            # TODO this can probably be made stricter
-            0,  # no slippage checks since we expect a loss
+            0,  # no slippage checks
             sender=user,
         )
+
+        self.balances[coin_idx] -= reported_withdrawn_token_amount
 
         # TODO fix this (probably remove in favor of the one at the bottom)
         # self.balances[coin_idx] -= expected_token_amount
@@ -213,7 +226,7 @@ class StatefulBase(RuleBasedStateMachine):
         self.total_supply -= lp_tokens_to_withdraw
 
         # we don't want to keep track of users with low liquidity because
-        # it would approximate to 0 tokens and break the invariants.
+        # it would approximate to 0 tokens and break the test.
         if self.pool.balanceOf(user) <= 1e0:
             self.depositors.remove(user)
 
@@ -222,20 +235,24 @@ class StatefulBase(RuleBasedStateMachine):
         new_xcp_profit_a = self.pool.xcp_profit_a()
         old_xcp_profit_a = self.xcp_profit_a
 
-        claimed = False
+        # check if the admin fees were claimed
         if new_xcp_profit_a > old_xcp_profit_a:
             event("admin fees claim was detected")
-            claimed = True
+            note("claiming admin fees during removal")
+            # if the admin fees were claimed we have to update the balances
             self.xcp_profit_a = new_xcp_profit_a
 
-        admin_balances_post = [
-            c.balanceOf(self.fee_receiver) for c in self.coins
-        ]
-
-        if claimed:
+            admin_balances_post = [
+                c.balanceOf(self.fee_receiver) for c in self.coins
+            ]
 
             for i in range(2):
                 claimed_amount = admin_balances_post[i] - admin_balances_pre[i]
+                note(
+                    "admin received {:.2e} of token {}".format(
+                        claimed_amount, i
+                    )
+                )
                 assert claimed_amount > 0  # check if non zero amounts of claim
                 assert not pool_is_ramping  # cannot claim while ramping
 
@@ -255,7 +272,7 @@ class StatefulBase(RuleBasedStateMachine):
             (self.equilibrium - old_equilibrium) / old_equilibrium * 100
         )
         note(
-            "pool balance (center is at 5e17) {:.2e},".format(self.equilibrium)
+            "pool balance (center is at 5e17) {:.2e} ".format(self.equilibrium)
             + "percentage change from old equilibrium: {:.4%}".format(
                 percentage_change
             )

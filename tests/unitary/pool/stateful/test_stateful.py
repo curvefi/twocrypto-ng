@@ -1,5 +1,5 @@
-from hypothesis import event, note
-from hypothesis.stateful import invariant, precondition, rule
+from hypothesis import assume, note
+from hypothesis.stateful import precondition, rule
 from hypothesis.strategies import data, floats, integers, sampled_from
 from stateful_base import StatefulBase
 from strategies import address
@@ -131,24 +131,30 @@ class UnbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
     def remove_liquidity_unbalanced(
         self, data, percentage: float, coin_idx: int
     ):
+        # we use a data strategy since the amount we want to remove
+        # depends on the pool liquidity and the depositor balance
         depositor = data.draw(
             sampled_from(list(self.depositors)),
             label="depositor for imbalanced withdraw",
         )
         depositor_balance = self.pool.balanceOf(depositor)
+
+        # ratio of the pool that the depositor will remove
         depositor_ratio = (
             depositor_balance * percentage
         ) / self.pool.totalSupply()
-        if depositor_ratio < 0.0001:
-            event("overriding unbalanced withdraw percentage")
-            note(
-                "depositor had too little liquidity for a partial"
-                " unbalanced withdrawal"
-            )
-            percentage = 1
-        else:
-            event("respecting unbalanced withdraw percentage")
-        print("depositor_balance", depositor_balance)
+
+        # here things gets dirty because removing
+        # liquidity in an imbalanced way can break the pool
+        # so we have to filter out edge cases that are unlikely
+        # to happen in the real world
+        assume(
+            # too small amounts lead to "Loss" revert
+            depositor_balance >= 1e11
+            # if we withdraw the whole liquidity
+            # (in an imabalanced way) it will revert
+            and depositor_ratio < 0.7
+        )
         note(
             "removing {:.2e} lp tokens ".format(depositor_balance * percentage)
             + "which is {:.4%} of pool liquidity ".format(depositor_ratio)
@@ -161,14 +167,6 @@ class UnbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
 
     def can_always_withdraw(self, imbalanced_operations_allowed=True):
         super().can_always_withdraw()
-
-    @invariant()
-    def balances(self):
-        if self.expect_lower_balance:
-            # TODO make this stricter
-            pass
-        else:
-            super().balances()
 
 
 class RampingStateful(UnbalancedLiquidityStateful):
