@@ -105,15 +105,35 @@ class OnlyBalancedLiquidityStateful(UpOnlyLiquidityStateful):
         # TODO check equilibrium should be unchanged
 
 
-class UnbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
+class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
     """This test suite does everything as the `OnlyBalancedLiquidityStateful`
-    Deposits and withdrawals can be unbalanced.
+    Deposits and withdrawals can be imbalanced.
 
     This is the most complex test suite and should be used when making sure
     that some specific gamma and A can be used without unexpected behavior.
     """
 
-    expect_lower_balance = False
+    @rule(
+        amount=integers(min_value=int(1e20), max_value=int(1e24)),
+        imbalance_ratio=floats(min_value=0, max_value=1),
+        user=address,
+    )
+    def add_liquidity_imbalanced(
+        self, amount: int, imbalance_ratio: float, user: str
+    ):
+        balanced_amounts = self.get_balanced_deposit_amounts(amount)
+        imbalanced_amounts = [
+            int(balanced_amounts[0] * imbalance_ratio),
+            int(balanced_amounts[1] * (1 - imbalance_ratio)),
+        ]
+        # TODO better note with direction of imbalance
+        note(
+            "imabalanced deposit of liquidity: {:.2%} {:.2%}".format(
+                imbalance_ratio, 1 - imbalance_ratio
+            )
+        )
+        self.add_liquidity(imbalanced_amounts, user)
+        self.report_equilibrium()
 
     @precondition(
         # we need to have enough liquidity before removing
@@ -128,7 +148,7 @@ class UnbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
         percentage=floats(min_value=0.1, max_value=1),
         coin_idx=integers(min_value=0, max_value=1),
     )
-    def remove_liquidity_unbalanced(
+    def remove_liquidity_imbalanced(
         self, data, percentage: float, coin_idx: int
     ):
         # we use a data strategy since the amount we want to remove
@@ -163,14 +183,13 @@ class UnbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
         )
         self.remove_liquidity_one_coin(percentage, coin_idx, depositor)
         self.report_equilibrium()
-        self.expect_lower_balance = True
 
-    def can_always_withdraw(self, imbalanced_operations_allowed=True):
-        super().can_always_withdraw()
+    def can_always_withdraw(self):
+        super().can_always_withdraw(imbalanced_operations_allowed=True)
 
 
-class RampingStateful(UnbalancedLiquidityStateful):
-    """This test suite does everything as the `UnbalancedLiquidityStateful`
+class RampingStateful(ImbalancedLiquidityStateful):
+    """This test suite does everything as the `ImbalancedLiquidityStateful`
     but also ramps the pool. Because of this some of the invariant checks
     are disabled (loss is expected).
     """
@@ -182,6 +201,6 @@ class RampingStateful(UnbalancedLiquidityStateful):
 # TestOnlySwap = OnlySwapStateful.TestCase
 # TestUpOnlyLiquidity = UpOnlyLiquidityStateful.TestCase
 # TestOnlyBalancedLiquidity = OnlyBalancedLiquidityStateful.TestCase
-TestUnbalancedLiquidity = UnbalancedLiquidityStateful.TestCase
+TestImbalancedLiquidity = ImbalancedLiquidityStateful.TestCase
 # RampingStateful = RampingStateful.TestCase
 # TODO variable decimals
