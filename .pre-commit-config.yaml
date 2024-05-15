@@ -23,4 +23,4 @@ repos:
         args: ["--profile", "black", --line-length=79]
 
 default_language_version:
-  python: python3.10.4
+  python: python3.10

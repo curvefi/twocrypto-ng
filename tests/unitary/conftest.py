@@ -12,4 +12,3 @@ def zksync(is_zksync):
         for _public_key, private_key in EraTestNode.TEST_ACCOUNTS:
             boa.env.add_account(Account.from_key(private_key))
         boa.env.eoa = EraTestNode.TEST_ACCOUNTS[0][0]
-        boa.interpret.disable_cache()  # TODO: remove this line when zksync is stable

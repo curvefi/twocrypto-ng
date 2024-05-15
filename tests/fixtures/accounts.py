@@ -5,8 +5,10 @@ from eth_account.account import Account
 
 from tests.utils.tokens import mint_for_testing
 
-_era_accounts = [Account.from_key(private_key)
-                 for public_key, private_key in EraTestNode.TEST_ACCOUNTS]
+_era_accounts = [
+    Account.from_key(private_key)
+    for public_key, private_key in EraTestNode.TEST_ACCOUNTS
+]
 
 
 @pytest.fixture(scope="module")

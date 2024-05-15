@@ -15,7 +15,6 @@ def forked_chain(is_zksync):
         rpc_url is not None
     ), "Provider url is not set, add RPC_ETHEREUM param to env"
     if is_zksync:
-        boa.interpret.disable_cache()
         boa_zksync.set_zksync_fork(rpc_url)
     else:
         boa.set_network_env(rpc_url)
@@ -24,7 +23,7 @@ def forked_chain(is_zksync):
 @pytest.fixture(autouse=True)
 def set_balances(forked_chain):
     for acc in boa.env._accounts:
-        boa.env.set_balance(acc, 10 ** 25)
+        boa.env.set_balance(acc, 10**25)
 
 
 @pytest.fixture(scope="module")
