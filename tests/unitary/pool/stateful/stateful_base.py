@@ -153,7 +153,7 @@ class StatefulBase(RuleBasedStateMachine):
             event(
                 "exchange failed... Should report more details about imbalance"
             )
-            self.can_always_withdraw()
+            self.can_always_withdraw(imbalanced_operations_allowed=True)
             return
 
         delta_balance_i = self.coins[i].balanceOf(user) - delta_balance_i
@@ -196,35 +196,45 @@ class StatefulBase(RuleBasedStateMachine):
     def remove_liquidity_one_coin(
         self, percentage: float, coin_idx: int, user
     ):
+        print(
+            "balance of fee receiver {:.2e}".format(
+                self.pool.balanceOf(self.fee_receiver)
+            )
+        )
         # upkeeping prepartion logic
         admin_balances_pre = [
             c.balanceOf(self.fee_receiver) for c in self.coins
         ]
+        lp_balances_pre = self.coins[coin_idx].balanceOf(user)
         pool_is_ramping = (
             self.pool.future_A_gamma_time() > boa.env.evm.patch.timestamp
         )
         # end of upkeeping prepartion logic
 
-        lp_tokens_balance = self.pool.balanceOf(user)
+        lp_tokens_balance_pre = self.pool.balanceOf(user)
         if percentage == 1.0:
             # this corrects floating point errors that can lead to
             # withdrawing more than the user has
-            lp_tokens_to_withdraw = lp_tokens_balance
+            lp_tokens_to_withdraw = lp_tokens_balance_pre
         else:
-            lp_tokens_to_withdraw = int(lp_tokens_balance * percentage)
-        reported_withdrawn_token_amount = self.pool.remove_liquidity_one_coin(
+            lp_tokens_to_withdraw = int(lp_tokens_balance_pre * percentage)
+        # reported_withdrawn_token_amount =
+        self.pool.remove_liquidity_one_coin(
             lp_tokens_to_withdraw,
             coin_idx,
             0,  # no slippage checks
             sender=user,
         )
 
-        self.balances[coin_idx] -= reported_withdrawn_token_amount
-
-        # TODO fix this (probably remove in favor of the one at the bottom)
-        # self.balances[coin_idx] -= expected_token_amount
-
+        actual_withdrawn_token_amount = lp_balances_pre - self.coins[
+            coin_idx
+        ].balanceOf(user)
+        self.balances[coin_idx] -= actual_withdrawn_token_amount
         self.total_supply -= lp_tokens_to_withdraw
+
+        logs = self.pool.get_logs()
+        for log in logs:
+            print(log)
 
         # we don't want to keep track of users with low liquidity because
         # it would approximate to 0 tokens and break the test.
@@ -358,6 +368,12 @@ class StatefulBase(RuleBasedStateMachine):
         balances = [self.pool.balances(i) for i in range(2)]
         balance_of = [c.balanceOf(self.pool) for c in self.coins]
         for i in range(2):
+            print(
+                "{} \n{} \n{}".format(
+                    self.balances[i], balances[i], balance_of[i]
+                )
+            )
+            print("discrepancy {:.2e}".format(self.balances[i] - balances[i]))
             assert self.balances[i] == balances[i]
             assert self.balances[i] == balance_of[i]
 
