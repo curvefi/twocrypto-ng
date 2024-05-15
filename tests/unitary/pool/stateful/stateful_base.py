@@ -175,6 +175,7 @@ class StatefulBase(RuleBasedStateMachine):
 
     def remove_liquidity(self, amount, user):
         amounts = [c.balanceOf(user) for c in self.coins]
+        # TODO use reported balances
         self.pool.remove_liquidity(amount, [0] * 2, sender=user)
         amounts = [
             (c.balanceOf(user) - a) for c, a in zip(self.coins, amounts)
@@ -254,6 +255,8 @@ class StatefulBase(RuleBasedStateMachine):
                     )
                 )
                 assert claimed_amount > 0  # check if non zero amounts of claim
+                # TODO this can probably be refactored to a helper function
+                # (useful for future tests)
                 assert not pool_is_ramping  # cannot claim while ramping
 
                 # update self.balances
