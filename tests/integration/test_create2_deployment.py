@@ -10,14 +10,14 @@ from eth_utils import keccak
 
 @pytest.fixture(scope="module")
 def forked_chain(is_zksync):
+    if is_zksync:
+        return boa_zksync.set_zksync_fork("https://mainnet.era.zksync.io")
+
     rpc_url = os.getenv("RPC_ETHEREUM")
     assert (
         rpc_url is not None
     ), "Provider url is not set, add RPC_ETHEREUM param to env"
-    if is_zksync:
-        boa_zksync.set_zksync_fork(rpc_url)
-    else:
-        boa.set_network_env(rpc_url)
+    boa.set_network_env(rpc_url)
 
 
 @pytest.fixture(autouse=True)
