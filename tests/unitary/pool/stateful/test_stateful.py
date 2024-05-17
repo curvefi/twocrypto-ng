@@ -17,7 +17,8 @@ class OnlySwapStateful(StatefulBase):
         user=address,
     )
     def exchange_rule(self, data, i: int, user: str):
-        liquidity = self.coins[i].balanceOf(self.pool.address)
+        note("[EXCHANGE]")
+        liquidity = self.coins[i].balanceOf(self.pool)
         # we use a data strategy since the amount we want to swap
         # depends on the pool liquidity which is only known at runtime
         dx = data.draw(
@@ -28,6 +29,7 @@ class OnlySwapStateful(StatefulBase):
             ),
             label="dx",
         )
+
         note("trying to swap: {:.3%} of pool liquidity".format(dx / liquidity))
 
         self.exchange(dx, i, user)
@@ -48,13 +50,13 @@ class UpOnlyLiquidityStateful(OnlySwapStateful):
         user=address,
     )
     def add_liquidity_balanced(self, amount: int, user: str):
+        note("[BALANCED DEPOSIT]")
         balanced_amounts = self.get_balanced_deposit_amounts(amount)
         note(
             "increasing pool liquidity with balanced amounts: "
             + "{:.2e} {:.2e}".format(*balanced_amounts)
         )
         self.add_liquidity(balanced_amounts, user)
-        # TODO check equilibrium should be unchanged
 
 
 class OnlyBalancedLiquidityStateful(UpOnlyLiquidityStateful):
@@ -75,6 +77,7 @@ class OnlyBalancedLiquidityStateful(UpOnlyLiquidityStateful):
         data=data(),
     )
     def remove_liquidity_balanced(self, data):
+        note("[BALANCED WITHDRAW]")
         # we use a data strategy since the amount we want to remove
         # depends on the pool liquidity and the depositor balance
         # which are only known at runtime
@@ -102,7 +105,6 @@ class OnlyBalancedLiquidityStateful(UpOnlyLiquidityStateful):
         )
 
         self.remove_liquidity(amount, depositor)
-        # TODO check equilibrium should be unchanged
 
 
 class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
@@ -113,6 +115,8 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
     that some specific gamma and A can be used without unexpected behavior.
     """
 
+    # too high imbalanced liquidity can break newton_D
+    @precondition(lambda self: self.pool.D() < 1e28)
     @rule(
         amount=integers(min_value=int(1e20), max_value=int(1e24)),
         imbalance_ratio=floats(min_value=0, max_value=1),
@@ -121,15 +125,43 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
     def add_liquidity_imbalanced(
         self, amount: int, imbalance_ratio: float, user: str
     ):
+        note("[IMBALANCED DEPOSIT]")
         balanced_amounts = self.get_balanced_deposit_amounts(amount)
         imbalanced_amounts = [
-            int(balanced_amounts[0] * imbalance_ratio),
-            int(balanced_amounts[1] * (1 - imbalance_ratio)),
+            int(balanced_amounts[0] * imbalance_ratio)
+            if imbalance_ratio != 1
+            else balanced_amounts[0],
+            int(balanced_amounts[1] * (1 - imbalance_ratio))
+            if imbalance_ratio != 0
+            else balanced_amounts[1],
         ]
-        # TODO better note with direction of imbalance
+        # too big/small highly imbalanced deposits can break newton_D
+        # this check is not necessary for the first coin in the pool
+        # because of the way the amounts are generated, since the
+        # contraints are even stronger.
+        assume(imbalance_ratio > 0.2 or 1e14 <= balanced_amounts[1] <= 1e30)
+
+        # measures by how much the deposit will increase the
+        # amount of liquidity in the pool.
+        liquidity_jump_ratio = [
+            imbalanced_amounts[i] / self.coins[i].balanceOf(self.pool)
+            for i in range(2)
+        ]
+
+        # we make sure that the amount being deposited is not much
+        # bigger than the amount already in the pool, otherwise the
+        # pool math will break.
+        assume(liquidity_jump_ratio[0] < 1e7 and liquidity_jump_ratio[1] < 1e7)
         note(
-            "imabalanced deposit of liquidity: {:.2%} {:.2%}".format(
+            "imabalanced deposit of liquidity: {:.1%}/{:.1%} => ".format(
                 imbalance_ratio, 1 - imbalance_ratio
+            )
+            + "{:.2e}/{:.2e}".format(*imbalanced_amounts)
+            + "\n    which is {:.5%} of coin 0 pool balance ({:2e})".format(
+                liquidity_jump_ratio[0], self.coins[0].balanceOf(self.pool)
+            )
+            + "\n    which is {:.5%} of coin 1 pool balance ({:2e})".format(
+                liquidity_jump_ratio[1], self.coins[1].balanceOf(self.pool)
             )
         )
         self.add_liquidity(imbalanced_amounts, user)
@@ -151,6 +183,7 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
     def remove_liquidity_imbalanced(
         self, data, percentage: float, coin_idx: int
     ):
+        note("[IMBALANCED WITHDRAW]")
         # we use a data strategy since the amount we want to remove
         # depends on the pool liquidity and the depositor balance
         depositor = data.draw(
@@ -169,11 +202,12 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
         # so we have to filter out edge cases that are unlikely
         # to happen in the real world
         assume(
-            # too small amounts lead to "Loss" revert
+            # too small amounts can lead to decreases
+            # in virtual balance due to rounding errors
             depositor_balance >= 1e11
-            # if we withdraw the whole liquidity
+            # if we withdraw too much liquidity
             # (in an imabalanced way) it will revert
-            and depositor_ratio < 0.7
+            and depositor_ratio < 0.6
         )
         note(
             "removing {:.2e} lp tokens ".format(depositor_balance * percentage)
@@ -184,7 +218,8 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
         self.remove_liquidity_one_coin(percentage, coin_idx, depositor)
         self.report_equilibrium()
 
-    def can_always_withdraw(self):
+    def can_always_withdraw(self, imbalanced_operations_allowed=True):
+        # we allow imabalanced operations by default
         super().can_always_withdraw(imbalanced_operations_allowed=True)
 
 
@@ -198,9 +233,9 @@ class RampingStateful(ImbalancedLiquidityStateful):
     pass
 
 
-# TestOnlySwap = OnlySwapStateful.TestCase
-# TestUpOnlyLiquidity = UpOnlyLiquidityStateful.TestCase
-# TestOnlyBalancedLiquidity = OnlyBalancedLiquidityStateful.TestCase
+TestOnlySwap = OnlySwapStateful.TestCase
+TestUpOnlyLiquidity = UpOnlyLiquidityStateful.TestCase
+TestOnlyBalancedLiquidity = OnlyBalancedLiquidityStateful.TestCase
 TestImbalancedLiquidity = ImbalancedLiquidityStateful.TestCase
 # RampingStateful = RampingStateful.TestCase
 # TODO variable decimals
