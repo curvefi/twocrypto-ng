@@ -15,6 +15,12 @@ python -m pytest --hypothesis-show-statistics --hypothesis-verbosity=verbose -s 
 
 `--hypothesis-show-statistics` while not being necessary for showing notes, can be helpful to have some statistics of what happens in the test.
 
+---
+If you see a test reverting but not stopping it's because it is in the shrinking phase! Sometime shrinking can take a lot of time without leading to significant results. If you want to skip the shrinking phase and get straight to the error you can do so by enabling the `no-shrink` profile defined in `strategies.py`. It sufficies to add this line to your test:
+```python
+settings.load_profile("no-shrink")
+```
+
 
 #### Before writing/updating stateful tests
 Read the docs multiple times through your stateful testing journey. Not only the stateful testing section but the whole hypothesis docs. Stateful testing might look like an isolated part of hypothesis, but the reality is that it is built on top of `SearchStrategies` and requires a very deep understanding of how hypothesis works. If you are wondering why one hypothesis functionality is useful, you're probably not capable of writing good tests (yet).
