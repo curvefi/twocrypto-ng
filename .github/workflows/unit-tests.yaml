@@ -34,7 +34,7 @@ jobs:
             --silent --output /usr/local/bin/zkvyper && \
             chmod +x /usr/local/bin/zkvyper && \
             zkvyper --version
-          curl --location https://github.com/matter-labs/era-test-node/releases/download/v0.1.0-alpha.21/era_test_node-v0.1.0-alpha.19-x86_64-unknown-linux-gnu.tar.gz \
+          curl --location https://github.com/matter-labs/era-test-node/releases/download/v0.1.0-alpha.21/era_test_node-v0.1.0-alpha.21-x86_64-unknown-linux-gnu.tar.gz \
             --silent --output era_test_node.tar.gz && \
             tar --extract --file=era_test_node.tar.gz && \
             mv era_test_node /usr/local/bin/era_test_node && \
