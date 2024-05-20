@@ -17,14 +17,13 @@ class StatefulBase(RuleBasedStateMachine):
     # in the pool. Useful for depositing, withdrawing, etc.
     two_token_amounts = boa_st(
         "uint256[2]", min_value=0, max_value=10**9 * 10**18
-    )  # TODO check how this stuff is fuzzed
+    )
 
     # strategy to pick a random amount for an action like exchange amounts,
     # remove_liquidity (to determine the LP share),
     # remove_liquidity_one_coin, etc.
     token_amount = boa_st("uint256", max_value=10**12 * 10**18)
 
-    # TODO check bounds
     # exchange_amount_in = strategy("uint256", max_value=10**9 * 10**18)
 
     # strategy to pick which token should be exchanged for the other

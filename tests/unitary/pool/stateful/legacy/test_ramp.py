@@ -45,7 +45,6 @@ class RampTest(NumbaGoUp):
     def is_not_ramping(self):
         """
         Checks if the pool is not already ramping.
-        TODO check condition in the pool as it looks weird
         """
         return (
             boa.env.evm.patch.timestamp
@@ -108,8 +107,6 @@ class RampTest(NumbaGoUp):
     def up_only_profit(self):
         """
         We allow the profit to go down only because of the ramp.
-        TODO we should still check that losses are not too big
-        ideally something proportional to the ramp
         """
         pass
 
@@ -117,14 +114,11 @@ class RampTest(NumbaGoUp):
     def virtual_price(self):
         """
         We allow the profit to go down only because of the ramp.
-        TODO we should still check that losses are not too big
-        ideally something proportional to the ramp
         """
         pass
 
 
 def test_ramp(users, coins, swap):
-    # TODO parametrize with different swaps
     RampTest.TestCase.settings = settings(
         max_examples=MAX_SAMPLES,
         stateful_step_count=STEP_COUNT,
