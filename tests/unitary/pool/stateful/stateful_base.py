@@ -58,6 +58,7 @@ class StatefulBase(RuleBasedStateMachine):
         self.equilibrium = 5e17
 
         self.fee_receiver = factory.at(pool.factory()).fee_receiver()
+        self.admin = factory.at(pool.factory()).admin()
 
         # figure out the amount of the second token for a balanced deposit
         balanced_amounts = self.get_balanced_deposit_amounts(amount)
