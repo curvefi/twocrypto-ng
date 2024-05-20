@@ -377,7 +377,8 @@ class StatefulBase(RuleBasedStateMachine):
                     0,  # no slippage checks
                     sender=user,
                 )
-            # if we end up here something went wrong (sometimes it's ok)
+            # if we end up here something went wrong, so we need to check
+            # if the pool was in a state that justifies a revert
 
             # we only allow small amounts to make the balance decrease
             # because of rounding errors
@@ -441,9 +442,9 @@ class StatefulBase(RuleBasedStateMachine):
                 )
                 assert (
                     claimed_amount > 0
+                    # decimals: with such a low precision admin fees might be 0
+                    or self.decimals[i] == 0
                 ), f"the admin fees collected should be positive for coin {i}"
-                # TODO this can probably be refactored to a helper function
-                # (useful for future tests)
                 assert not pool_is_ramping, "claim admin fees while ramping"
 
                 # deduce the claimed amount from the pool balances
