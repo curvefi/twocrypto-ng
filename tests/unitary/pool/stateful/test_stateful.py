@@ -1,8 +1,18 @@
+import boa
 from hypothesis import assume, event, note
 from hypothesis.stateful import precondition, rule
 from hypothesis.strategies import data, floats, integers, sampled_from
 from stateful_base import StatefulBase
 from strategies import address
+
+from tests.utils.constants import (
+    MAX_A,
+    MAX_GAMMA,
+    MIN_A,
+    MIN_GAMMA,
+    MIN_RAMP_TIME,
+    UNIX_DAY,
+)
 
 
 class OnlySwapStateful(StatefulBase):
@@ -249,10 +259,76 @@ class RampingStateful(ImbalancedLiquidityStateful):
     """This test suite does everything as the `ImbalancedLiquidityStateful`
     but also ramps the pool. Because of this some of the invariant checks
     are disabled (loss is expected).
+
+    This class tests statefully tests wheter ramping A and
+    gamma does not break the pool. At the start it always start
+    with a ramp, then it can ramp again.
     """
 
-    # TODO
-    pass
+    # create the steps for the ramp
+    # [0.2, 0.3 ... 0.9, 1, 2, 3 ... 10]
+    change_steps = [x / 10 if x < 10 else x for x in range(2, 11)] + list(
+        range(2, 11)
+    )
+
+    # we can only ramp A and gamma at most 10x
+    # lower/higher than their starting value
+    change_step_strategy = sampled_from(change_steps)
+
+    # we fuzz the ramp duration up to a year
+    days = integers(min_value=1, max_value=365)
+
+    def can_ramp_again(self):
+        """
+        Checks if the pool is not already ramping.
+        """
+        return (
+            boa.env.evm.patch.timestamp
+            > self.pool.initial_A_gamma_time() + (MIN_RAMP_TIME - 1)
+        )
+
+    @precondition(can_ramp_again)
+    @rule(
+        A_change=change_step_strategy,
+        gamma_change=change_step_strategy,
+        days=days,
+    )
+    def ramp(self, A_change, gamma_change, days):
+        """
+        Computes the new A and gamma values by multiplying the current ones
+        by the change factors. Then clamps the new values to stay in the
+        [MIN_A, MAX_A] and [MIN_GAMMA, MAX_GAMMA] ranges.
+
+        Then proceeds to ramp the pool with the new values (with admin rights).
+        """
+        note("[RAMPING]")
+        new_A = self.pool.A() * A_change
+        new_A = int(
+            max(MIN_A, min(MAX_A, new_A))
+        )  # clamp new_A to stay in [MIN_A, MAX_A]
+
+        new_gamma = self.pool.gamma() * gamma_change
+        new_gamma = int(
+            max(MIN_GAMMA, min(MAX_GAMMA, new_gamma))
+        )  # clamp new_gamma to stay in [MIN_GAMMA, MAX_GAMMA]
+
+        # current timestamp + fuzzed days
+        ramp_duration = boa.env.evm.patch.timestamp + days * UNIX_DAY
+
+        self.pool.ramp_A_gamma(
+            new_A,
+            new_gamma,
+            ramp_duration,
+            sender=self.admin,
+        )
+
+        note(
+            "ramping A and gamma to {:.2e} and {:.2e}".format(new_A, new_gamma)
+        )
+
+    def up_only_profit(self):
+        # we disable this invariant because ramping can lead to losses
+        pass
 
 
 TestOnlySwap = OnlySwapStateful.TestCase
