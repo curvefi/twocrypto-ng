@@ -149,6 +149,9 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
     def add_liquidity_imbalanced(
         self, amount: int, imbalance_ratio: float, user: str
     ):
+        # we don't want a balanced deposit
+        assume(imbalance_ratio != 0.5)
+
         note("[IMBALANCED DEPOSIT]")
         balanced_amounts = self.get_balanced_deposit_amounts(amount)
         imbalanced_amounts = [
@@ -335,4 +338,4 @@ TestOnlySwap = OnlySwapStateful.TestCase
 TestUpOnlyLiquidity = UpOnlyLiquidityStateful.TestCase
 TestOnlyBalancedLiquidity = OnlyBalancedLiquidityStateful.TestCase
 TestImbalancedLiquidity = ImbalancedLiquidityStateful.TestCase
-# RampingStateful = RampingStateful.TestCase
+TestRampingStateful = RampingStateful.TestCase
