@@ -7,13 +7,7 @@ fixtures in stateful testing (without compromises).
 import boa
 from boa.test import strategy
 from hypothesis import Phase, assume, note, settings
-from hypothesis.strategies import (
-    composite,
-    integers,
-    just,
-    lists,
-    sampled_from,
-)
+from hypothesis.strategies import composite, integers, just, sampled_from
 
 # compiling contracts
 from contracts.main import CurveCryptoMathOptimized2 as math_deployer
@@ -102,12 +96,12 @@ MAX_PRICE = 1e29
 price = integers(min_value=MIN_PRICE, max_value=MAX_PRICE)
 
 # -------------------- tokens --------------------
-# TODO restore variable decimals
-# token = integers(min_value=0, max_value=18).map(
-token = just(18).map(  # TODO restore variable decimals
+
+# we use sampled_from instead of integers to shrink
+# towards 18 in case of failure (instead of 0)
+token = sampled_from(list(range(18, -1, -1))).map(
     lambda x: boa.load("contracts/mocks/ERC20Mock.vy", "USD", "USD", x)
 )
-# TODO add more tokens
 weth = just(boa.load("contracts/mocks/WETH.vy"))
 
 
@@ -132,18 +126,11 @@ def pool(
     _factory = draw(factory())
     mid_fee, out_fee = draw(fees())
 
-    # TODO this should have a lot of tokens with weird behaviors and weth
-    tokens = draw(
-        lists(
-            sampled_from([draw(token), draw(token)]),
-            min_size=2,
-            max_size=2,
-            unique=True,
-        )
-    )
+    # TODO should test weird tokens as well (non-standard/non-compliant)
+    tokens = [draw(token), draw(token)]
 
     with boa.env.prank(draw(deployer)):
-        swap = _factory.deploy_pool(
+        _pool = _factory.deploy_pool(
             "stateful simulation",
             "SIMULATION",
             tokens,
@@ -159,15 +146,17 @@ def pool(
             draw(price),
         )
 
-    swap = amm_deployer.at(swap)
+    _pool = amm_deployer.at(_pool)
 
     note(
         "deployed pool with "
-        + "A: {:.2e}".format(swap.A())
-        + ", gamma: {:.2e}".format(swap.gamma())
-        + ", price: {:.2e}".format(swap.price_oracle())
-        + ", fee_gamma: {:.2e}".format(swap.fee_gamma())
-        + ", allowed_extra_profit: {:.2e}".format(swap.allowed_extra_profit())
-        + ", adjustment_step: {:.2e}".format(swap.adjustment_step())
+        + "A: {:.2e}".format(_pool.A())
+        + ", gamma: {:.2e}".format(_pool.gamma())
+        + ", price: {:.2e}".format(_pool.price_oracle())
+        + ", fee_gamma: {:.2e}".format(_pool.fee_gamma())
+        + ", allowed_extra_profit: {:.2e}".format(_pool.allowed_extra_profit())
+        + ", adjustment_step: {:.2e}".format(_pool.adjustment_step())
+        + "\n    coin 0 has {} decimals".format(tokens[0].decimals())
+        + "\n    coin 1 has {} decimals".format(tokens[1].decimals())
     )
-    return swap
+    return _pool

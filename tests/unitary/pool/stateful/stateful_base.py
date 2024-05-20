@@ -1,5 +1,5 @@
 from math import log, log10
-from typing import List
+from typing import List, Tuple
 
 import boa
 from hypothesis import assume, event, note
@@ -45,6 +45,9 @@ class StatefulBase(RuleBasedStateMachine):
         # these balances should follow the pool balances
         self.balances = [0, 0]
 
+        # cache the decimals of the coins
+        self.decimals = [c.decimals() for c in self.coins]
+
         # initial profit is 1e18
         self.xcp_profit = 1e18
         self.xcp_profit_a = 1e18
@@ -56,17 +59,32 @@ class StatefulBase(RuleBasedStateMachine):
 
         self.fee_receiver = factory.at(pool.factory()).fee_receiver()
 
-        # deposit some initial liquidity
+        # figure out the amount of the second token for a balanced deposit
         balanced_amounts = self.get_balanced_deposit_amounts(amount)
+
+        # correct amounts to the right number of decimals
+        balanced_amounts = self.correct_all_decimals(balanced_amounts)
+
         note(
             "seeding pool with balanced amounts: {:.2e} {:.2e}".format(
                 *balanced_amounts
             )
         )
         self.add_liquidity(balanced_amounts, user)
-        self.report_equilibrium()
 
     # --------------- utility methods ---------------
+
+    def correct_decimals(self, amount: int, coin_idx: int) -> int:
+        print("need to correct decimals: {}".format(self.decimals[coin_idx]))
+        print("amount before: ", amount)
+        print("removing", 18 - self.decimals[coin_idx], "decimals")
+        corrected = int(amount // (10 ** (18 - self.decimals[coin_idx])))
+        assume(corrected > 0)
+        print("amount after:  ", corrected)
+        return corrected
+
+    def correct_all_decimals(self, amounts: List[int]) -> Tuple[int, int]:
+        return [self.correct_decimals(a, i) for i, a in enumerate(amounts)]
 
     def get_balanced_deposit_amounts(self, amount: int):
         """Get the amounts of tokens that should be deposited
@@ -79,6 +97,58 @@ class StatefulBase(RuleBasedStateMachine):
             List[int]: the amounts of the two tokens
         """
         return [int(amount), int(amount * 1e18 // self.pool.price_scale())]
+
+    def report_equilibrium(self):
+        """Helper function to report the current equilibrium of the pool.
+        This is useful to see how the pool is doing in terms of
+        imbalances.
+
+        This is useful to see if a revert because of "unsafe values" in
+        the math contract could be justified by the pool being too imbalanced.
+
+        We compute the equilibrium as (x * price_x + y * price_y) / D
+        which is like approximating that the pool behaves as a constant
+        sum AMM.
+
+        This function also contains an assertion that checks if the pool
+        balance was changed since the last report. This makes sure that
+        reports are not made in function that don't change the pool.
+        """
+        # we calculate the equilibrium of the pool
+        old_equilibrium = self.equilibrium
+
+        # price of the first coin is always 1
+        xp = self.coins[0].balanceOf(self.pool) * (
+            10 ** (18 - self.decimals[0])  # normalize to 18 decimals
+        )
+
+        yp = (
+            self.coins[1].balanceOf(self.pool)
+            * self.pool.price_scale()  # price of the second coin
+            * (10 ** (18 - self.decimals[1]))  # normalize to 18 decimals
+        )
+
+        self.equilibrium = (xp + yp) / self.pool.D()
+
+        assert (
+            self.equilibrium != old_equilibrium
+        ), "equlibrium didn't change after an imbalanced operation"
+
+        # we compute the percentage change from the old equilibrium
+        # to have a sense of how much an operation changed the pool
+        percentage_change = (
+            (self.equilibrium - old_equilibrium) / old_equilibrium * 100
+        )
+
+        # we report equilibrium as log to make it easier to read
+        note(
+            "pool balance (center is at 40.75) {:.2f} ".format(
+                log(self.equilibrium)
+            )
+            + "percentage change from old equilibrium: {:.4%}".format(
+                percentage_change
+            )
+        )
 
     # --------------- pool methods ---------------
     # methods that wrap the pool methods that should be used in
@@ -360,44 +430,6 @@ class StatefulBase(RuleBasedStateMachine):
 
         # update test-tracked xcp profit
         self.xcp_profit = self.pool.xcp_profit()
-
-    def report_equilibrium(self):
-        """Helper function to report the current equilibrium of the pool.
-        This is useful to see how the pool is doing in terms of
-        imbalances.
-
-        This is useful to see if a revert because of "unsafe values" in
-        the math contract could be justified by the pool being too imbalanced.
-
-        We compute the equilibrium as (x * price_x + y * price_y) / D
-        which is like approximating that the pool behaves as a constant
-        sum AMM.
-        """
-        # we calculate the equilibrium of the pool
-        old_equilibrium = self.equilibrium
-
-        self.equilibrium = (
-            self.coins[0].balanceOf(
-                self.pool
-            )  # price_x is always 1 by construction.
-            + self.coins[1].balanceOf(self.pool) * self.pool.price_scale()
-        ) / self.pool.D()
-
-        # we compute the percentage change from the old equilibrium
-        # to have a sense of how much an operation changed the pool
-        percentage_change = (
-            (self.equilibrium - old_equilibrium) / old_equilibrium * 100
-        )
-
-        # we report equilibrium as log to make it easier to read
-        note(
-            "pool balance (center is at 40.75) {:.2f} ".format(
-                log(self.equilibrium)
-            )
-            + "percentage change from old equilibrium: {:.4%}".format(
-                percentage_change
-            )
-        )
 
     @rule(time_increase=integers(min_value=1, max_value=UNIX_DAY * 7))
     def time_forward(self, time_increase):
