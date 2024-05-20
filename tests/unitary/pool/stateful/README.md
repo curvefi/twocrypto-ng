@@ -21,6 +21,9 @@ If you see a test reverting but not stopping it's because it is in the shrinking
 settings.load_profile("no-shrink")
 ```
 
+---
+If you're struggling with some math related errors and you can't get a sense of what is wrong you can replace the strategy that generates tokens with one that only generate 18 decimals tokens, this can definitely help understand if the amount being passed a very large/small.
+
 
 #### Before writing/updating stateful tests
 Read the docs multiple times through your stateful testing journey. Not only the stateful testing section but the whole hypothesis docs. Stateful testing might look like an isolated part of hypothesis, but the reality is that it is built on top of `SearchStrategies` and requires a very deep understanding of how hypothesis works. If you are wondering why one hypothesis functionality is useful, you're probably not capable of writing good tests (yet).
