@@ -21,7 +21,6 @@ class OnlySwapStateful(StatefulBase):
         liquidity = self.coins[i].balanceOf(self.pool)
         # we use a data strategy since the amount we want to swap
         # depends on the pool liquidity which is only known at runtime
-        note("liquidity: {}".format(liquidity))
         dx = data.draw(
             integers(
                 # swap can be between 0.01% and 50% of the pool liquidity
@@ -61,7 +60,12 @@ class UpOnlyLiquidityStateful(OnlySwapStateful):
     )
     def add_liquidity_balanced(self, amount: int, user: str):
         note("[BALANCED DEPOSIT]")
+        # figure out the amount of the second token for a balanced deposit
         balanced_amounts = self.get_balanced_deposit_amounts(amount)
+
+        # correct amounts to the right number of decimals
+        balanced_amounts = self.correct_all_decimals(balanced_amounts)
+
         note(
             "increasing pool liquidity with balanced amounts: "
             + "{:.2e} {:.2e}".format(*balanced_amounts)
@@ -158,10 +162,16 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
             for i in range(2)
         ]
 
+        # 1e7 is a magic number that was found by trial and error (limits
+        # increase to 1000x times the liquidity of the pool)
+        JUMP_LIMIT = 1e7
         # we make sure that the amount being deposited is not much
         # bigger than the amount already in the pool, otherwise the
         # pool math will break.
-        assume(liquidity_jump_ratio[0] < 1e7 and liquidity_jump_ratio[1] < 1e7)
+        assume(
+            liquidity_jump_ratio[0] < JUMP_LIMIT
+            and liquidity_jump_ratio[1] < JUMP_LIMIT
+        )
         note(
             "imabalanced deposit of liquidity: {:.1%}/{:.1%} => ".format(
                 imbalance_ratio, 1 - imbalance_ratio
@@ -174,6 +184,8 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
                 liquidity_jump_ratio[1], self.coins[1].balanceOf(self.pool)
             )
         )
+
+        imbalanced_amounts = self.correct_all_decimals(imbalanced_amounts)
         self.add_liquidity(imbalanced_amounts, user)
         self.report_equilibrium()
 
