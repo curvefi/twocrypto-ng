@@ -1,4 +1,4 @@
-from hypothesis import assume, note
+from hypothesis import assume, event, note
 from hypothesis.stateful import precondition, rule
 from hypothesis.strategies import data, floats, integers, sampled_from
 from stateful_base import StatefulBase
@@ -21,19 +21,29 @@ class OnlySwapStateful(StatefulBase):
         liquidity = self.coins[i].balanceOf(self.pool)
         # we use a data strategy since the amount we want to swap
         # depends on the pool liquidity which is only known at runtime
+        note("liquidity: {}".format(liquidity))
         dx = data.draw(
             integers(
-                # swap can be between 0.001% and 60% of the pool liquidity
+                # swap can be between 0.01% and 50% of the pool liquidity
                 min_value=int(liquidity * 0.0001),
-                max_value=int(liquidity * 0.60),
+                max_value=int(liquidity * 0.50),
             ),
             label="dx",
         )
+        # decimals: sometime very small amount get rounded to 0
+        if dx == 0:
+            note("corrected dx draw to 1")
+            event("corrected dx to 1")
+            dx = 1
 
-        note("trying to swap: {:.3%} of pool liquidity".format(dx / liquidity))
+        note("trying to swap: {:.2%} of pool liquidity".format(dx / liquidity))
 
-        self.exchange(dx, i, user)
-        self.report_equilibrium()
+        exchange_successful = self.exchange(dx, i, user)
+
+        if exchange_successful:
+            # if the exchange was successful it alters the pool
+            # composition so we report the new equilibrium
+            self.report_equilibrium()
 
 
 class UpOnlyLiquidityStateful(OnlySwapStateful):
@@ -238,4 +248,3 @@ TestUpOnlyLiquidity = UpOnlyLiquidityStateful.TestCase
 TestOnlyBalancedLiquidity = OnlyBalancedLiquidityStateful.TestCase
 TestImbalancedLiquidity = ImbalancedLiquidityStateful.TestCase
 # RampingStateful = RampingStateful.TestCase
-# TODO variable decimals
