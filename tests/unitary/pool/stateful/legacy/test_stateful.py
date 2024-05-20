@@ -24,7 +24,6 @@ class NumbaGoUp(StatefulBase):
     depositor = Bundle("depositor")
 
     def supply_not_too_big(self):
-        # TODO unsure about this condition
         # this is not stableswap so hard
         # to say what is a good limit
         return self.swap.D() < MAX_D
@@ -76,10 +75,8 @@ class NumbaGoUp(StatefulBase):
     @precondition(pool_not_empty)
     @rule(token_amount=StatefulBase.token_amount, user=depositor)
     def remove_liquidity(self, token_amount, user):
-        # TODO can we do something for slippage, maybe make it == token_amount?
         if self.swap.balanceOf(user) < token_amount or token_amount == 0:
             print("Skipping")
-            # TODO this should be test with fuzzing
             # no need to have this case in stateful
             with boa.reverts():
                 self.swap.remove_liquidity(token_amount, [0] * 2, sender=user)
