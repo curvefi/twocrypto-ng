@@ -3,7 +3,6 @@ from hypothesis import assume, event, note
 from hypothesis.stateful import precondition, rule
 from hypothesis.strategies import data, floats, integers, sampled_from
 from stateful_base import StatefulBase
-from strategies import address
 
 from tests.utils.constants import (
     MAX_A,
@@ -13,6 +12,7 @@ from tests.utils.constants import (
     MIN_RAMP_TIME,
     UNIX_DAY,
 )
+from tests.utils.strategies import address
 
 
 class OnlySwapStateful(StatefulBase):
