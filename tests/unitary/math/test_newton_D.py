@@ -1,40 +1,13 @@
-from decimal import Decimal
-
 import pytest
 from hypothesis import event, given, note, settings
 from hypothesis import strategies as st
 
 import tests.utils.simulator as sim
-from tests.unitary.pool.stateful.strategies import A, fee_gamma, fees, gamma
+from tests.utils.strategies import A, fee_gamma, fees, gamma
 
-
-def inv_target_decimal_n2(A, gamma, x, D):
-    N = len(x)
-
-    x_prod = Decimal(1)
-    for x_i in x:
-        x_prod *= x_i
-    K0 = x_prod / (Decimal(D) / N) ** N
-    K0 *= 10**18
-
-    if gamma > 0:
-        # K = gamma**2 * K0 / (gamma + 10**18*(Decimal(1) - K0))**2
-        K = gamma**2 * K0 / (gamma + 10**18 - K0) ** 2 / 10**18
-    K *= A
-
-    f = (
-        K * D ** (N - 1) * sum(x)
-        + x_prod
-        - (K * D**N + (Decimal(D) / N) ** N)
-    )
-
-    return f
-
-
-# MAX_SAMPLES = 1000000  # Increase for fuzzing
-MAX_SAMPLES = 10000  # Increase for fuzzing
+# you might want to increase this when fuzzing locally
+MAX_SAMPLES = 10000
 N_CASES = 32
-
 
 MIN_XD = 10**17
 MAX_XD = 10**19
