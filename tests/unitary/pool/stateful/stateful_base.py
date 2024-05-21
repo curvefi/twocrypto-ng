@@ -531,8 +531,12 @@ class StatefulBase(RuleBasedStateMachine):
         balances = [self.pool.balances(i) for i in range(2)]
         balance_of = [c.balanceOf(self.pool) for c in self.coins]
         for i in range(2):
-            assert self.balances[i] == balances[i]
-            assert self.balances[i] == balance_of[i]
+            assert (
+                self.balances[i] == balances[i]
+            ), "test-tracked balances don't match pool-tracked balances"
+            assert (
+                self.balances[i] == balance_of[i]
+            ), "test-tracked balances don't match token-tracked balances"
 
     @invariant()
     def sanity_check(self):
@@ -541,16 +545,29 @@ class StatefulBase(RuleBasedStateMachine):
         assert self.total_supply == self.pool.totalSupply()
 
         # profit, cached vp and current vp should be at least 1e18
-        assert self.xcp_profit >= 1e18
-        assert self.pool.virtual_price() >= 1e18
-        assert self.pool.get_virtual_price() >= 1e18
+        assert self.xcp_profit >= 1e18, "profit should be at least 1e18"
+        assert (
+            self.pool.virtual_price() >= 1e18
+        ), "cached virtual price should be at least 1e18"
+        assert (
+            self.pool.get_virtual_price() >= 1e18
+        ), "virtual price should be at least 1e18"
 
         for d in self.depositors:
-            assert self.pool.balanceOf(d) > 0
+            assert (
+                self.pool.balanceOf(d) > 0
+            ), "tracked depositors should not have 0 lp tokens"
 
     @invariant()
     def virtual_price(self):
-        pass  # TODO
+        assert (self.pool.virtual_price() - 1e18) * 2 >= (
+            self.pool.xcp_profit() - 1e18
+        ), "virtual price should be at least twice the profit"
+        # assert (
+        # abs(log(self.pool.virtual_price() / self.pool.get_virtual_price()))
+        # < 1e-10
+        # ), "cached virtual price shouldn't lag behind current virtual price"
+        assert self.pool.virtual_price() == self.pool.get_virtual_price()
 
     @invariant()
     def up_only_profit(self):
@@ -571,7 +588,7 @@ class StatefulBase(RuleBasedStateMachine):
         xcpx = (xcp_profit + xcp_profit_a + 1e18) // 2
 
         # make sure that the previous profit is smaller than the current
-        assert xcpx >= self.xcpx
+        assert xcpx >= self.xcpx, "xcpx has decreased"
         # updates the previous profit
         self.xcpx = xcpx
         self.xcp_profit = xcp_profit
