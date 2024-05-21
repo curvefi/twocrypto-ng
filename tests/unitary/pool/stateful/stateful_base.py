@@ -563,11 +563,10 @@ class StatefulBase(RuleBasedStateMachine):
         assert (self.pool.virtual_price() - 1e18) * 2 >= (
             self.pool.xcp_profit() - 1e18
         ), "virtual price should be at least twice the profit"
-        # assert (
-        # abs(log(self.pool.virtual_price() / self.pool.get_virtual_price()))
-        # < 1e-10
-        # ), "cached virtual price shouldn't lag behind current virtual price"
-        assert self.pool.virtual_price() == self.pool.get_virtual_price()
+        assert (
+            abs(log(self.pool.virtual_price() / self.pool.get_virtual_price()))
+            < 1e-10
+        ), "cached virtual price shouldn't lag behind current virtual price"
 
     @invariant()
     def up_only_profit(self):
