@@ -11,7 +11,6 @@ def _apply_new_params(swap, params):
         params["allowed_extra_profit"],
         params["adjustment_step"],
         params["ma_time"],
-        params["xcp_ma_time"],
     )
 
 

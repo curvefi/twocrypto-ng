@@ -59,7 +59,6 @@ def params():
         "fee_gamma": 230000000000000,
         "adjustment_step": 146000000000000,
         "ma_time": 866,  # # 600 seconds//math.log(2)
-        "xcp_ma_time": 62324,  # 12 hours//math.log(2)
         "initial_prices": INITIAL_PRICES,
     }
 
