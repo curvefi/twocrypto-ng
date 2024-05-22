@@ -1781,7 +1781,7 @@ def ramp_A_gamma(
     @param future_time The timestamp at which the ramping will end.
     """
     assert msg.sender == factory.admin()  # dev: only owner
-    assert block.timestamp > self.initial_A_gamma_time + (MIN_RAMP_TIME - 1)  # dev: ramp undergoing
+    assert block.timestamp > self.future_A_gamma_time # dev: ramp undergoing
     assert future_time > block.timestamp + MIN_RAMP_TIME - 1  # dev: insufficient time
 
     A_gamma: uint256[2] = self._A_gamma()
