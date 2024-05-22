@@ -78,7 +78,14 @@ class StatefulBase(RuleBasedStateMachine):
 
     # --------------- utility methods ---------------
 
+    def is_ramping(self) -> bool:
+        """Check if the pool is currently ramping."""
+
+        return self.pool.future_A_gamma_time() > boa.env.evm.patch.timestamp
+
     def correct_decimals(self, amount: int, coin_idx: int) -> int:
+        """Takes an amount that uses 18 decimals and reduces its precision"""
+
         corrected_amount = int(
             amount // (10 ** (18 - self.decimals[coin_idx]))
         )
@@ -87,6 +94,9 @@ class StatefulBase(RuleBasedStateMachine):
         return corrected_amount
 
     def correct_all_decimals(self, amounts: List[int]) -> Tuple[int, int]:
+        """Takes a list of amounts that use 18 decimals and reduces their
+        precision to the number of decimals of the respective coins."""
+
         return [self.correct_decimals(a, i) for i, a in enumerate(amounts)]
 
     def get_balanced_deposit_amounts(self, amount: int):
@@ -351,10 +361,6 @@ class StatefulBase(RuleBasedStateMachine):
         # store the balance of the user before the removal
         user_balances_pre = self.coins[coin_idx].balanceOf(user)
 
-        pool_is_ramping = (
-            self.pool.future_A_gamma_time() > boa.env.evm.patch.timestamp
-        )
-
         # lp tokens before the removal
         lp_tokens_balance_pre = self.pool.balanceOf(user)
 
@@ -446,7 +452,7 @@ class StatefulBase(RuleBasedStateMachine):
                     # decimals: with such a low precision admin fees might be 0
                     or self.decimals[i] <= 4
                 ), f"the admin fees collected should be positive for coin {i}"
-                assert not pool_is_ramping, "claim admin fees while ramping"
+                assert not self.is_ramping(), "claim admin fees while ramping"
 
                 # deduce the claimed amount from the pool balances
                 self.balances[i] -= claimed_amount
