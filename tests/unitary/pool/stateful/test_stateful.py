@@ -335,6 +335,10 @@ class RampingStateful(ImbalancedLiquidityStateful):
         # we disable this invariant because ramping can lead to losses
         pass
 
+    def virtual_price(self):
+        # we disable this invariant because ramping can lead to losses
+        pass
+
 
 TestOnlySwap = OnlySwapStateful.TestCase
 TestUpOnlyLiquidity = UpOnlyLiquidityStateful.TestCase
