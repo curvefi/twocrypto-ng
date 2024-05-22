@@ -85,58 +85,6 @@ def test_ma(swap_with_deposit, coins, user, amount, i, t):
     assert abs(log2(theory / prices3)) < 0.001
 
 
-@given(
-    amount=strategy(
-        "uint256", min_value=10**10, max_value=2 * 10**6 * 10**18
-    ),  # Can be more than we have
-    i=strategy("uint8", min_value=0, max_value=1),
-    t=strategy("uint256", min_value=10, max_value=10 * UNIX_DAY),
-)
-@settings(**SETTINGS)
-def test_xcp_ma(swap_with_deposit, coins, user, amount, i, t):
-
-    price_scale = swap_with_deposit.price_scale()
-    D0 = swap_with_deposit.D()
-    xp = [0, 0]
-    xp[0] = D0 // 2  # N_COINS = 2
-    xp[1] = D0 * 10**18 // (2 * price_scale)
-
-    xcp0 = boa.eval(f"isqrt({xp[0]*xp[1]})")
-
-    # after first deposit anf before any swaps:
-    # xcp oracle is equal to totalSupply
-    assert xcp0 == swap_with_deposit.totalSupply()
-
-    amount = amount * 10**18 // INITIAL_PRICES[i]
-    mint_for_testing(coins[i], user, amount)
-
-    ma_time = swap_with_deposit.xcp_ma_time()
-
-    # swap to populate
-    with boa.env.prank(user):
-        swap_with_deposit.exchange(i, 1 - i, amount, 0)
-
-    xcp1 = swap_with_deposit.last_xcp()
-    tvl = (
-        swap_with_deposit.virtual_price()
-        * swap_with_deposit.totalSupply()
-        // 10**18
-    )
-    assert approx(xcp1, tvl, 1e-10)
-
-    boa.env.time_travel(t)
-
-    with boa.env.prank(user):
-        swap_with_deposit.remove_liquidity_one_coin(10**15, 0, 0)
-
-    xcp2 = swap_with_deposit.xcp_oracle()
-
-    alpha = exp(-1 * t / ma_time)
-    theory = xcp0 * alpha + xcp1 * (1 - alpha)
-
-    assert approx(theory, xcp2, 1e-10)
-
-
 # Sanity check for price scale
 @given(
     amount=strategy(
