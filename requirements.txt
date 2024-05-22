@@ -7,7 +7,7 @@ pip-tools
 pre-commit
 
 # testing:
-eip712
+eip712@git+https://github.com/DanielSchiavini/eip712@main
 eth_account
 ipython
 hypothesis
@@ -23,6 +23,6 @@ pandas
 matplotlib
 
 # vyper and dev framework:
-git+https://github.com/DanielSchiavini/titanoboa-zksync
+titanoboa-zksync@git+https://github.com/DanielSchiavini/titanoboa-zksync@main
 titanoboa@git+https://github.com/DanielSchiavini/titanoboa@zksync
 vyper>=0.3.10
