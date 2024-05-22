@@ -175,16 +175,14 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
             for i in range(2)
         ]
 
-        # 1e7 is a magic number that was found by trial and error (limits
-        # increase to 1000x times the liquidity of the pool)
-        JUMP_LIMIT = 1e7
+        # this is a magic number that was found by trial and error
+        JUMP_LIMIT = 1e4
         # we make sure that the amount being deposited is not much
         # bigger than the amount already in the pool, otherwise the
         # pool math will break.
-        assume(
-            liquidity_jump_ratio[0] < JUMP_LIMIT
-            and liquidity_jump_ratio[1] < JUMP_LIMIT
-        )
+        for jump in liquidity_jump_ratio:
+            assume(jump < JUMP_LIMIT)
+
         note(
             "imabalanced deposit of liquidity: {:.1%}/{:.1%} => ".format(
                 imbalance_ratio, 1 - imbalance_ratio
