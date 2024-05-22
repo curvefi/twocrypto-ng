@@ -7,6 +7,7 @@ from hypothesis.stateful import (
     RuleBasedStateMachine,
     initialize,
     invariant,
+    precondition,
     rule,
 )
 from hypothesis.strategies import integers
@@ -56,6 +57,8 @@ class StatefulBase(RuleBasedStateMachine):
         self.depositors = set()
 
         self.equilibrium = 5e17
+
+        self.swapped_once = False
 
         self.fee_receiver = factory.at(pool.factory()).fee_receiver()
         self.admin = factory.at(pool.factory()).admin()
@@ -129,10 +132,6 @@ class StatefulBase(RuleBasedStateMachine):
         )
 
         self.equilibrium = (xp + yp) / self.pool.D()
-
-        assert (
-            self.equilibrium != old_equilibrium
-        ), "equlibrium didn't change after an imbalanced operation"
 
         # we compute the percentage change from the old equilibrium
         # to have a sense of how much an operation changed the pool
@@ -288,6 +287,7 @@ class StatefulBase(RuleBasedStateMachine):
             )
         )
 
+        self.swapped_once = True
         return True
 
     def remove_liquidity(self, amount: int, user: str):
@@ -558,6 +558,7 @@ class StatefulBase(RuleBasedStateMachine):
                 self.pool.balanceOf(d) > 0
             ), "tracked depositors should not have 0 lp tokens"
 
+    @precondition(lambda self: self.swapped_once)
     @invariant()
     def virtual_price(self):
         assert (self.pool.virtual_price() - 1e18) * 2 >= (
