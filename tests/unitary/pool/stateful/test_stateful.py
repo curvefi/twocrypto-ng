@@ -4,14 +4,7 @@ from hypothesis.stateful import precondition, rule
 from hypothesis.strategies import data, floats, integers, sampled_from
 from stateful_base import StatefulBase
 
-from tests.utils.constants import (
-    MAX_A,
-    MAX_GAMMA,
-    MIN_A,
-    MIN_GAMMA,
-    MIN_RAMP_TIME,
-    UNIX_DAY,
-)
+from tests.utils.constants import MAX_A, MAX_GAMMA, MIN_A, MIN_GAMMA, UNIX_DAY
 from tests.utils.strategies import address
 
 
@@ -279,16 +272,7 @@ class RampingStateful(ImbalancedLiquidityStateful):
     # we fuzz the ramp duration up to a year
     days = integers(min_value=1, max_value=365)
 
-    def can_ramp_again(self):
-        """
-        Checks if the pool is not already ramping.
-        """
-        return (
-            boa.env.evm.patch.timestamp
-            > self.pool.initial_A_gamma_time() + (MIN_RAMP_TIME - 1)
-        )
-
-    @precondition(can_ramp_again)
+    @precondition(lambda self: not self.is_ramping())
     @rule(
         A_change=change_step_strategy,
         gamma_change=change_step_strategy,
