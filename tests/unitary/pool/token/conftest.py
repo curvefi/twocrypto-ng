@@ -3,11 +3,7 @@ from copy import deepcopy
 import boa
 import pytest
 from eth_account import Account as EthAccount
-from eth_account._utils.structured_data.hashing import (
-    hash_domain,
-    hash_message,
-)
-from eth_account.messages import SignableMessage
+from eth_account.messages import encode_typed_data
 from hexbytes import HexBytes
 
 
@@ -50,9 +46,7 @@ def sign_permit():
             nonce=swap.nonces(owner.address),
             deadline=deadline,
         )
-        signable_message = SignableMessage(
-            b"\x01", hash_domain(struct), hash_message(struct)
-        )
+        signable_message = encode_typed_data(full_message=struct)
         return EthAccount.sign_message(signable_message, owner._private_key)
 
     return _sign_permit
