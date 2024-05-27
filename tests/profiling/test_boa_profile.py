@@ -33,8 +33,8 @@ def test_profile_amms(pools, tokens):
 
                 # proportional deposit:
                 balances = [pool.balances(i) for i in range(N_COINS)]
-                c = random.uniform(0, 0.05)
-                amounts = [int(c * i * random.uniform(0, 0.8)) for i in balances]
+                amount_first_coin = random.uniform(0, 0.05) * 10**(18+random.randint(1, 3))
+                amounts =  [int(amount_first_coin), int(amount_first_coin * 1e18 // pool.price_scale())]
                 pool.add_liquidity(amounts, 0)
                 boa.env.time_travel(random.randint(12, 600))
 

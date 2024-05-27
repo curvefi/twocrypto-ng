@@ -373,7 +373,7 @@ def get_y(
 
 @external
 @view
-def newton_D(ANN: uint256, gamma: uint256, x_unsorted: uint256[N_COINS], K0_prev: uint256 = 0) -> uint256:
+def newton_D(ANN: uint256, gamma: uint256, x_unsorted: uint256[N_COINS], initial_D: uint256 = 0) -> uint256:
     """
     Finding the invariant using Newton method.
     ANN is higher by the factor A_MULTIPLIER
@@ -394,12 +394,12 @@ def newton_D(ANN: uint256, gamma: uint256, x_unsorted: uint256[N_COINS], K0_prev
 
     S: uint256 = unsafe_add(x[0], x[1])  # can unsafe add here because we checked x[0] bounds
 
-    D: uint256 = 0
-    if K0_prev == 0:
+    D: uint256 = initial_D
+    if D == 0:
         D = N_COINS * isqrt(unsafe_mul(x[0], x[1]))
     else:
-        # D = isqrt(x[0] * x[1] * 4 / K0_prev * 10**18)
-        D = isqrt(unsafe_mul(unsafe_div(unsafe_mul(unsafe_mul(4, x[0]), x[1]), K0_prev), 10**18))
+        # initial_DD = isqrt(x[0] * x[1] * 4 / K0_prev * 10**18)
+        # K0_prev is derived from from get_y
         if S < D:
             D = S
 
