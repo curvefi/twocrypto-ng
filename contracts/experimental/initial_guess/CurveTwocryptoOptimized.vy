@@ -805,12 +805,7 @@ def _exchange(
     # ------ Tweak price_scale with good initial guess for newton_D ----------
 
     # Get initial guess using: D = isqrt(x[0] * x[1] * 4 / K0_prev * 10**18)
-    initial_D: uint256 = isqrt(
-        unsafe_mul(
-            unsafe_div(unsafe_mul(unsafe_mul(4, xp[0]), xp[1]), y_out[1]), 
-            10**18
-        )
-    )
+    initial_D: uint256 = isqrt(xp[0] * xp[1] * 4 / y_out[1] * 10**18)
     price_scale = self.tweak_price(A_gamma, xp, 0, initial_D)
 
     return [dy, fee, price_scale]
@@ -971,9 +966,9 @@ def tweak_price(
 
             # ------------------------------------------ Update D with new xp.
             D: uint256 = MATH.newton_D(
-                A_gamma[0], 
-                A_gamma[1], 
-                xp, 
+                A_gamma[0],
+                A_gamma[1],
+                xp,
                 D_unadjusted
             )
 
