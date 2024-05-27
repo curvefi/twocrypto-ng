@@ -2,6 +2,7 @@ import boa
 import pytest
 
 from hypothesis import assume
+from tests.utils.tokens import mint_for_testing
 
 # compiling contracts
 from contracts.main import CurveCryptoViews2Optimized as view_deployer
@@ -11,7 +12,6 @@ from contracts.main import CurveTwocryptoOptimized as amm_deployer
 from contracts.main import CurveCryptoMathOptimized2 as math_deployer
 from contracts.experimental.initial_guess import CurveTwocryptoOptimized as amm_deployer_initial_guess
 from contracts.experimental.initial_guess import CurveCryptoMathOptimized2 as math_deployer_initial_guess
-from tests.utils.tokens import mint_for_testing
 
 # ---------------- addresses ----------------
 address = boa.test.strategy("address")
@@ -27,7 +27,7 @@ params = {
     "fee_gamma": 230000000000000,
     "adjustment_step": 146000000000000,
     "ma_exp_time": 866,  # # 600 seconds//math.log(2)
-    "price": 4000 * 10**18,
+    "price": 1 * 10**18,
 }
 
 
@@ -158,10 +158,13 @@ def pool_initial_guess(factory_initial_guess, tokens):
             params["price"],
         )
 
-    _pool = amm_deployer.at(_pool)
+    _pool = amm_deployer_initial_guess.at(_pool)
     return _deposit_initial_liquidity(_pool, tokens)
 
 
 @pytest.fixture(scope="module")
 def pools(pool, pool_initial_guess):
-    return [pool, pool_initial_guess]
+    return [
+        pool_initial_guess,
+        pool, 
+    ]
