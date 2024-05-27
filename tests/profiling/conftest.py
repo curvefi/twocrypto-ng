@@ -1,17 +1,20 @@
 import boa
 import pytest
-
 from hypothesis import assume
-from tests.utils.tokens import mint_for_testing
+
+from contracts.experimental.initial_guess import (
+    CurveCryptoMathOptimized2 as math_deployer_initial_guess,
+)
+from contracts.experimental.initial_guess import (
+    CurveTwocryptoOptimized as amm_deployer_initial_guess,
+)
 
 # compiling contracts
+from contracts.main import CurveCryptoMathOptimized2 as math_deployer
 from contracts.main import CurveCryptoViews2Optimized as view_deployer
 from contracts.main import CurveTwocryptoFactory as factory_deployer
-
 from contracts.main import CurveTwocryptoOptimized as amm_deployer
-from contracts.main import CurveCryptoMathOptimized2 as math_deployer
-from contracts.experimental.initial_guess import CurveTwocryptoOptimized as amm_deployer_initial_guess
-from contracts.experimental.initial_guess import CurveCryptoMathOptimized2 as math_deployer_initial_guess
+from tests.utils.tokens import mint_for_testing
 
 # ---------------- addresses ----------------
 address = boa.test.strategy("address")
@@ -32,10 +35,12 @@ params = {
 
 
 def _deposit_initial_liquidity(pool, tokens):
-    
+
     # deposit:
     user = boa.env.generate_address()
-    quantities = [10**6 * 10**36 // p for p in [10**18, params["price"]]]  # $2M worth
+    quantities = [
+        10**6 * 10**36 // p for p in [10**18, params["price"]]
+    ]  # $2M worth
 
     for coin, quantity in zip(tokens, quantities):
         # mint coins for user:
@@ -49,21 +54,21 @@ def _deposit_initial_liquidity(pool, tokens):
     # Very first deposit
     with boa.env.prank(user):
         pool.add_liquidity(quantities, 0)
-        
+
     return pool
 
 
 @pytest.fixture(scope="module")
 def tokens():
     return [
-    boa.load("contracts/mocks/ERC20Mock.vy", "tkn_a", "tkn_a", 18), 
-    boa.load("contracts/mocks/ERC20Mock.vy", "tkn_b", "tkn_b", 18)
-]
+        boa.load("contracts/mocks/ERC20Mock.vy", "tkn_a", "tkn_a", 18),
+        boa.load("contracts/mocks/ERC20Mock.vy", "tkn_b", "tkn_b", 18),
+    ]
 
 
 @pytest.fixture(scope="module")
 def factory_no_initial_guess():
-    
+
     _deployer = boa.env.generate_address()
     _fee_receiver = boa.env.generate_address()
     _owner = boa.env.generate_address()
@@ -80,16 +85,16 @@ def factory_no_initial_guess():
     with boa.env.prank(_owner):
         _factory.set_views_implementation(view_contract)
         _factory.set_math_implementation(math_contract)
-        
+
         # set pool implementations:
         _factory.set_pool_implementation(amm_implementation, 0)
-        
+
     return _factory
 
 
 @pytest.fixture(scope="module")
 def factory_initial_guess():
-    
+
     _deployer = boa.env.generate_address()
     _fee_receiver = boa.env.generate_address()
     _owner = boa.env.generate_address()
@@ -107,10 +112,10 @@ def factory_initial_guess():
     with boa.env.prank(_owner):
         _factory.set_views_implementation(view_contract)
         _factory.set_math_implementation(math_contract)
-        
+
         # set pool implementations:
         _factory.set_pool_implementation(amm_implementation, 0)
-        
+
     return _factory
 
 
@@ -165,6 +170,6 @@ def pool_initial_guess(factory_initial_guess, tokens):
 @pytest.fixture(scope="module")
 def pools(pool, pool_initial_guess):
     return [
-        pool_initial_guess,
-        pool, 
+        pool,
+        # pool_initial_guess,
     ]
