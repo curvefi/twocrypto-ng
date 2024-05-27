@@ -398,7 +398,7 @@ def newton_D(ANN: uint256, gamma: uint256, x_unsorted: uint256[N_COINS], initial
     if D == 0:
         D = N_COINS * isqrt(unsafe_mul(x[0], x[1]))
     else:
-        # initial_DD = isqrt(x[0] * x[1] * 4 / K0_prev * 10**18)
+        # initial_D = isqrt(x[0] * x[1] * 4 / K0_prev * 10**18)
         # K0_prev is derived from from get_y
         if S < D:
             D = S
@@ -422,6 +422,8 @@ def newton_D(ANN: uint256, gamma: uint256, x_unsorted: uint256[N_COINS], initial
             _g1k0 = unsafe_add(unsafe_sub(_g1k0, K0), 1)  # > 0
         else:
             _g1k0 = unsafe_add(unsafe_sub(K0, _g1k0), 1)  # > 0
+            # K0 is greater than 0
+            # _g1k0 is greater than 0
 
         # D / (A * N**N) * _g1k0**2 / gamma**2
         mul1: uint256 = unsafe_div(unsafe_div(unsafe_div(10**18 * D, gamma) * _g1k0, gamma) * _g1k0 * A_MULTIPLIER, ANN)
@@ -430,7 +432,12 @@ def newton_D(ANN: uint256, gamma: uint256, x_unsorted: uint256[N_COINS], initial
         mul2: uint256 = unsafe_div(((2 * 10**18) * N_COINS) * K0, _g1k0)
 
         # calculate neg_fprime. here K0 > 0 is being validated (safediv).
-        neg_fprime: uint256 = (S + unsafe_div(S * mul2, 10**18)) + mul1 * N_COINS / K0 - unsafe_div(mul2 * D, 10**18)
+        neg_fprime: uint256 = (
+            S +
+            unsafe_div(S * mul2, 10**18) +
+            mul1 * N_COINS / K0 -
+            unsafe_div(mul2 * D, 10**18)
+        )
 
         # D -= f / fprime; neg_fprime safediv being validated
         D_plus: uint256 = D * (neg_fprime + S) / neg_fprime
