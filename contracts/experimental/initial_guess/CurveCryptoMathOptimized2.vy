@@ -398,7 +398,7 @@ def newton_D(ANN: uint256, gamma: uint256, x_unsorted: uint256[N_COINS], initial
     if D == 0:
         D = N_COINS * isqrt(unsafe_mul(x[0], x[1]))
     else:
-        # initial_DD = isqrt(x[0] * x[1] * 4 / K0_prev * 10**18)
+        # initial_D = isqrt(x[0] * x[1] * 4 / K0_prev * 10**18)
         # K0_prev is derived from from get_y
         if S < D:
             D = S
