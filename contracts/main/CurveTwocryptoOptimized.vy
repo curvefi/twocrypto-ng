@@ -965,10 +965,6 @@ def tweak_price(
             # ------------------------------------------ Update D with new xp.
             D: uint256 = MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
 
-            for k in range(N_COINS):
-                frac: uint256 = xp[k] * 10**18 / D  # <----- Check validity of
-                assert (frac > 10**16 - 1) and (frac < 10**20 + 1)  #   p_new.
-
             # ------------------------------------- Convert xp to real prices.
             xp = [
                 unsafe_div(D, N_COINS),
