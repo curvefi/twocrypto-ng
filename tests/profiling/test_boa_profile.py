@@ -5,7 +5,7 @@ import pytest
 
 from tests.utils.tokens import mint_for_testing
 
-NUM_RUNS = 10
+NUM_RUNS = 100
 N_COINS = 2
 
 
