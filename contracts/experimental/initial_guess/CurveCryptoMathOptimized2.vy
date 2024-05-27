@@ -19,7 +19,7 @@ A_MULTIPLIER: constant(uint256) = 10000
 
 MIN_GAMMA: constant(uint256) = 10**10
 MAX_GAMMA_SMALL: constant(uint256) = 2 * 10**16
-MAX_GAMMA: constant(uint256) = 3 * 10**17
+MAX_GAMMA: constant(uint256) = 199 * 10**15 # 1.99 * 10**17
 
 MIN_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER / 10
 MAX_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER * 1000
@@ -373,7 +373,7 @@ def get_y(
 
 @external
 @view
-def newton_D(ANN: uint256, gamma: uint256, x_unsorted: uint256[N_COINS], initial_D: uint256 = 0) -> uint256:
+def newton_D(ANN: uint256, gamma: uint256, x_unsorted: uint256[N_COINS], K0_prev: uint256 = 0) -> uint256:
     """
     Finding the invariant using Newton method.
     ANN is higher by the factor A_MULTIPLIER
@@ -395,12 +395,13 @@ def newton_D(ANN: uint256, gamma: uint256, x_unsorted: uint256[N_COINS], initial
     S: uint256 = unsafe_add(x[0], x[1])  # can unsafe add here because we checked x[0] bounds
 
     D: uint256 = 0
-    if initial_D == 0:
-        D = N_COINS * isqrt(unsafe_mul(x[0], x[1]))  # Naive initial guess
+    if K0_prev == 0:
+        D = N_COINS * isqrt(unsafe_mul(x[0], x[1]))
     else:
-        D = initial_D
+        # D = isqrt(x[0] * x[1] * 4 / K0_prev * 10**18)
+        D = isqrt(unsafe_mul(unsafe_div(unsafe_mul(unsafe_mul(4, x[0]), x[1]), K0_prev), 10**18))
         if S < D:
-            D = S  #                                                            TODO: Check this!
+            D = S
 
     __g1k0: uint256 = gamma + 10**18
     diff: uint256 = 0
