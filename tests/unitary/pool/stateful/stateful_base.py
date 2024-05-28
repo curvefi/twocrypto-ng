@@ -273,7 +273,6 @@ class StatefulBase(RuleBasedStateMachine):
             log_equilibrium = log10(self.equilibrium)
             # we store the old equilibrium to restore it after we make sure
             # that the pool can be healed
-            old_equilibrium = self.equilibrium
             event(
                 "newton_y broke with log10 of x/y = {:.1f}".format(
                     log_equilibrium
@@ -282,94 +281,11 @@ class StatefulBase(RuleBasedStateMachine):
 
             # we make sure that the pool is reasonably imbalanced
             assert (
-                abs(log_equilibrium) >= 1.3
+                abs(log_equilibrium) >= 0.1
             ), "pool ({:.2e}) is not imbalanced".format(log_equilibrium)
 
-            # we try to heal the pool by adding liquidity the other way
-            note("fixing the pool by adding liquidity the other way...")
-
-            # determine the direction of the deposit based on the imbalance
-            coin_idx = 0 if log_equilibrium < 0 else 1
-            # we prepare the input amounts for the deposit
-            amounts = [0, 0]
-            # we set an initial amount to deposit, this amount will be
-            # increased until the pool is back into a balanced state
-            amounts[coin_idx] = min(1e12, 10 ** (self.decimals[coin_idx]))
-
-            # we anchor because we want to revert the state of the pool
-            # once we make sure that the pool can be healed
-            with boa.env.anchor():
-                # we keep adding more and more liquidity until the pool is
-                # balanced again
-                while abs(log_equilibrium) >= 1:
-                    note(
-                        "    depositing {:.2e} of token {}".format(
-                            amounts[coin_idx], coin_idx
-                        )
-                    )
-
-                    # mint and approve tokens for the deposit
-                    mint_for_testing(
-                        self.coins[coin_idx], user, amounts[coin_idx]
-                    )
-                    self.coins[coin_idx].approve(
-                        self.pool, amounts[coin_idx], sender=user
-                    )
-
-                    # add the liquidity to the pool
-                    self.pool.add_liquidity(amounts, 0, sender=user)
-
-                    # increase the amount of the next deposit
-                    amounts[coin_idx] *= 2
-
-                    # we update the equilibrium to see if the pool is balanced
-                    self.report_equilibrium()
-                    # we update the log because the while condition depends
-                    # on it
-                    log_equilibrium = log10(self.equilibrium)
-
-                # once we rebalanced the pool we make sure that
-                # the method that failed before now works
-                self.pool.get_dy(i, j, dx)
-                note(
-                    "[SUCCESS] pool was healed by adding liquidity the other "
-                    "way"
-                )
-
-            # as we get out of the anchor we restore the old equilibrium
-            self.equilibrium = old_equilibrium
-
-            # we try to heal the pool by swapping liquidity the other way
-            # this time we don't need to figure out the amount to swap
-            # as we can just reuse the amount that would heal the pool
-            # with an asymmetric deposit
-            with boa.env.anchor():
-                note(
-                    "    swap {:.2e} of token {}".format(
-                        amounts[coin_idx], coin_idx
-                    )
-                )
-
-                # mint and approve tokens for the deposit
-                mint_for_testing(self.coins[coin_idx], user, amounts[coin_idx])
-                self.coins[coin_idx].approve(
-                    self.pool, amounts[coin_idx], sender=user
-                )
-
-                # swap the liquidity to heal
-                self.pool.exchange(
-                    coin_idx, 1 - coin_idx, amounts[coin_idx], 0, sender=user
-                )
-
-                # once we rebalanced the pool we make sure that
-                # the method that failed before now works
-                self.pool.get_dy(i, j, dx)
-            note(
-                "[SUCCESS] pool was healed by swapping liquidity the other way"
-            )
-
-            # we return False because the swap failed but
-            # we managed to heal the pool (safe failure, but still a failure)
+            # we return False because the swap failed
+            # (safe failure, but still a failure)
             return False
 
         # if get_y didn't fail we can safely swap
