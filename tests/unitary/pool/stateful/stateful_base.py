@@ -133,13 +133,11 @@ class StatefulBase(RuleBasedStateMachine):
         This is useful to see if a revert because of "unsafe values" in
         the math contract could be justified by the pool being too imbalanced.
 
-        We compute the equilibrium as (x * price_x + y * price_y) / D
-        which is like approximating that the pool behaves as a constant
-        sum AMM.
-
-        This function also contains an assertion that checks if the pool
-        balance was changed since the last report. This makes sure that
-        reports are not made in function that don't change the pool.
+        We compute the equilibrium as the ratio between the two tokens
+        scaled prices. That is xp / yp where xp is the amount of the first
+        token in the pool multiplied by its price scale (1) and yp is the
+        amount of the second token in the pool multiplied by its price
+        scale (price_scale).
         """
         # we calculate the equilibrium of the pool
         old_equilibrium = self.equilibrium
@@ -155,22 +153,20 @@ class StatefulBase(RuleBasedStateMachine):
             * (10 ** (18 - self.decimals[1]))  # normalize to 18 decimals
         )
 
-        self.equilibrium = (xp + yp) / self.pool.D()
+        self.equilibrium = xp * 1e18 / yp
 
         # we compute the percentage change from the old equilibrium
         # to have a sense of how much an operation changed the pool
         percentage_change = (
-            (self.equilibrium - old_equilibrium) / old_equilibrium * 100
-        )
+            self.equilibrium - old_equilibrium
+        ) / old_equilibrium
 
         # we report equilibrium as log to make it easier to read
         note(
-            "pool balance (center is at 40.75) {:.2f} ".format(
-                log(self.equilibrium)
+            "pool equilibrium {:.2f} (center is at 0) ".format(
+                log10(self.equilibrium)
             )
-            + "percentage change from old equilibrium: {:.4%}".format(
-                percentage_change
-            )
+            + "| change from old equilibrium: {:.4%}".format(percentage_change)
         )
 
     # --------------- pool methods ---------------
