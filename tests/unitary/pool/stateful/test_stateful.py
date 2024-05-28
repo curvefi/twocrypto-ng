@@ -239,8 +239,14 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
         self.report_equilibrium()
 
     def can_always_withdraw(self, imbalanced_operations_allowed=True):
-        # we allow imabalanced operations by default
+        # we allow imbalanced operations by default
         super().can_always_withdraw(imbalanced_operations_allowed=True)
+
+    def virtual_price(self):
+        # we disable this invariant because claiming admin fees can break it.
+        # claiming admin_fees can lead to a decrease in the virtual price
+        # however the pool is still profitable as long as xcpx is increasing.
+        pass
 
 
 class RampingStateful(ImbalancedLiquidityStateful):
@@ -310,10 +316,6 @@ class RampingStateful(ImbalancedLiquidityStateful):
         pass
 
     def sanity_check(self):
-        # we disable this invariant because ramping can lead to losses
-        pass
-
-    def virtual_price(self):
         # we disable this invariant because ramping can lead to losses
         pass
 
