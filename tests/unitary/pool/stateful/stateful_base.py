@@ -1,5 +1,5 @@
 from math import log, log10
-from typing import List, Tuple
+from typing import List
 
 import boa
 from hypothesis import assume, event, note
@@ -21,6 +21,20 @@ from tests.utils.tokens import mint_for_testing
 
 
 class StatefulBase(RuleBasedStateMachine):
+    pool = None
+    total_supply = 0
+    coins = None
+    balances = None
+    decimals = None
+    xcp_profit = 0
+    xcp_profit_a = 0
+    xcpx = 0
+    depositors = None
+    equilibrium = 0
+    swapped_once = False
+    fee_receiver = None
+    admin = None
+
     @initialize(
         pool=pool_strategy(),
         amount=integers(min_value=int(1e20), max_value=int(1e30)),
@@ -93,7 +107,7 @@ class StatefulBase(RuleBasedStateMachine):
         assume(corrected_amount > 0)
         return corrected_amount
 
-    def correct_all_decimals(self, amounts: List[int]) -> Tuple[int, int]:
+    def correct_all_decimals(self, amounts: List[int]) -> list[int]:
         """Takes a list of amounts that use 18 decimals and reduces their
         precision to the number of decimals of the respective coins."""
 
@@ -580,7 +594,7 @@ class StatefulBase(RuleBasedStateMachine):
         """This method checks if the pool is profitable, since it should
         never lose money.
 
-        To do so we use the so called `xcpx`. This is an emprical measure
+        To do so we use the so called `xcpx`. This is an empirical measure
         of profit that is even stronger than `xcp`. We have to use this
         because `xcp` goes down when claiming admin fees.
 
