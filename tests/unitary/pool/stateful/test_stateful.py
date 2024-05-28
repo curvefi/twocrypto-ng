@@ -170,18 +170,11 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
             )
         )
 
-        # we need this because 1e14 is a minimum in the contracts
-        # for imbalance deposits. If we deposits two imbalanced amounts
-        # the smallest one should be at least 1e14.
-        # If the first deposit is smaller than 1e14 we set the second
-        # deposit to 0.
-        a1_min = 1e14 if a0 < 1e14 else 0
-
         # deposit amount for coin 1
         a1 = data.draw(
             integers(
-                min_value=a1_min,
-                max_value=max(balances[1] * jump_limit, a1_min),
+                min_value=0,
+                max_value=balances[1] * jump_limit,
             )
         )
 
