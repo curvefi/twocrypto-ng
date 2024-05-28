@@ -6,7 +6,7 @@ fixtures in stateful testing (without compromises).
 
 import boa
 from boa.test import strategy
-from hypothesis import Phase, assume, note, settings
+from hypothesis import assume, note
 from hypothesis.strategies import composite, integers, just, sampled_from
 
 # compiling contracts
@@ -25,7 +25,6 @@ from tests.utils.constants import (
 )
 
 # ---------------- hypothesis test profiles ----------------
-settings.register_profile("no-shrink", settings(phases=list(Phase)[:4]))
 
 # just a more hyptohesis-like way to get an address
 # from boa's search strategy
