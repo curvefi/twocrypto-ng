@@ -46,6 +46,18 @@ class OnlySwapStateful(StatefulBase):
             # if the exchange was successful it alters the pool
             # composition so we report the new equilibrium
             self.report_equilibrium()
+        else:
+            # if the exchange was not successful we add an
+            # event to make sure that failure was reasonable
+            event(
+                "swap failed (balance = {:.2e}) {:.2%} of liquidity with A: "
+                "{:.2e} and gamma: {:.2e}".format(
+                    self.equilibrium,
+                    dx / liquidity,
+                    self.pool.A(),
+                    self.pool.gamma(),
+                )
+            )
 
 
 class UpOnlyLiquidityStateful(OnlySwapStateful):
