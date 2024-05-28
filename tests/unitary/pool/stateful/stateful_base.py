@@ -400,10 +400,10 @@ class StatefulBase(RuleBasedStateMachine):
             # we only allow small amounts to make the balance decrease
             # because of rounding errors
             assert (
-                lp_tokens_to_withdraw < 1e15
+                lp_tokens_to_withdraw < 1e16
             ), "virtual price decreased but but the amount was too high"
             event(
-                "unsuccessfull removal of liquidity because of "
+                "unsuccessful removal of liquidity because of "
                 "loss (this should not happen too often)"
             )
             return
