@@ -135,62 +135,56 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
     # too high imbalanced liquidity can break newton_D
     @precondition(lambda self: self.pool.D() < 1e28)
     @rule(
-        amount=integers(min_value=int(1e20), max_value=int(1e24)),
-        imbalance_ratio=floats(min_value=0, max_value=1),
+        data=data(),
         user=address,
     )
-    def add_liquidity_imbalanced(
-        self, amount: int, imbalance_ratio: float, user: str
-    ):
-        # we don't want a balanced deposit
-        assume(imbalance_ratio != 0.5)
-
+    def add_liquidity_imbalanced(self, data, user: str):
         note("[IMBALANCED DEPOSIT]")
-        balanced_amounts = self.get_balanced_deposit_amounts(amount)
-        imbalanced_amounts = [
-            int(balanced_amounts[0] * imbalance_ratio)
-            if imbalance_ratio != 1
-            else balanced_amounts[0],
-            int(balanced_amounts[1] * (1 - imbalance_ratio))
-            if imbalance_ratio != 0
-            else balanced_amounts[1],
-        ]
-        # too big/small highly imbalanced deposits can break newton_D
-        # this check is not necessary for the first coin in the pool
-        # because of the way the amounts are generated, since the
-        # contraints are even stronger.
-        assume(imbalance_ratio > 0.2 or 1e14 <= balanced_amounts[1] <= 1e30)
 
-        # measures by how much the deposit will increase the
-        # amount of liquidity in the pool.
-        liquidity_jump_ratio = [
-            imbalanced_amounts[i] / self.coins[i].balanceOf(self.pool)
-            for i in range(2)
-        ]
+        # we define a jump limit to avoid very big imbalanced deposits
+        # that would make the liquidity in the pool before the deposit
+        # irrelevant
+        jump_limit = 2
 
-        # this is a magic number that was found by trial and error
-        JUMP_LIMIT = 1e4
-        # we make sure that the amount being deposited is not much
-        # bigger than the amount already in the pool, otherwise the
-        # pool math will break.
-        for jump in liquidity_jump_ratio:
-            assume(jump < JUMP_LIMIT)
+        # we store the balances since we need them to calculate the
+        # imbalanced amounts
+        balances = [self.coins[i].balanceOf(self.pool) for i in range(2)]
 
-        note(
-            "imabalanced deposit of liquidity: {:.1%}/{:.1%} => ".format(
-                imbalance_ratio, 1 - imbalance_ratio
-            )
-            + "{:.2e}/{:.2e}".format(*imbalanced_amounts)
-            + "\n    which is {:.5%} of coin 0 pool balance ({:2e})".format(
-                liquidity_jump_ratio[0], self.coins[0].balanceOf(self.pool)
-            )
-            + "\n    which is {:.5%} of coin 1 pool balance ({:2e})".format(
-                liquidity_jump_ratio[1], self.coins[1].balanceOf(self.pool)
+        # deposit amount for coin 0
+        a0 = data.draw(
+            integers(
+                min_value=int(1e13),
+                max_value=max(balances[0] * jump_limit, int(1e13)),
             )
         )
 
+        # we need this because 1e14 is a minimum in the contracts
+        # for imbalance deposits. If we deposits two imbalanced amounts
+        # the smallest one should be at least 1e14.
+        # If the first deposit is smaller than 1e14 we set the second
+        # deposit to 0.
+        a1_min = 1e14 if a0 < 1e14 else 0
+
+        # deposit amount for coin 1
+        a1 = data.draw(
+            integers(
+                min_value=a1_min,
+                max_value=max(balances[1] * jump_limit, a1_min),
+            )
+        )
+
+        # we construct the imbalanced amounts argument for the function
+        imbalanced_amounts = [a0, a1]
+
+        note("depositing {:.2e} and {:.2e}".format(*imbalanced_amounts))
+
+        # we correct the decimals of the imbalanced amounts
         imbalanced_amounts = self.correct_all_decimals(imbalanced_amounts)
+
+        # we add the liquidity
         self.add_liquidity(imbalanced_amounts, user)
+
+        # since this is an imbalanced deposit we report the new equilibrium
         self.report_equilibrium()
 
     @precondition(
