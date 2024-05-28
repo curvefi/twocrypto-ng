@@ -239,50 +239,140 @@ class StatefulBase(RuleBasedStateMachine):
         mint_for_testing(self.coins[i], user, dx)
         self.coins[i].approve(self.pool, dx, sender=user)
 
+        note(
+            "trying to swap {:.2e} of token {} ".format(
+                dx,
+                i,
+            )
+        )
+
         # store the balances of the user before the swap
         delta_balance_i = self.coins[i].balanceOf(user)
         delta_balance_j = self.coins[j].balanceOf(user)
 
-        # we want this function to continue in two scenarios:
-        # 1. the function didn't revert
-        # 2. the function reverted because of an unsafe value
-
+        # depending on the pool state the swap might revert
+        # because get_y hits some math
         try:
             expected_dy = self.pool.get_dy(i, j, dx)
         except boa.BoaError as e:
+            # our top priority when something goes wrong is to
+            # make sure that the lp can always withdraw their funds
+            self.can_always_withdraw(imbalanced_operations_allowed=True)
+
+            # we make sure that the revert was caused by the pool
+            # being too imbalanced
             if e.stack_trace.last_frame.dev_reason.reason_str not in (
                 "unsafe value for y",
                 "unsafe values x[i]",
             ):
                 raise ValueError(f"Reverted for the wrong reason: {e}")
 
-            # if we end up here something went wrong
+            # we use the log10 of the equilibrium to obtain an easy interval
+            # to work with. If the pool is balanced the equilibrium is 1 and
+            # the log10 is 0.
             log_equilibrium = log10(self.equilibrium)
+            # we store the old equilibrium to restore it after we make sure
+            # that the pool can be healed
+            old_equilibrium = self.equilibrium
             event(
-                "newton_y broke with log10 of (x + y) / D = {:.1f}".format(
+                "newton_y broke with log10 of x/y = {:.1f}".format(
                     log_equilibrium
                 )
             )
 
-            # compute the swap size in terms of the pool size
-            swap_size = dx / self.coins[i].balanceOf(self.pool)
+            # we make sure that the pool is reasonably imbalanced
+            assert (
+                abs(log_equilibrium) >= 1.3
+            ), "pool ({:.2e}) is not imbalanced".format(log_equilibrium)
 
-            if swap_size > 0.2 and (
-                log_equilibrium > 18 or log_equilibrium < 17.4
-            ):
-                event(
-                    "pool was moderately imabalanced and a big swap reverted"
+            # we try to heal the pool by adding liquidity the other way
+            note("fixing the pool by adding liquidity the other way...")
+
+            # determine the direction of the deposit based on the imbalance
+            coin_idx = 0 if log_equilibrium < 0 else 1
+            # we prepare the input amounts for the deposit
+            amounts = [0, 0]
+            # we set an initial amount to deposit, this amount will be
+            # increased until the pool is back into a balanced state
+            amounts[coin_idx] = min(1e12, 10 ** (self.decimals[coin_idx]))
+
+            # we anchor because we want to revert the state of the pool
+            # once we make sure that the pool can be healed
+            with boa.env.anchor():
+                # we keep adding more and more liquidity until the pool is
+                # balanced again
+                while abs(log_equilibrium) >= 1:
+                    note(
+                        "    depositing {:.2e} of token {}".format(
+                            amounts[coin_idx], coin_idx
+                        )
+                    )
+
+                    # mint and approve tokens for the deposit
+                    mint_for_testing(
+                        self.coins[coin_idx], user, amounts[coin_idx]
+                    )
+                    self.coins[coin_idx].approve(
+                        self.pool, amounts[coin_idx], sender=user
+                    )
+
+                    # add the liquidity to the pool
+                    self.pool.add_liquidity(amounts, 0, sender=user)
+
+                    # increase the amount of the next deposit
+                    amounts[coin_idx] *= 2
+
+                    # we update the equilibrium to see if the pool is balanced
+                    self.report_equilibrium()
+                    # we update the log because the while condition depends
+                    # on it
+                    log_equilibrium = log10(self.equilibrium)
+
+                # once we rebalanced the pool we make sure that
+                # the method that failed before now works
+                self.pool.get_dy(i, j, dx)
+                note(
+                    "[SUCCESS] pool was healed by adding liquidity the other "
+                    "way"
                 )
-            else:
-                assert (
-                    log_equilibrium > 19 or log_equilibrium < 16.8
-                ), "pool is not sufficiently imbalanced to justify a revert"
-                event("pool was severly imbalanced and swap reverted")
 
-            # this invariant should hold even in case of a revert
-            self.can_always_withdraw(imbalanced_operations_allowed=True)
+            # as we get out of the anchor we restore the old equilibrium
+            self.equilibrium = old_equilibrium
+
+            # we try to heal the pool by swapping liquidity the other way
+            # this time we don't need to figure out the amount to swap
+            # as we can just reuse the amount that would heal the pool
+            # with an asymmetric deposit
+            with boa.env.anchor():
+                note(
+                    "    swap {:.2e} of token {}".format(
+                        amounts[coin_idx], coin_idx
+                    )
+                )
+
+                # mint and approve tokens for the deposit
+                mint_for_testing(self.coins[coin_idx], user, amounts[coin_idx])
+                self.coins[coin_idx].approve(
+                    self.pool, amounts[coin_idx], sender=user
+                )
+
+                # swap the liquidity to heal
+                self.pool.exchange(
+                    coin_idx, 1 - coin_idx, amounts[coin_idx], 0, sender=user
+                )
+
+                # once we rebalanced the pool we make sure that
+                # the method that failed before now works
+                self.pool.get_dy(i, j, dx)
+            note(
+                "[SUCCESS] pool was healed by swapping liquidity the other way"
+            )
+
+            # we return False because the swap failed but
+            # we managed to heal the pool (safe failure, but still a failure)
             return False
 
+        # if get_y didn't fail we can safely swap
         actual_dy = self.pool.exchange(i, j, dx, expected_dy, sender=user)
 
         # compute the change in balances
@@ -301,13 +391,9 @@ class StatefulBase(RuleBasedStateMachine):
         # update the profit made by the pool
         self.xcp_profit = self.pool.xcp_profit()
 
-        note(
-            "exchanged {:.2e} of token {} for {:.2e} of token {}".format(
-                dx, i, actual_dy, j
-            )
-        )
-
         self.swapped_once = True
+
+        # we return True because the swap was successful
         return True
 
     def remove_liquidity(self, amount: int, user: str):
