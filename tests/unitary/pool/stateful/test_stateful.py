@@ -1,4 +1,5 @@
 import boa
+from boa import BoaError
 from hypothesis import assume, event, note
 from hypothesis.stateful import precondition, rule
 from hypothesis.strategies import data, floats, integers, sampled_from
@@ -187,7 +188,11 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
         imbalanced_amounts = self.correct_all_decimals(imbalanced_amounts)
 
         # we add the liquidity
-        self.add_liquidity(imbalanced_amounts, user)
+        try:
+            self.add_liquidity(imbalanced_amounts, user)
+            event("imbalanced add_liquidity successful")
+        except BoaError:
+            event("imbalanced add_liquidity failed")
 
         # since this is an imbalanced deposit we report the new equilibrium
         self.report_equilibrium()
