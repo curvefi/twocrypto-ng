@@ -1178,10 +1178,13 @@ def _fee(xp: uint256[N_COINS]) -> uint256:
 @internal
 @pure
 def get_xcp(D: uint256, price_scale: uint256) -> uint256:
-    return isqrt(
-        unsafe_div(D, N_COINS) * # <------------- xp[0]
-        D * PRECISION / (price_scale * N_COINS) # xp[1]
-    ) # <------------------------------- Geometric mean
+
+    x: uint256[N_COINS] = [
+        unsafe_div(D, N_COINS),
+        D * PRECISION / (price_scale * N_COINS)
+    ]
+
+    return isqrt(x[0] * x[1])  # <------------------- Geometric Mean.
 
 
 @view
