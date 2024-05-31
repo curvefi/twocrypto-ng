@@ -148,46 +148,70 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
     @precondition(lambda self: self.pool.D() < 1e28)
     @rule(
         data=data(),
+        imbalance_ratio=floats(min_value=0, max_value=1),
         user=address,
     )
-    def add_liquidity_imbalanced(self, data, user: str):
+    def add_liquidity_imbalanced(self, data, imbalance_ratio, user: str):
         note("[IMBALANCED DEPOSIT]")
 
-        # we define a jump limit to avoid very big imbalanced deposits
-        # that would make the liquidity in the pool before the deposit
-        # irrelevant
         jump_limit = 2
 
-        # we store the balances since we need them to calculate the
-        # imbalanced amounts
-        balances = [self.coins[i].balanceOf(self.pool) for i in range(2)]
-
-        # deposit amount for coin 0
-        a0 = data.draw(
+        amount = data.draw(
             integers(
-                min_value=int(1e13),
-                max_value=max(balances[0] * jump_limit, int(1e13)),
-            )
+                min_value=int(1e18),
+                max_value=max(
+                    self.coins[0].balanceOf(user) * jump_limit, int(1e18)
+                ),
+            ),
+            label="amount",
         )
 
-        # deposit amount for coin 1
-        a1 = data.draw(
-            integers(
-                min_value=0,
-                max_value=balances[1] * jump_limit,
-            )
-        )
-
-        # we construct the imbalanced amounts argument for the function
-        imbalanced_amounts = [a0, a1]
-
-        note("depositing {:.2e} and {:.2e}".format(*imbalanced_amounts))
+        balanced_amounts = self.get_balanced_deposit_amounts(amount)
+        imbalanced_amounts = [
+            int(balanced_amounts[0] * imbalance_ratio)
+            if imbalance_ratio != 1
+            else balanced_amounts[0],
+            int(balanced_amounts[1] * (1 - imbalance_ratio))
+            if imbalance_ratio != 0
+            else balanced_amounts[1],
+        ]
 
         # we correct the decimals of the imbalanced amounts
         imbalanced_amounts = self.correct_all_decimals(imbalanced_amounts)
 
         # we add the liquidity
         self.add_liquidity(imbalanced_amounts, user)
+
+        note("deposited {:.2e} and {:.2e}".format(*imbalanced_amounts))
+
+        # since this is an imbalanced deposit we report the new equilibrium
+        self.report_equilibrium()
+
+    # too high imbalanced liquidity can break newton_D
+    @precondition(lambda self: self.pool.D() < 1e28)
+    @rule(
+        data=data(),
+        coin_idx=integers(min_value=0, max_value=1),
+        user=address,
+    )
+    def add_liquidity_one_coin(self, data, coin_idx: int, user: str):
+        note("[ONE COIN DEPOSIT]")
+        liquidity = self.coins[coin_idx].balanceOf(self.pool)
+
+        amount = data.draw(
+            integers(
+                min_value=int(liquidity * 0.01), max_value=int(liquidity * 0.5)
+            ),
+            label="amount",
+        )
+
+        imbalanced_amounts = [0, 0]
+        imbalanced_amounts[coin_idx] = self.correct_decimals(amount, coin_idx)
+
+        # we add the liquidity
+        self.add_liquidity(imbalanced_amounts, user)
+
+        note("deposited {:.2e} and {:.2e}".format(*imbalanced_amounts))
 
         # since this is an imbalanced deposit we report the new equilibrium
         self.report_equilibrium()
