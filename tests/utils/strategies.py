@@ -23,6 +23,7 @@ from tests.utils.constants import (
     MIN_FEE,
     MIN_GAMMA,
 )
+from tests.utils.pool_presets import all_presets
 
 # ---------------- hypothesis test profiles ----------------
 
@@ -111,7 +112,7 @@ def pool(
     draw,
     A=A,
     gamma=gamma,
-    fees=fees,
+    fees=fees(),
     fee_gamma=fee_gamma,
     allowed_extra_profit=allowed_extra_profit,
     adjustment_step=adjustment_step,
@@ -124,7 +125,7 @@ def pool(
 
     # Creates a factory based pool with the following fuzzed parameters:
     _factory = draw(factory())
-    mid_fee, out_fee = draw(fees())
+    mid_fee, out_fee = draw(fees)
 
     # TODO should test weird tokens as well (non-standard/non-compliant)
     tokens = [draw(token), draw(token)]
@@ -160,3 +161,24 @@ def pool(
         + "\n    coin 1 has {} decimals".format(tokens[1].decimals())
     )
     return _pool
+
+
+@composite
+def pool_from_preset(draw, preset=sampled_from(all_presets)):
+    params = draw(preset)
+
+    note(
+        "[POOL PRESET: {}] \n {}".format(params["name"], params["description"])
+    )
+
+    return draw(
+        pool(
+            A=just(params["A"]),
+            gamma=just(params["gamma"]),
+            fees=just((params["mid_fee"], params["out_fee"])),
+            fee_gamma=just(params["fee_gamma"]),
+            allowed_extra_profit=just(params["allowed_extra_profit"]),
+            adjustment_step=just(params["adjustment_step"]),
+            ma_exp_time=just(params["ma_exp_time"]),
+        )
+    )
