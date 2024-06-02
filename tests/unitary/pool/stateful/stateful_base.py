@@ -15,8 +15,7 @@ from hypothesis.strategies import integers
 from contracts.main import CurveTwocryptoFactory as factory
 from contracts.mocks import ERC20Mock as ERC20
 from tests.utils.constants import UNIX_DAY
-from tests.utils.strategies import address
-from tests.utils.strategies import pool as pool_strategy
+from tests.utils.strategies import address, pool_from_preset
 from tests.utils.tokens import mint_for_testing
 
 
@@ -36,7 +35,7 @@ class StatefulBase(RuleBasedStateMachine):
     admin = None
 
     @initialize(
-        pool=pool_strategy(),
+        pool=pool_from_preset(),
         amount=integers(min_value=int(1e20), max_value=int(1e30)),
         user=address,
     )
