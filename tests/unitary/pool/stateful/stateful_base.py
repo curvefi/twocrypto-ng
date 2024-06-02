@@ -378,7 +378,7 @@ class StatefulBase(RuleBasedStateMachine):
         # lp tokens before the removal
         lp_tokens_balance_pre = self.pool.balanceOf(user)
 
-        if percentage == 1.0:
+        if percentage >= 0.99:
             # this corrects floating point errors that can lead to
             # withdrawing more than the user has
             lp_tokens_to_withdraw = lp_tokens_balance_pre
