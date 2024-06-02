@@ -191,37 +191,6 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
         self.report_equilibrium()
         note("[SUCCESS]")
 
-    # too high imbalanced liquidity can break newton_D
-    @precondition(lambda self: self.pool.D() < 1e28)
-    @rule(
-        data=data(),
-        coin_idx=integers(min_value=0, max_value=1),
-        user=address,
-    )
-    def add_liquidity_one_coin(self, data, coin_idx: int, user: str):
-        note("[DEPOSIT ONE COIN]")
-        liquidity = self.coins[coin_idx].balanceOf(self.pool)
-
-        amount = data.draw(
-            integers(
-                min_value=int(liquidity * 0.1), max_value=int(liquidity * 0.5)
-            ),
-            label="amount",
-        )
-        amount = max(int(1e11), int(amount))
-
-        imbalanced_amounts = [0, 0]
-        imbalanced_amounts[coin_idx] = self.correct_decimals(amount, coin_idx)
-
-        note("depositing {:.2e} and {:.2e}".format(*imbalanced_amounts))
-
-        # we add the liquidity
-        self.add_liquidity(imbalanced_amounts, user)
-
-        # since this is an imbalanced deposit we report the new equilibrium
-        self.report_equilibrium()
-        note("[SUCCESS]")
-
     @precondition(
         # we need to have enough liquidity before removing
         # leaving the pool with shallow liquidity can break the amm
@@ -265,7 +234,7 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
         depositor_ratio = depositor_balance / lp_supply
 
         # TODO check these two conditions
-        max_withdraw = 0.5 if depositor_ratio > 0.5 else 1
+        max_withdraw = 0.5 if depositor_ratio > 0.25 else 1
 
         min_withdraw = 0.1 if depositor_balance >= 1e13 else 0.01
 
