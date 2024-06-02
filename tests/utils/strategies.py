@@ -89,10 +89,10 @@ allowed_extra_profit = integers(min_value=0, max_value=1e18)
 adjustment_step = integers(min_value=1, max_value=1e18)
 ma_exp_time = integers(min_value=87, max_value=872541)
 
-MIN_PRICE = 1e6 + 1
-MAX_PRICE = 1e29
-
-price = integers(min_value=MIN_PRICE, max_value=MAX_PRICE)
+# 1e26 is less than the maximum amount allowed by the factory
+# however testing with a smaller number is more realistic
+# and less cumbersome
+price = integers(min_value=1e6 + 1, max_value=int(1e26))
 
 # -------------------- tokens --------------------
 
