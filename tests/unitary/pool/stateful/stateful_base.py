@@ -89,6 +89,7 @@ class StatefulBase(RuleBasedStateMachine):
             )
         )
         self.add_liquidity(balanced_amounts, user)
+        note("[SUCCESS]")
 
     # --------------- utility methods ---------------
 
