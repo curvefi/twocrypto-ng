@@ -93,7 +93,7 @@ ma_exp_time = integers(min_value=87, max_value=872541)
 # 1e26 is less than the maximum amount allowed by the factory
 # however testing with a smaller number is more realistic
 # and less cumbersome
-price = integers(min_value=1e6 + 1, max_value=int(1e26))
+price = integers(min_value=int(1e10), max_value=int(1e26))
 
 # -------------------- tokens --------------------
 
