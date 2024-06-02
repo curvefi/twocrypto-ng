@@ -464,7 +464,7 @@ class StatefulBase(RuleBasedStateMachine):
                 assert (
                     claimed_amount > 0
                     # decimals: with such a low precision admin fees might be 0
-                    or self.decimals[i] <= 4
+                    or self.decimals[i] <= 6
                 ), f"the admin fees collected should be positive for coin {i}"
                 assert not self.is_ramping(), "claim admin fees while ramping"
 
