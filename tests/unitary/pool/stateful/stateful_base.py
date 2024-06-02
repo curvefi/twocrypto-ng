@@ -105,7 +105,8 @@ class StatefulBase(RuleBasedStateMachine):
         )
         # sometimes a non-zero amount generated
         # by the strategy is <= 0 when corrected
-        assume(corrected_amount > 0 and amount > 0)
+        if amount > 0:
+            assume(corrected_amount > 0)
         return corrected_amount
 
     def correct_all_decimals(self, amounts: List[int]) -> list[int]:
