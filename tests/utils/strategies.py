@@ -96,9 +96,10 @@ price = integers(min_value=1e6 + 1, max_value=int(1e26))
 
 # -------------------- tokens --------------------
 
-# we use sampled_from instead of integers to shrink
-# towards 18 in case of failure (instead of 0)
-token = sampled_from(list(range(18, 1, -1))).map(
+# we put bigger values first to shrink
+# towards 18 in case of failure (instead of 2)
+token = sampled_from([18, 6, 2]).map(
+    # token = just(18).map(
     lambda x: boa.load("contracts/mocks/ERC20Mock.vy", "USD", "USD", x)
 )
 weth = just(boa.load("contracts/mocks/WETH.vy"))
