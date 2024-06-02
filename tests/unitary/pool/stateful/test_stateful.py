@@ -46,6 +46,7 @@ class OnlySwapStateful(StatefulBase):
             # if the exchange was successful it alters the pool
             # composition so we report the new equilibrium
             self.report_equilibrium()
+            note("[SUCCESS]")
         else:
             # if the exchange was not successful we add an
             # event to make sure that failure was reasonable
@@ -58,6 +59,7 @@ class OnlySwapStateful(StatefulBase):
                     self.pool.gamma(),
                 )
             )
+            note("[ALLOWED FAILURE]")
 
 
 class UpOnlyLiquidityStateful(OnlySwapStateful):
@@ -86,6 +88,7 @@ class UpOnlyLiquidityStateful(OnlySwapStateful):
             + "{:.2e} {:.2e}".format(*balanced_amounts)
         )
         self.add_liquidity(balanced_amounts, user)
+        note("[SUCCESS]")
 
 
 class OnlyBalancedLiquidityStateful(UpOnlyLiquidityStateful):
@@ -134,6 +137,7 @@ class OnlyBalancedLiquidityStateful(UpOnlyLiquidityStateful):
         )
 
         self.remove_liquidity(amount, depositor)
+        note("[SUCCESS]")
 
 
 class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
@@ -179,13 +183,13 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
         # we correct the decimals of the imbalanced amounts
         imbalanced_amounts = self.correct_all_decimals(imbalanced_amounts)
 
+        note("depositing {:.2e} and {:.2e}".format(*imbalanced_amounts))
         # we add the liquidity
         self.add_liquidity(imbalanced_amounts, user)
 
-        note("deposited {:.2e} and {:.2e}".format(*imbalanced_amounts))
-
         # since this is an imbalanced deposit we report the new equilibrium
         self.report_equilibrium()
+        note("[SUCCESS]")
 
     # too high imbalanced liquidity can break newton_D
     @precondition(lambda self: self.pool.D() < 1e28)
@@ -195,7 +199,7 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
         user=address,
     )
     def add_liquidity_one_coin(self, data, coin_idx: int, user: str):
-        note("[ONE COIN DEPOSIT]")
+        note("[DEPOSIT ONE COIN]")
         liquidity = self.coins[coin_idx].balanceOf(self.pool)
 
         amount = data.draw(
@@ -208,13 +212,14 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
         imbalanced_amounts = [0, 0]
         imbalanced_amounts[coin_idx] = self.correct_decimals(amount, coin_idx)
 
+        note("depositing {:.2e} and {:.2e}".format(*imbalanced_amounts))
+
         # we add the liquidity
         self.add_liquidity(imbalanced_amounts, user)
 
-        note("deposited {:.2e} and {:.2e}".format(*imbalanced_amounts))
-
         # since this is an imbalanced deposit we report the new equilibrium
         self.report_equilibrium()
+        note("[SUCCESS]")
 
     @precondition(
         # we need to have enough liquidity before removing
@@ -266,6 +271,7 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
         )
         self.remove_liquidity_one_coin(percentage, coin_idx, depositor)
         self.report_equilibrium()
+        note("[SUCCESS]")
 
     def can_always_withdraw(self, imbalanced_operations_allowed=True):
         # we allow imbalanced operations by default
