@@ -1,5 +1,5 @@
 import boa
-from hypothesis import assume, event, note
+from hypothesis import event, note
 from hypothesis.stateful import precondition, rule
 from hypothesis.strategies import data, floats, integers, sampled_from
 from stateful_base import StatefulBase
@@ -204,10 +204,11 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
 
         amount = data.draw(
             integers(
-                min_value=int(liquidity * 0.01), max_value=int(liquidity * 0.5)
+                min_value=int(liquidity * 0.1), max_value=int(liquidity * 0.5)
             ),
             label="amount",
         )
+        amount = max(int(1e11), int(amount))
 
         imbalanced_amounts = [0, 0]
         imbalanced_amounts[coin_idx] = self.correct_decimals(amount, coin_idx)
@@ -231,40 +232,50 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
     )
     @rule(
         data=data(),
-        percentage=floats(min_value=0.1, max_value=1),
         coin_idx=integers(min_value=0, max_value=1),
     )
-    def remove_liquidity_imbalanced(
-        self, data, percentage: float, coin_idx: int
-    ):
-        note("[IMBALANCED WITHDRAW]")
+    def remove_liquidity_one_coin_rule(self, data, coin_idx: int):
+        note("[WITHDRAW ONE COIN]")
+
+        # we only allow depositors with enough balance to withdraw
+        # this avoids edge cases where the virtual price decreases
+        # because of a small withdrawal
+        depositors_allowed_to_withdraw = [
+            d for d in self.depositors if self.pool.balanceOf(d) > 1e11
+        ]
+
+        # this should never happen thanks to the preconditions
+        if len(depositors_allowed_to_withdraw) == 0:
+            raise ValueError("No depositors with enough balance to withdraw")
+
         # we use a data strategy since the amount we want to remove
         # depends on the pool liquidity and the depositor balance
         depositor = data.draw(
-            sampled_from(list(self.depositors)),
+            sampled_from(depositors_allowed_to_withdraw),
             label="depositor for imbalanced withdraw",
         )
+
+        # depositor amount of lp tokens
         depositor_balance = self.pool.balanceOf(depositor)
 
-        # ratio of the pool that the depositor will remove
-        depositor_ratio = (
-            depositor_balance * percentage
-        ) / self.pool.totalSupply()
+        # total amount of lp tokens in circulation
+        lp_supply = self.pool.totalSupply()
 
-        # here things gets dirty because removing
-        # liquidity in an imbalanced way can break the pool
-        # so we have to filter out edge cases that are unlikely
-        # to happen in the real world
-        assume(
-            # too small amounts can lead to decreases
-            # in virtual balance due to rounding errors
-            depositor_balance >= 1e11
-            # if we withdraw too much liquidity
-            # (in an imabalanced way) it will revert
-            and depositor_ratio < 0.6
+        # ratio of the pool that the depositor will remove
+        depositor_ratio = depositor_balance / lp_supply
+
+        # TODO check these two conditions
+        max_withdraw = 0.5 if depositor_ratio > 0.5 else 1
+
+        min_withdraw = 0.1 if depositor_balance >= 1e13 else 0.01
+
+        # we draw a percentage of the depositor balance to withdraw
+        percentage = data.draw(
+            floats(min_value=min_withdraw, max_value=max_withdraw)
         )
+
         note(
-            "removing {:.2e} lp tokens ".format(depositor_balance * percentage)
+            "removing {:.2e} lp tokens ".format(percentage * depositor_balance)
             + "which is {:.4%} of pool liquidity ".format(depositor_ratio)
             + "(only coin {}) ".format(coin_idx)
             + "and {:.1%} of address balance".format(percentage)
