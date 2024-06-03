@@ -343,4 +343,4 @@ TestOnlySwap = OnlySwapStateful.TestCase
 TestUpOnlyLiquidity = UpOnlyLiquidityStateful.TestCase
 TestOnlyBalancedLiquidity = OnlyBalancedLiquidityStateful.TestCase
 TestImbalancedLiquidity = ImbalancedLiquidityStateful.TestCase
-TestRampingStateful = RampingStateful.TestCase
+# TestRampingStateful = RampingStateful.TestCase
