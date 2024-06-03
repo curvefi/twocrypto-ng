@@ -244,8 +244,12 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
         )
 
         note(
-            "removing {:.2e} lp tokens ".format(percentage * depositor_balance)
-            + "which is {:.4%} of pool liquidity ".format(depositor_ratio)
+            "removing {:.2e} lp tokens ".format(
+                amount_withdrawn := percentage * depositor_balance
+            )
+            + "which is {:.4%} of pool liquidity ".format(
+                amount_withdrawn / lp_supply
+            )
             + "(only coin {}) ".format(coin_idx)
             + "and {:.1%} of address balance".format(percentage)
         )
