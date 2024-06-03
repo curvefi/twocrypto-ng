@@ -234,7 +234,7 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
         depositor_ratio = depositor_balance / lp_supply
 
         # TODO check these two conditions
-        max_withdraw = 0.5 if depositor_ratio > 0.25 else 1
+        max_withdraw = 0.3 if depositor_ratio > 0.25 else 1
 
         min_withdraw = 0.1 if depositor_balance >= 1e13 else 0.01
 
