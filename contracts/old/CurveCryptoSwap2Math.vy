@@ -5,7 +5,8 @@ N_COINS: constant(uint256) = 2
 A_MULTIPLIER: constant(uint256) = 10000
 
 MIN_GAMMA: constant(uint256) = 10**10
-MAX_GAMMA: constant(uint256) = 2 * 10**16
+MAX_GAMMA_SMALL: constant(uint256) = 2 * 10**16
+MAX_GAMMA: constant(uint256) = 3 * 10**17
 
 MIN_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER / 10
 MAX_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER * 1000
@@ -50,6 +51,9 @@ def newton_y(ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: u
     assert ANN > MIN_A - 1 and ANN < MAX_A + 1  # dev: unsafe values A
     assert gamma > MIN_GAMMA - 1 and gamma < MAX_GAMMA + 1  # dev: unsafe values gamma
     assert D > 10**17 - 1 and D < 10**15 * 10**18 + 1 # dev: unsafe values D
+    lim_mul: uint256 = 100 * 10**18  # 100.0
+    if gamma > MAX_GAMMA_SMALL:
+        lim_mul = unsafe_div(unsafe_mul(lim_mul, MAX_GAMMA_SMALL), gamma)  # smaller than 100.0
 
     x_j: uint256 = x[1 - i]
     y: uint256 = D**2 / (x_j * N_COINS**2)
@@ -57,7 +61,7 @@ def newton_y(ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: u
     # S_i = x_j
 
     # frac = x_j * 1e18 / D => frac = K0_i / N_COINS
-    assert (K0_i > 10**16*N_COINS - 1) and (K0_i < 10**20*N_COINS + 1)  # dev: unsafe values x[i]
+    assert (K0_i >= 10**36 / lim_mul) and (K0_i <= lim_mul), "unsafe values x[i]"
 
     # x_sorted: uint256[N_COINS] = x
     # x_sorted[i] = 0
@@ -111,7 +115,7 @@ def newton_y(ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: u
             diff = y_prev - y
         if diff < max(convergence_limit, y / 10**14):
             frac: uint256 = y * 10**18 / D
-            assert (frac > 10**16 - 1) and (frac < 10**20 + 1)  # dev: unsafe value for y
+            assert (frac >= 10**36 / N_COINS / lim_mul) and (frac <= lim_mul / N_COINS), "unsafe value for y"
             return y
 
     raise "Did not converge"

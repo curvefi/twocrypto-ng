@@ -10,18 +10,20 @@ pre-commit
 eip712
 eth_account
 ipython
-hypothesis
+hypothesis==6.74.0
 pytest
 pytest-xdist
 pytest-forked
 pytest-repeat
 pdbpp
-hypothesis>=6.68.1
 
 # analytics
 pandas
 matplotlib
 
-# vyper and dev framework:
-git+https://github.com/vyperlang/titanoboa@8c2f673c10439d13b976d1f1667462810379f010
+# other deps (needed for pypy)
+cytoolz
+
+# vyper and dev framework (boa interpreter):
+git+https://github.com/vyperlang/titanoboa@1bf16f916b91aab299e293b4148be455c1674706
 vyper>=0.3.10

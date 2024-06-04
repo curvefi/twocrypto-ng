@@ -1,10 +1,54 @@
 #!/usr/bin/env python3
 # flake8: noqa
+from decimal import Decimal
 from math import exp
 
-from tests.unitary.math.misc import get_y_n2_dec
-
 A_MULTIPLIER = 10000
+
+
+def get_y_n2_dec(ANN, gamma, x, D, i):
+    """
+    Analytical solution to obtain the value of y
+    Equivalent to get_y in the math smart contract,
+    except that it doesn't fallback to newton_y.
+    This function is a draft and should not be used
+    as expected value for y in testing.
+    """
+
+    if i == 0:
+        m = 1
+    elif i == 1:
+        m = 0
+
+    A = Decimal(ANN) / 10**4 / 4
+    gamma = Decimal(gamma) / 10**18
+    x = [Decimal(_x) / 10**18 for _x in x]
+    D = Decimal(D) / 10**18
+
+    a = Decimal(16) * x[m] ** 3 / D**3
+    b = 4 * A * gamma**2 * x[m] - (4 * (3 + 2 * gamma) * x[m] ** 2) / D
+    c = (
+        D * (3 + 4 * gamma + (1 - 4 * A) * gamma**2) * x[m]
+        + 4 * A * gamma**2 * x[m] ** 2
+    )
+    d = -(Decimal(1) / 4) * D**3 * (1 + gamma) ** 2
+
+    delta0 = b**2 - 3 * a * c
+    delta1 = 2 * b**3 - 9 * a * b * c + 27 * a**2 * d
+    sqrt_arg = delta1**2 - 4 * delta0**3
+
+    if sqrt_arg < 0:
+        return [0, {}]
+
+    sqrt = sqrt_arg ** (Decimal(1) / 2)
+    cbrt_arg = (delta1 + sqrt) / 2
+    if cbrt_arg > 0:
+        C1 = cbrt_arg ** (Decimal(1) / 3)
+    else:
+        C1 = -((-cbrt_arg) ** (Decimal(1) / 3))
+    root = -(b + C1 + delta0 / C1) / (3 * a)
+
+    return [root, (a, b, c, d)]
 
 
 def geometric_mean(x):
@@ -43,7 +87,6 @@ def get_fee(x, fee_gamma, mid_fee, out_fee):
 
 def newton_D(A, gamma, x, D0):
     D = D0
-    i = 0
 
     S = sum(x)
     x = sorted(x, reverse=True)
@@ -138,8 +181,14 @@ def newton_y(A, gamma, x, D, i):
 
 
 def solve_x(A, gamma, x, D, i):
-    return int(get_y_n2_dec(A, gamma, x, D, i)[0] * 10**18)
-    # return newton_y(A, gamma, x, D, i)
+    """
+    Solving for x or y in the AMM equation.
+
+    Even though we have an analytical solution we consider
+    the newton method to be a ground truth. The analytical
+    solution does not always work.
+    """
+    return newton_y(A, gamma, x, D, i)
 
 
 def solve_D(A, gamma, x):
@@ -147,13 +196,15 @@ def solve_D(A, gamma, x):
     return newton_D(A, gamma, x, D0)
 
 
+N_COINS = 2
+
+
 class Curve:
-    def __init__(self, A, gamma, D, n, p):
+    def __init__(self, A, gamma, D, p):
         self.A = A
         self.gamma = gamma
-        self.n = n
         self.p = p
-        self.x = [D // n * 10**18 // self.p[i] for i in range(n)]
+        self.x = [D // N_COINS * 10**18 // self.p[i] for i in range(N_COINS)]
 
     def xp(self):
         return [x * p // 10**18 for x, p in zip(self.x, self.p)]
@@ -171,7 +222,6 @@ class Curve:
         return yp * 10**18 // self.p[j]
 
     def get_p(self):
-
         A = self.A
         gamma = self.gamma
         xp = self.xp()
@@ -198,38 +248,26 @@ class Trader:
         A,
         gamma,
         D,
-        n,
         p0,
         mid_fee=1e-3,
         out_fee=3e-3,
-        allowed_extra_profit=2 * 10**13,
         fee_gamma=None,
         adjustment_step=0.003,
         ma_time=866,
-        log=True,
     ):
-        # allowed_extra_profit is actually not used
-        self.p0 = p0[:]
-        self.price_oracle = self.p0[:]
-        self.last_price = self.p0[:]
-        self.curve = Curve(A, gamma, D, n, p=p0[:])
-        self.dx = int(D * 1e-8)
+        self.price_oracle = p0[:]
+        self.last_price = p0[:]
+        self.curve = Curve(A, gamma, D, p=p0[:])
         self.mid_fee = int(mid_fee * 1e10)
         self.out_fee = int(out_fee * 1e10)
-        self.D0 = self.curve.D()
-        self.xcp_0 = self.get_xcp()
         self.xcp_profit = 10**18
         self.xcp_profit_real = 10**18
-        self.xcp = self.xcp_0
-        self.allowed_extra_profit = allowed_extra_profit
+        self.xcp = self.get_xcp()
         self.adjustment_step = int(10**18 * adjustment_step)
-        self.log = log
-        self.fee_gamma = fee_gamma or gamma
-        self.total_vol = 0.0
+        self.fee_gamma = (
+            fee_gamma or gamma
+        )  # why can gamma be used as fee_gamma?
         self.ma_time = ma_time
-        self.ext_fee = 0  # 0.03e-2
-        self.slippage = 0
-        self.slippage_count = 0
 
     def fee(self):
         f = reduction_coefficient(self.curve.xp(), self.fee_gamma)

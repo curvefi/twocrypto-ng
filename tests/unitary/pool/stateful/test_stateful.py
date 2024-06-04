@@ -1,182 +1,346 @@
 import boa
-from boa.test import strategy
-from hypothesis.stateful import rule, run_state_machine_as_test
+from hypothesis import event, note
+from hypothesis.stateful import precondition, rule
+from hypothesis.strategies import data, floats, integers, sampled_from
+from stateful_base import StatefulBase
 
-from tests.fixtures.pool import INITIAL_PRICES
-from tests.unitary.pool.stateful.stateful_base import StatefulBase
-from tests.utils.tokens import mint_for_testing
-
-MAX_SAMPLES = 20
-STEP_COUNT = 100
-MAX_D = 10**12 * 10**18  # $1T is hopefully a reasonable cap for tests
+from tests.utils.constants import MAX_A, MAX_GAMMA, MIN_A, MIN_GAMMA, UNIX_DAY
+from tests.utils.strategies import address
 
 
-class NumbaGoUp(StatefulBase):
+class OnlySwapStateful(StatefulBase):
+    """This test suits always starts with a seeded pool
+    with balanced amounts and execute only swaps depending
+    on the liquidity in the pool.
     """
-    Test that profit goes up
-    """
-
-    user = strategy("address")
-    exchange_i = strategy("uint8", max_value=1)
-    deposit_amounts = strategy(
-        "uint256[2]", min_value=0, max_value=10**9 * 10**18
-    )
-    token_amount = strategy("uint256", max_value=10**12 * 10**18)
-    check_out_amount = strategy("bool")
-
-    @rule(deposit_amounts=deposit_amounts, user=user)
-    def deposit(self, deposit_amounts, user):
-
-        if self.swap.D() > MAX_D:
-            return
-
-        amounts = self.convert_amounts(deposit_amounts)
-        if sum(amounts) == 0:
-            return
-
-        new_balances = [x + y for x, y in zip(self.balances, amounts)]
-
-        for coin, q in zip(self.coins, amounts):
-            mint_for_testing(coin, user, q)
-
-        try:
-
-            tokens = self.swap.balanceOf(user)
-            self.swap.add_liquidity(amounts, 0, sender=user)
-            tokens = self.swap.balanceOf(user) - tokens
-            self.total_supply += tokens
-            self.balances = new_balances
-
-        except Exception:
-
-            if self.check_limits(amounts):
-                raise
-            return
-
-        # This is to check that we didn't end up in a borked state after
-        # an exchange succeeded
-        try:
-            self.swap.get_dy(0, 1, 10 ** (self.decimals[0] - 2))
-        except Exception:
-            self.swap.get_dy(
-                1,
-                0,
-                10**16 * 10 ** self.decimals[1] // self.swap.price_scale(),
-            )
-
-    @rule(token_amount=token_amount, user=user)
-    def remove_liquidity(self, token_amount, user):
-        if self.swap.balanceOf(user) < token_amount or token_amount == 0:
-            with boa.reverts():
-                self.swap.remove_liquidity(token_amount, [0] * 2, sender=user)
-        else:
-            amounts = [c.balanceOf(user) for c in self.coins]
-            tokens = self.swap.balanceOf(user)
-            with self.upkeep_on_claim():
-                self.swap.remove_liquidity(token_amount, [0] * 2, sender=user)
-            tokens -= self.swap.balanceOf(user)
-            self.total_supply -= tokens
-            amounts = [
-                (c.balanceOf(user) - a) for c, a in zip(self.coins, amounts)
-            ]
-            self.balances = [b - a for a, b in zip(amounts, self.balances)]
-
-            # Virtual price resets if everything is withdrawn
-            if self.total_supply == 0:
-                self.virtual_price = 10**18
 
     @rule(
-        token_amount=token_amount,
-        exchange_i=exchange_i,
-        user=user,
-        check_out_amount=check_out_amount,
+        data=data(),
+        i=integers(min_value=0, max_value=1),
+        user=address,
     )
-    def remove_liquidity_one_coin(
-        self, token_amount, exchange_i, user, check_out_amount
-    ):
-
-        try:
-            calc_out_amount = self.swap.calc_withdraw_one_coin(
-                token_amount, exchange_i
-            )
-        except Exception:
-            if (
-                self.check_limits([0] * 2)
-                and not (token_amount > self.total_supply)
-                and token_amount > 10000
-            ):
-                self.swap.calc_withdraw_one_coin(
-                    token_amount, exchange_i, sender=user
-                )
-            return
-
-        d_token = self.swap.balanceOf(user)
-        if d_token < token_amount:
-            with boa.reverts():
-                self.swap.remove_liquidity_one_coin(
-                    token_amount, exchange_i, 0, sender=user
-                )
-            return
-
-        d_balance = self.coins[exchange_i].balanceOf(user)
-        try:
-            with self.upkeep_on_claim():
-                self.swap.remove_liquidity_one_coin(
-                    token_amount, exchange_i, 0, sender=user
-                )
-        except Exception:
-            # Small amounts may fail with rounding errors
-            if (
-                calc_out_amount > 100
-                and token_amount / self.total_supply > 1e-10
-                and calc_out_amount / self.swap.balances(exchange_i) > 1e-10
-            ):
-                raise
-            return
-
-        # This is to check that we didn't end up in a borked state after
-        # an exchange succeeded
-        _deposit = [0] * 2
-        _deposit[exchange_i] = (
-            10**16
-            * 10 ** self.decimals[exchange_i]
-            // ([10**18] + INITIAL_PRICES)[exchange_i]
+    def exchange_rule(self, data, i: int, user: str):
+        note("[EXCHANGE]")
+        liquidity = self.coins[i].balanceOf(self.pool)
+        # we use a data strategy since the amount we want to swap
+        # depends on the pool liquidity which is only known at runtime
+        dx = data.draw(
+            integers(
+                # swap can be between 0.01% and 50% of the pool liquidity
+                min_value=int(liquidity * 0.0001),
+                max_value=int(liquidity * 0.50),
+            ),
+            label="dx",
         )
-        assert self.swap.calc_token_amount(_deposit, True)
+        # decimals: sometime very small amount get rounded to 0
+        if dx == 0:
+            note("corrected dx draw to 1")
+            event("corrected dx to 1")
+            dx = 1
 
-        d_balance = self.coins[exchange_i].balanceOf(user) - d_balance
-        d_token = d_token - self.swap.balanceOf(user)
+        note("trying to swap: {:.2%} of pool liquidity".format(dx / liquidity))
 
-        if check_out_amount:
-            if check_out_amount is True:
-                assert (
-                    calc_out_amount == d_balance
-                ), f"{calc_out_amount} vs {d_balance} for {token_amount}"
-            else:
-                assert abs(calc_out_amount - d_balance) <= max(
-                    check_out_amount * calc_out_amount, 5
-                ), f"{calc_out_amount} vs {d_balance} for {token_amount}"
+        exchange_successful = self.exchange(dx, i, user)
 
-        self.balances[exchange_i] -= d_balance
-        self.total_supply -= d_token
+        if exchange_successful:
+            # if the exchange was successful it alters the pool
+            # composition so we report the new equilibrium
+            self.report_equilibrium()
+            note("[SUCCESS]")
+        else:
+            # if the exchange was not successful we add an
+            # event to make sure that failure was reasonable
+            event(
+                "swap failed (balance = {:.2e}) {:.2%} of liquidity with A: "
+                "{:.2e} and gamma: {:.2e}".format(
+                    self.equilibrium,
+                    dx / liquidity,
+                    self.pool.A(),
+                    self.pool.gamma(),
+                )
+            )
+            note("[ALLOWED FAILURE]")
 
-        # Virtual price resets if everything is withdrawn
-        if self.total_supply == 0:
-            self.virtual_price = 10**18
+
+class UpOnlyLiquidityStateful(OnlySwapStateful):
+    """This test suite does everything as the `OnlySwapStateful`
+    but also adds liquidity to the pool. It does not remove liquidity."""
+
+    # too high liquidity can lead to overflows
+    @precondition(lambda self: self.pool.D() < 1e28)
+    @rule(
+        # we can only add liquidity up to 1e25, this was reduced
+        # from the initial deposit that can be up to 1e30 to avoid
+        # breaking newton_D
+        amount=integers(min_value=int(1e20), max_value=int(1e25)),
+        user=address,
+    )
+    def add_liquidity_balanced(self, amount: int, user: str):
+        note("[BALANCED DEPOSIT]")
+        # figure out the amount of the second token for a balanced deposit
+        balanced_amounts = self.get_balanced_deposit_amounts(amount)
+
+        # correct amounts to the right number of decimals
+        balanced_amounts = self.correct_all_decimals(balanced_amounts)
+
+        note(
+            "increasing pool liquidity with balanced amounts: "
+            + "{:.2e} {:.2e}".format(*balanced_amounts)
+        )
+        self.add_liquidity(balanced_amounts, user)
+        note("[SUCCESS]")
 
 
-def test_numba_go_up(users, coins, swap):
-    from hypothesis import settings
-    from hypothesis._settings import HealthCheck
+class OnlyBalancedLiquidityStateful(UpOnlyLiquidityStateful):
+    """This test suite does everything as the `UpOnlyLiquidityStateful`
+    but also removes liquidity from the pool. Both deposits and withdrawals
+    are balanced.
+    """
 
-    NumbaGoUp.TestCase.settings = settings(
-        max_examples=MAX_SAMPLES,
-        stateful_step_count=STEP_COUNT,
-        suppress_health_check=HealthCheck.all(),
-        deadline=None,
+    @precondition(
+        # we need to have enough liquidity before removing
+        # leaving the pool with shallow liquidity can break the amm
+        lambda self: self.pool.totalSupply() > 10e20
+        # we should not empty the pool
+        # (we still check that we can in the invariants)
+        and len(self.depositors) > 1
+    )
+    @rule(
+        data=data(),
+    )
+    def remove_liquidity_balanced(self, data):
+        note("[BALANCED WITHDRAW]")
+        # we use a data strategy since the amount we want to remove
+        # depends on the pool liquidity and the depositor balance
+        # which are only known at runtime
+        depositor = data.draw(
+            sampled_from(list(self.depositors)),
+            label="depositor for balanced withdraw",
+        )
+        depositor_balance = self.pool.balanceOf(depositor)
+        # we can remove between 10% and 100% of the depositor balance
+        amount = data.draw(
+            integers(
+                min_value=int(depositor_balance * 0.10),
+                max_value=depositor_balance,
+            ),
+            label="amount to withdraw",
+        )
+        note(
+            "Removing {:.2e} from the pool ".format(amount)
+            + "that is {:.1%} of address balance".format(
+                amount / depositor_balance
+            )
+            + " and {:.1%} of pool liquidity".format(
+                amount / self.pool.totalSupply()
+            )
+        )
+
+        self.remove_liquidity(amount, depositor)
+        note("[SUCCESS]")
+
+
+class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
+    """This test suite does everything as the `OnlyBalancedLiquidityStateful`
+    Deposits and withdrawals can be imbalanced.
+
+    This is the most complex test suite and should be used when making sure
+    that some specific gamma and A can be used without unexpected behavior.
+    """
+
+    # too high imbalanced liquidity can break newton_D
+    @precondition(lambda self: self.pool.D() < 1e28)
+    @rule(
+        data=data(),
+        imbalance_ratio=floats(min_value=0, max_value=1),
+        user=address,
+    )
+    def add_liquidity_imbalanced(self, data, imbalance_ratio, user: str):
+        note("[IMBALANCED DEPOSIT]")
+
+        jump_limit = 2
+
+        amount = data.draw(
+            integers(
+                min_value=int(1e18),
+                max_value=max(
+                    self.coins[0].balanceOf(user) * jump_limit, int(1e18)
+                ),
+            ),
+            label="amount",
+        )
+
+        balanced_amounts = self.get_balanced_deposit_amounts(amount)
+        imbalanced_amounts = [
+            int(balanced_amounts[0] * imbalance_ratio)
+            if imbalance_ratio != 1
+            else balanced_amounts[0],
+            int(balanced_amounts[1] * (1 - imbalance_ratio))
+            if imbalance_ratio != 0
+            else balanced_amounts[1],
+        ]
+
+        # we correct the decimals of the imbalanced amounts
+        imbalanced_amounts = self.correct_all_decimals(imbalanced_amounts)
+
+        note("depositing {:.2e} and {:.2e}".format(*imbalanced_amounts))
+        # we add the liquidity
+        self.add_liquidity(imbalanced_amounts, user)
+
+        # since this is an imbalanced deposit we report the new equilibrium
+        self.report_equilibrium()
+        note("[SUCCESS]")
+
+    @precondition(
+        # we need to have enough liquidity before removing
+        # leaving the pool with shallow liquidity can break the amm
+        lambda self: self.pool.totalSupply() > 10e20
+        # we should not empty the pool
+        # (we still check that we can in the invariants)
+        and len(self.depositors) > 1
+    )
+    @rule(
+        data=data(),
+        coin_idx=integers(min_value=0, max_value=1),
+    )
+    def remove_liquidity_one_coin_rule(self, data, coin_idx: int):
+        note("[WITHDRAW ONE COIN]")
+
+        # we only allow depositors with enough balance to withdraw
+        # this avoids edge cases where the virtual price decreases
+        # because of a small withdrawal
+        depositors_allowed_to_withdraw = [
+            d for d in self.depositors if self.pool.balanceOf(d) > 1e11
+        ]
+
+        # this should never happen thanks to the preconditions
+        if len(depositors_allowed_to_withdraw) == 0:
+            raise ValueError("No depositors with enough balance to withdraw")
+
+        # we use a data strategy since the amount we want to remove
+        # depends on the pool liquidity and the depositor balance
+        depositor = data.draw(
+            sampled_from(depositors_allowed_to_withdraw),
+            label="depositor for imbalanced withdraw",
+        )
+
+        # depositor amount of lp tokens
+        depositor_balance = self.pool.balanceOf(depositor)
+
+        # total amount of lp tokens in circulation
+        lp_supply = self.pool.totalSupply()
+
+        # ratio of the pool that the depositor will remove
+        depositor_ratio = depositor_balance / lp_supply
+
+        # TODO check these two conditions
+        max_withdraw = 0.3 if depositor_ratio > 0.25 else 1
+
+        min_withdraw = 0.1 if depositor_balance >= 1e13 else 0.01
+
+        # we draw a percentage of the depositor balance to withdraw
+        percentage = data.draw(
+            floats(min_value=min_withdraw, max_value=max_withdraw)
+        )
+
+        note(
+            "removing {:.2e} lp tokens ".format(
+                amount_withdrawn := percentage * depositor_balance
+            )
+            + "which is {:.4%} of pool liquidity ".format(
+                amount_withdrawn / lp_supply
+            )
+            + "(only coin {}) ".format(coin_idx)
+            + "and {:.1%} of address balance".format(percentage)
+        )
+        self.remove_liquidity_one_coin(percentage, coin_idx, depositor)
+        self.report_equilibrium()
+        note("[SUCCESS]")
+
+    def can_always_withdraw(self, imbalanced_operations_allowed=True):
+        # we allow imbalanced operations by default
+        super().can_always_withdraw(imbalanced_operations_allowed=True)
+
+    def virtual_price(self):
+        # we disable this invariant because claiming admin fees can break it.
+        # claiming admin_fees can lead to a decrease in the virtual price
+        # however the pool is still profitable as long as xcpx is increasing.
+        pass
+
+
+class RampingStateful(ImbalancedLiquidityStateful):
+    """This test suite does everything as the `ImbalancedLiquidityStateful`
+    but also ramps the pool. Because of this some of the invariant checks
+    are disabled (loss is expected).
+
+    This class tests statefully tests wheter ramping A and
+    gamma does not break the pool. At the start it always start
+    with a ramp, then it can ramp again.
+    """
+
+    # create the steps for the ramp
+    # [0.2, 0.3 ... 0.9, 1, 2, 3 ... 10]
+    change_steps = [x / 10 if x < 10 else x for x in range(2, 11)] + list(
+        range(2, 11)
     )
 
-    for k, v in locals().items():
-        setattr(NumbaGoUp, k, v)
+    # we can only ramp A and gamma at most 10x
+    # lower/higher than their starting value
+    change_step_strategy = sampled_from(change_steps)
 
-    run_state_machine_as_test(NumbaGoUp)
+    # we fuzz the ramp duration up to a year
+    days = integers(min_value=1, max_value=365)
+
+    @precondition(lambda self: not self.is_ramping())
+    @rule(
+        A_change=change_step_strategy,
+        gamma_change=change_step_strategy,
+        days=days,
+    )
+    def ramp(self, A_change, gamma_change, days):
+        """
+        Computes the new A and gamma values by multiplying the current ones
+        by the change factors. Then clamps the new values to stay in the
+        [MIN_A, MAX_A] and [MIN_GAMMA, MAX_GAMMA] ranges.
+
+        Then proceeds to ramp the pool with the new values (with admin rights).
+        """
+        note("[RAMPING]")
+        new_A = self.pool.A() * A_change
+        new_A = int(
+            max(MIN_A, min(MAX_A, new_A))
+        )  # clamp new_A to stay in [MIN_A, MAX_A]
+
+        new_gamma = self.pool.gamma() * gamma_change
+        new_gamma = int(
+            max(MIN_GAMMA, min(MAX_GAMMA, new_gamma))
+        )  # clamp new_gamma to stay in [MIN_GAMMA, MAX_GAMMA]
+
+        # current timestamp + fuzzed days
+        ramp_duration = boa.env.evm.patch.timestamp + days * UNIX_DAY
+
+        self.pool.ramp_A_gamma(
+            new_A,
+            new_gamma,
+            ramp_duration,
+            sender=self.admin,
+        )
+
+        note(
+            "ramping A and gamma to {:.2e} and {:.2e}".format(new_A, new_gamma)
+        )
+
+    def up_only_profit(self):
+        # we disable this invariant because ramping can lead to losses
+        pass
+
+    def sanity_check(self):
+        # we disable this invariant because ramping can lead to losses
+        pass
+
+
+TestOnlySwap = OnlySwapStateful.TestCase
+TestUpOnlyLiquidity = UpOnlyLiquidityStateful.TestCase
+TestOnlyBalancedLiquidity = OnlyBalancedLiquidityStateful.TestCase
+TestImbalancedLiquidity = ImbalancedLiquidityStateful.TestCase
+# TestRampingStateful = RampingStateful.TestCase
