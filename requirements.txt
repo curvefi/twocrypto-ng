@@ -25,5 +25,5 @@ matplotlib
 cytoolz
 
 # vyper and dev framework (boa interpreter):
-git+https://github.com/vyperlang/titanoboa@1bf16f916b91aab299e293b4148be455c1674706
+git+https://github.com/vyperlang/titanoboa@40e85c602aa2c15baaf5060547c1224178d9efae
 vyper>=0.3.10
