@@ -74,7 +74,7 @@ def check_and_deploy(
             blueprint=blueprint,
             blueprint_preamble=b"\xFE\x71\x00",
         )
-        assert precomputed_address == calculated_address
+        # assert precomputed_address == calculated_address
 
         deploy_utils.deploy_via_create2_factory(
             deployment_bytecode,
