@@ -804,7 +804,9 @@ def _exchange(
 
     # ------ Tweak price_scale with good initial guess for newton_D ----------
 
-    price_scale = self.tweak_price(A_gamma, xp, 0, y_out[1])
+    # Get initial guess using: D = isqrt(x[0] * x[1] * 4 / K0_prev * 10**18)
+    initial_D: uint256 = isqrt(xp[0] * xp[1] * 4 / y_out[1] * 10**18)
+    price_scale = self.tweak_price(A_gamma, xp, 0, initial_D)
 
     return [dy, fee, price_scale]
 
@@ -814,7 +816,7 @@ def tweak_price(
     A_gamma: uint256[2],
     _xp: uint256[N_COINS],
     new_D: uint256,
-    K0_prev: uint256 = 0,
+    initial_D: uint256 = 0,
 ) -> uint256:
     """
     @notice Updates price_oracle, last_price and conditionally adjusts
@@ -825,7 +827,7 @@ def tweak_price(
     @param A_gamma Array of A and gamma parameters.
     @param _xp Array of current balances.
     @param new_D New D value.
-    @param K0_prev Initial guess for `newton_D`.
+    @param initial_D Initial guess for `newton_D`.
     """
 
     # ---------------------------- Read storage ------------------------------
@@ -884,7 +886,7 @@ def tweak_price(
 
     D_unadjusted: uint256 = new_D
     if new_D == 0:  #  <--------------------------- _exchange sets new_D to 0.
-        D_unadjusted = MATH.newton_D(A_gamma[0], A_gamma[1], _xp, K0_prev)
+        D_unadjusted = MATH.newton_D(A_gamma[0], A_gamma[1], _xp, initial_D)
 
     # ----------------------- Calculate last_prices --------------------------
 
@@ -963,7 +965,16 @@ def tweak_price(
             ]
 
             # ------------------------------------------ Update D with new xp.
-            D: uint256 = MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
+            D: uint256 = MATH.newton_D(
+                A_gamma[0],
+                A_gamma[1],
+                xp,
+                D_unadjusted
+            )
+
+            for k in range(N_COINS):
+                frac: uint256 = xp[k] * 10**18 / D  # <----- Check validity of
+                assert (frac > 10**16 - 1) and (frac < 10**20 + 1)  #   p_new.
 
             # ------------------------------------- Convert xp to real prices.
             xp = [

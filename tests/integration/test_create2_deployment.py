@@ -11,7 +11,10 @@ def forked_chain():
     assert (
         rpc_url is not None
     ), "Provider url is not set, add RPC_ETHEREUM param to env"
-    boa.env.fork(url=rpc_url)
+    env = boa.Env()
+    env.fork(rpc_url)
+    with boa.swap_env(env):
+        yield
 
 
 @pytest.fixture(scope="module")

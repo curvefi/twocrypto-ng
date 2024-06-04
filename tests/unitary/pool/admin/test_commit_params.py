@@ -11,7 +11,6 @@ def _apply_new_params(swap, params):
         params["allowed_extra_profit"],
         params["adjustment_step"],
         params["ma_time"],
-        params["xcp_ma_time"],
     )
 
 
@@ -103,16 +102,6 @@ def test_commit_accept_ma_time(swap, factory_admin, params):
         swap._storage.packed_rebalancing_params.get()
     )[2]
     assert ma_time == p["ma_time"]
-
-
-def test_commit_accept_xcp_ma_time(swap, factory_admin, params):
-
-    p = copy.deepcopy(params)
-    p["xcp_ma_time"] = 872541
-    with boa.env.prank(factory_admin):
-        _apply_new_params(swap, p)
-
-    assert swap.xcp_ma_time() == p["xcp_ma_time"]
 
 
 def test_commit_accept_rebalancing_params(swap, factory_admin, params):

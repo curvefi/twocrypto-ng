@@ -6,7 +6,7 @@ env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
-  boa-tests:
+  unit-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -16,7 +16,7 @@ jobs:
         with:
           path: |
             ~/.vvm
-          key: compiler-cache
+          key: compiler-cache-${{ hashFiles('**/requirements.txt') }}
 
       - name: Setup Python 3.10.4
         uses: actions/setup-python@v2
@@ -27,4 +27,50 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run Tests
-        run: python -m pytest tests/unitary -n auto
+        run: python -m pytest tests/unitary -n auto --ignore=tests/unitary/pool/stateful --ignore=tests/unitary/math
+
+  stateful-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Cache Compiler Installations
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.vvm
+          key: compiler-cache-${{ hashFiles('**/requirements.txt') }}
+
+      - name: Setup Python 3.10.4
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.10.4
+
+      - name: Install Requirements
+        run: pip install -r requirements.txt
+
+      - name: Run Stateful Tests
+        run: python -m pytest tests/unitary/pool/stateful -n auto --ignore=tests/unitary/pool/stateful/legacy
+
+  math-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Cache Compiler Installations
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.vvm
+          key: compiler-cache-${{ hashFiles('**/requirements.txt') }}
+
+      - name: Setup Python 3.10.4
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.10.4
+
+      - name: Install Requirements
+        run: pip install -r requirements.txt
+
+      - name: Run Tests
+        run: python -m pytest tests/unitary/math -n auto

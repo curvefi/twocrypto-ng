@@ -39,7 +39,7 @@ def sign_permit():
         struct["domain"] = dict(
             name=swap.name(),
             version=swap.version(),
-            chainId=boa.env.vm.chain_context.chain_id,
+            chainId=boa.env.evm.patch.chain_id,
             verifyingContract=swap.address,
             salt=HexBytes(swap.salt()),
         )
