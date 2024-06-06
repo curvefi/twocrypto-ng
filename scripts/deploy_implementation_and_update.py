@@ -95,9 +95,9 @@ def main():
 
     forkmode = False
     deploy(
-        network="arbitrum:mainnet",
+        network="",
         url="",
-        account="FIDDYDEPLOYER",
+        account="",
         fork=forkmode,
     )
 
