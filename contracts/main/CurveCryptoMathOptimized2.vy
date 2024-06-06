@@ -24,7 +24,7 @@ MAX_GAMMA: constant(uint256) = 199 * 10**15 # 1.99 * 10**17
 MIN_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER / 10
 MAX_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER * 1000
 
-version: public(constant(String[8])) = "v2.0.0"
+version: public(constant(String[8])) = "v2.1.0"
 
 
 # ------------------------ AMM math functions --------------------------------
