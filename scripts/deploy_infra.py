@@ -146,14 +146,16 @@ def deploy_infra(network, url, account, fork=False):
 
         boa.env.set_eoa(Account.from_key(os.environ[account]))
 
-    if fork:
-        boa.env.fork(url)
-        logger.log("Forkmode ...")
-        boa.env.eoa = deploy_utils.FIDDYDEPLOYER  # set eoa address here
     else:
-        logger.log("Prodmode ...")
-        boa.set_env(NetworkEnv(url))
-        boa.env.add_account(Account.from_key(os.environ[account]))
+
+        if fork:
+            boa.env.fork(url)
+            logger.log("Forkmode ...")
+            boa.env.eoa = deploy_utils.FIDDYDEPLOYER  # set eoa address here
+        else:
+            logger.log("Prodmode ...")
+            boa.set_env(NetworkEnv(url))
+            boa.env.add_account(Account.from_key(os.environ[account]))
 
     CREATE2DEPLOYER = boa.load_abi("abi/create2deployer.json").at(
         "0x13b0D85CcB8bf860b6b79AF3029fCA081AE9beF2"
