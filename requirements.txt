@@ -7,7 +7,8 @@ pip-tools
 pre-commit
 
 # testing:
-eip712
+# this is temporarily installed from git since a correction required has not been release yet
+git+https://github.com/ApeWorX/eip712@422aabb150b2130455a57f1f5d26ba14ea883263
 eth_account
 ipython
 hypothesis==6.74.0
@@ -25,5 +26,5 @@ matplotlib
 cytoolz
 
 # vyper and dev framework (boa interpreter):
-git+https://github.com/vyperlang/titanoboa@1bf16f916b91aab299e293b4148be455c1674706
+git+https://github.com/vyperlang/titanoboa@2e0d5c1cf36986b3f94ca39979b83e3512e85c2b
 vyper>=0.3.10
