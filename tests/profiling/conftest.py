@@ -10,10 +10,10 @@ from contracts.experimental.initial_guess import (
 )
 
 # compiling contracts
-from contracts.main import CurveCryptoMathOptimized2 as math_deployer
-from contracts.main import CurveCryptoViews2Optimized as view_deployer
+from contracts.main import CurveTwocrypto as amm_deployer
 from contracts.main import CurveTwocryptoFactory as factory_deployer
-from contracts.main import CurveTwocryptoOptimized as amm_deployer
+from contracts.main import CurveTwocryptoMath as math_deployer
+from contracts.main import CurveTwocryptoViews as view_deployer
 from tests.utils.tokens import mint_for_testing
 
 # ---------------- addresses ----------------

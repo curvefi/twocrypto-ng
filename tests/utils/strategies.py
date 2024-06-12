@@ -10,10 +10,10 @@ from hypothesis import assume, note
 from hypothesis.strategies import composite, integers, just, sampled_from
 
 # compiling contracts
-from contracts.main import CurveCryptoMathOptimized2 as math_deployer
-from contracts.main import CurveCryptoViews2Optimized as view_deployer
+from contracts.main import CurveTwocrypto as amm_deployer
 from contracts.main import CurveTwocryptoFactory as factory_deployer
-from contracts.main import CurveTwocryptoOptimized as amm_deployer
+from contracts.main import CurveTwocryptoMath as math_deployer
+from contracts.main import CurveTwocryptoViews as view_deployer
 from contracts.main import LiquidityGauge as gauge_deployer
 from tests.utils.constants import (
     MAX_A,
@@ -27,7 +27,7 @@ from tests.utils.pool_presets import all_presets
 
 # ---------------- hypothesis test profiles ----------------
 
-# just a more hyptohesis-like way to get an address
+# just a more hypothesis-like way to get an address
 # from boa's search strategy
 address = strategy("address")
 

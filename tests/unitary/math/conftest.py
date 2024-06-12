@@ -5,7 +5,7 @@ import pytest
 @pytest.fixture(scope="module")
 def math_optimized(deployer):
     with boa.env.prank(deployer):
-        return boa.load("contracts/main/CurveCryptoMathOptimized2.vy")
+        return boa.load("contracts/main/CurveTwocryptoMath.vy")
 
 
 @pytest.fixture(scope="module")

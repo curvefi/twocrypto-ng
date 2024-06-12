@@ -5,7 +5,7 @@ import pytest
 @pytest.fixture(scope="module")
 def math_contract(deployer):
     with boa.env.prank(deployer):
-        return boa.load("contracts/main/CurveCryptoMathOptimized2.vy")
+        return boa.load("contracts/main/CurveTwocryptoMath.vy")
 
 
 @pytest.fixture(scope="module")
@@ -21,7 +21,7 @@ def gauge_implementation(deployer, gauge_interface):
 
 @pytest.fixture(scope="module")
 def amm_interface():
-    return boa.load_partial("contracts/main/CurveTwocryptoOptimized.vy")
+    return boa.load_partial("contracts/main/CurveTwocrypto.vy")
 
 
 @pytest.fixture(scope="module")
@@ -33,7 +33,7 @@ def amm_implementation(deployer, amm_interface):
 @pytest.fixture(scope="module")
 def views_contract(deployer):
     with boa.env.prank(deployer):
-        return boa.load("contracts/main/CurveCryptoViews2Optimized.vy")
+        return boa.load("contracts/main/CurveTwocryptoViews.vy")
 
 
 @pytest.fixture(scope="module")
