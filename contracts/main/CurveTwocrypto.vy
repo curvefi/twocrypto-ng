@@ -542,7 +542,7 @@ def add_liquidity(
         self.mint(receiver, d_token)
         self.admin_lp_virtual_balance += unsafe_div(ADMIN_FEE * d_token_fee, 10**10)
 
-        price_scale = self.tweak_price(A_gamma, xp, D, 0)
+        price_scale = self.tweak_price(A_gamma, xp, D)
 
     else:
 
@@ -681,7 +681,7 @@ def remove_liquidity_one_coin(
     # Burn user's tokens:
     self.burnFrom(msg.sender, token_amount)
 
-    packed_price_scale: uint256 = self.tweak_price(A_gamma, xp, D, 0)
+    packed_price_scale: uint256 = self.tweak_price(A_gamma, xp, D)
     #        Safe to use D from _calc_withdraw_one_coin here ---^
 
     # ------------------------- Transfers ------------------------------------
@@ -804,7 +804,9 @@ def _exchange(
 
     # ------ Tweak price_scale with good initial guess for newton_D ----------
 
-    price_scale = self.tweak_price(A_gamma, xp, 0, y_out[1])
+    D = MATH.newton_D(A_gamma[0], A_gamma[1], xp, y_out[1])
+
+    price_scale = self.tweak_price(A_gamma, xp, D)
 
     return [dy, fee, price_scale]
 
@@ -813,8 +815,7 @@ def _exchange(
 def tweak_price(
     A_gamma: uint256[2],
     _xp: uint256[N_COINS],
-    new_D: uint256,
-    K0_prev: uint256 = 0,
+    D_before_rebalance: uint256,
 ) -> uint256:
     """
     @notice Updates price_oracle, last_price and conditionally adjusts
@@ -824,8 +825,8 @@ def tweak_price(
     @dev Contains main liquidity rebalancing logic, by tweaking `price_scale`.
     @param A_gamma Array of A and gamma parameters.
     @param _xp Array of current balances.
-    @param new_D New D value.
-    @param K0_prev Initial guess for `newton_D`.
+    @param D_before_rebalance Value of D computed by the caller method, without
+           taking into account whether the pool should be rebalanced or not.
     """
 
     # ---------------------------- Read storage ------------------------------
@@ -878,26 +879,19 @@ def tweak_price(
     #  `price_oracle` is used further on to calculate its vector distance from
     # price_scale. This distance is used to calculate the amount of adjustment
     # to be done to the price_scale.
-    # ------------------------------------------------------------------------
-
-    # ------------------ If new_D is set to 0, calculate it ------------------
-
-    D_unadjusted: uint256 = new_D
-    if new_D == 0:  #  <--------------------------- _exchange sets new_D to 0.
-        D_unadjusted = MATH.newton_D(A_gamma[0], A_gamma[1], _xp, K0_prev)
 
     # ----------------------- Calculate last_prices --------------------------
 
     self.last_prices = unsafe_div(
-        MATH.get_p(_xp, D_unadjusted, A_gamma) * price_scale,
+        MATH.get_p(_xp, D_before_rebalance, A_gamma) * price_scale,
         10**18
     )
 
     # ---------- Update profit numbers without price adjustment first --------
 
     xp: uint256[N_COINS] = [
-        unsafe_div(D_unadjusted, N_COINS),
-        D_unadjusted * PRECISION / (N_COINS * price_scale)  # <------ safediv.
+        unsafe_div(D_before_rebalance, N_COINS),
+        D_before_rebalance * PRECISION / (N_COINS * price_scale)  # <------ safediv.
     ]  #                                                     with price_scale.
 
     xcp_profit: uint256 = 10**18
@@ -990,7 +984,7 @@ def tweak_price(
                 return p_new
 
     # --------- price_scale was not adjusted. Update the profit counter and D.
-    self.D = D_unadjusted
+    self.D = D_before_rebalance
     self.virtual_price = virtual_price
 
     return price_scale
