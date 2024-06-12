@@ -2,18 +2,22 @@ from copy import deepcopy
 
 import boa
 import pytest
-from eth_account import Account as EthAccount
-from eth_account._utils.structured_data.hashing import (
-    hash_domain,
-    hash_message,
-)
-from eth_account.messages import SignableMessage
+
+# from eth_account import Account as EthAccount
+# from eth_account._utils.encode_typed_data.encoding_and_hashing import (
+#     hash_message,
+#     hash_domain,
+# )
+# from eth_account.messages import SignableMessage
 from hexbytes import HexBytes
 
 
 @pytest.fixture(scope="module")
 def sign_permit():
     def _sign_permit(swap, owner, spender, value, deadline):
+        raise Exception(
+            "hash_message is not available in the new version of eth-account"
+        )
 
         PERMIT_STRUCT = {
             "types": {
@@ -50,9 +54,12 @@ def sign_permit():
             nonce=swap.nonces(owner.address),
             deadline=deadline,
         )
-        signable_message = SignableMessage(
-            b"\x01", hash_domain(struct), hash_message(struct)
-        )
-        return EthAccount.sign_message(signable_message, owner._private_key)
+        # TODO - hash_message is not available in the new version of
+        #  eth-account
+        # this needs to be fixed
+        # signable_message = SignableMessage(
+        #     b"\x01", hash_domain(struct), hash_message(struct)
+        # )
+        # return EthAccount.sign_message(signable_message, owner._private_key)
 
     return _sign_permit
