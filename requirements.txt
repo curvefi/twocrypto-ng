@@ -8,7 +8,7 @@ pre-commit
 
 # testing:
 # this is temporarily installed from git since a correction required has not been release yet
-git+https://github.com/ApeWorX/eip712@422aabb150b2130455a57f1f5d26ba14ea883263
+git+https://github.com/DanielSchiavini/eip712
 eth_account
 ipython
 hypothesis==6.74.0
