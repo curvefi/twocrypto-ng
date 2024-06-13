@@ -71,14 +71,14 @@ event TokenExchange:
     bought_id: uint256
     tokens_bought: uint256
     fee: uint256
-    packed_price_scale: uint256
+    price_scale: uint256
 
 event AddLiquidity:
     provider: indexed(address)
     token_amounts: uint256[N_COINS]
     fee: uint256
     token_supply: uint256
-    packed_price_scale: uint256
+    price_scale: uint256
 
 event RemoveLiquidity:
     provider: indexed(address)
@@ -91,7 +91,7 @@ event RemoveLiquidityOne:
     coin_index: uint256
     coin_amount: uint256
     approx_fee: uint256
-    packed_price_scale: uint256
+    price_scale: uint256
 
 event NewParameters:
     mid_fee: uint256
@@ -681,7 +681,7 @@ def remove_liquidity_one_coin(
     # Burn user's tokens:
     self.burnFrom(msg.sender, token_amount)
 
-    packed_price_scale: uint256 = self.tweak_price(A_gamma, xp, D)
+    price_scale: uint256 = self.tweak_price(A_gamma, xp, D)
     #        Safe to use D from _calc_withdraw_one_coin here ---^
 
     # ------------------------- Transfers ------------------------------------
@@ -691,7 +691,7 @@ def remove_liquidity_one_coin(
     self._transfer_out(i, dy, receiver)
 
     log RemoveLiquidityOne(
-        msg.sender, token_amount, i, dy, approx_fee, packed_price_scale
+        msg.sender, token_amount, i, dy, approx_fee, price_scale
     )
 
     return dy
