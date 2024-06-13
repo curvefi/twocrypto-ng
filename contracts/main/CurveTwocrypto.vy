@@ -1443,13 +1443,12 @@ def burnFrom(_to: address, _value: uint256) -> bool:
 @view
 def internal_price_oracle() -> uint256:
     """
-    @notice Returns the oracle price of the coin at index `k` w.r.t the coin
+    @notice Returns the oracle price of the coin at index 1 w.r.t the coin
             at index 0.
     @dev The oracle is an exponential moving average, with a periodicity
          determined by `self.ma_time`. The aggregated prices are cached state
          prices (dy/dx) calculated AFTER the latest trade.
-    @param k The index of the coin.
-    @return uint256 Price oracle value of kth coin.
+    @return uint256 Price oracle value of second coin.
     """
     price_oracle: uint256 = self.cached_price_oracle
     price_scale: uint256 = self.cached_price_scale
