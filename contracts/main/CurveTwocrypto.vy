@@ -148,8 +148,8 @@ future_A_gamma_time: public(uint256)  # <------ Time when ramping is finished.
 
 balances: public(uint256[N_COINS])
 D: public(uint256)
-xcp_profit: public(uint256)
-xcp_profit_a: public(uint256)  # <--- Full profit at last claim of admin fees.
+profit: uint256
+profit_checkpoint: uint256  # <--- Full profit at last claim of admin fees.
 
 virtual_price: public(uint256)  # <------ Cached (fast to read) virtual price.
 #                          The cached `virtual_price` is also used internally.
@@ -255,7 +255,7 @@ def __init__(
     self.cached_price_oracle = initial_price
     self.last_prices = initial_price
     self.last_timestamp = block.timestamp
-    self.xcp_profit_a = 10**18
+    self.profit_checkpoint = 10**18
 
     #         Cache DOMAIN_SEPARATOR. If chain.id is not CACHED_CHAIN_ID, then
     #     DOMAIN_SEPARATOR will be re-calculated each time `permit` is called.
@@ -550,8 +550,8 @@ def add_liquidity(
 
         self.D = D
         self.virtual_price = 10**18
-        self.xcp_profit = 10**18
-        self.xcp_profit_a = 10**18
+        self.profit = 10**18
+        self.profit_checkpoint = 10**18
 
         self.mint(receiver, d_token)
 
@@ -838,7 +838,7 @@ def tweak_price(
     # Contains: allowed_extra_profit, adjustment_step, ma_time. -----^
 
     total_supply: uint256 = self.totalSupply
-    old_xcp_profit: uint256 = self.xcp_profit
+    old_profit: uint256 = self.profit
     old_virtual_price: uint256 = self.virtual_price
 
     # ------------------ Update Price Oracle if needed -----------------------
@@ -894,16 +894,15 @@ def tweak_price(
         D_before_rebalance * PRECISION / (N_COINS * price_scale)  # <------ safediv.
     ]  #                                                     with price_scale.
 
-    xcp_profit: uint256 = 10**18
+    profit: uint256 = 10**18
     virtual_price: uint256 = 10**18
 
     if old_virtual_price > 0:
-
         xcp: uint256 = isqrt(xp[0] * xp[1])
         virtual_price = 10**18 * xcp / total_supply
 
-        xcp_profit = unsafe_div(
-            old_xcp_profit * virtual_price,
+        profit = unsafe_div(
+            old_profit * virtual_price,
             old_virtual_price
         )  # <---------------- Safu to do unsafe_div as old_virtual_price > 0.
 
@@ -914,10 +913,10 @@ def tweak_price(
             # this usually reverts when withdrawing a very small amount of LP tokens
             assert virtual_price > old_virtual_price # dev: virtual price decreased
 
-    self.xcp_profit = xcp_profit
+    self.profit = profit
 
     # ------------ Rebalance liquidity if there's enough profits to adjust it:
-    if virtual_price * 2 - 10**18 > xcp_profit + 2 * rebalancing_params[0]:
+    if virtual_price * 2 - 10**18 > profit + 2 * rebalancing_params[0]:
         #                          allowed_extra_profit --------^
 
         # ------------------- Get adjustment step ----------------------------
@@ -943,7 +942,7 @@ def tweak_price(
 
             # ------------------------------------- Calculate new price scale.
 
-            p_new: uint256 = unsafe_div(
+            new_price_scale: uint256 = unsafe_div(
                 price_scale * unsafe_sub(norm, adjustment_step) +
                 adjustment_step * price_oracle,
                 norm
@@ -953,7 +952,7 @@ def tweak_price(
 
             xp = [
                 _xp[0],
-                unsafe_div(_xp[1] * p_new, price_scale)
+                unsafe_div(_xp[1] * new_price_scale, price_scale)
             ]
 
             # ------------------------------------------ Update D with new xp.
@@ -962,7 +961,7 @@ def tweak_price(
             # ------------------------------------- Convert xp to real prices.
             xp = [
                 unsafe_div(D, N_COINS),
-                D * PRECISION / (N_COINS * p_new)
+                D * PRECISION / (N_COINS * new_price_scale)
             ]
 
             # ---------- Calculate new virtual_price using new xp and D. Reuse
@@ -974,14 +973,14 @@ def tweak_price(
             # ---------------------------- Proceed if we've got enough profit.
             if (
                 old_virtual_price > 10**18 and
-                2 * old_virtual_price - 10**18 > xcp_profit
+                2 * old_virtual_price - 10**18 > profit
             ):
 
                 self.D = D
                 self.virtual_price = old_virtual_price
-                self.cached_price_scale = p_new
+                self.cached_price_scale = new_price_scale
 
-                return p_new
+                return new_price_scale
 
     # --------- price_scale was not adjusted. Update the profit counter and D.
     self.D = D_before_rebalance
@@ -1014,8 +1013,8 @@ def _claim_admin_fees():
     ):
         return
 
-    xcp_profit: uint256 = self.xcp_profit  # <---------- Current pool profits.
-    xcp_profit_a: uint256 = self.xcp_profit_a  # <- Profits at previous claim.
+    profit: uint256 = self.profit  # <---------- Current pool profits.
+    profit_checkpoint: uint256 = self.profit_checkpoint  # <- Profits at previous claim.
     current_lp_token_supply: uint256 = self.totalSupply
 
     # Do not claim admin fees if:
@@ -1023,7 +1022,7 @@ def _claim_admin_fees():
     # 2. there are less than 10**18 (or 1 unit of) lp tokens, else it can lead
     #    to manipulated virtual prices.
 
-    if xcp_profit <= xcp_profit_a or current_lp_token_supply < 10**18:
+    if profit <= profit_checkpoint or current_lp_token_supply < 10**18:
         return
 
     # ---------- Conditions met to claim admin fees: compute state. ----------
@@ -1045,7 +1044,7 @@ def _claim_admin_fees():
     #         are left with half; so divide by 2.
 
     fees: uint256 = unsafe_div(
-        unsafe_sub(xcp_profit, xcp_profit_a) * ADMIN_FEE, 2 * 10**10
+        unsafe_sub(profit, profit_checkpoint) * ADMIN_FEE, 2 * 10**10
     )
 
     # ------------------------------ Claim admin fees by minting admin's share
@@ -1062,7 +1061,7 @@ def _claim_admin_fees():
         admin_share += current_lp_token_supply * frac / 10**18
 
         # ------ Subtract fees from profits that will be used for rebalancing.
-        xcp_profit -= fees * 2
+        profit -= fees * 2
 
     # ------------------- Recalculate virtual_price following admin fee claim.
     total_supply_including_admin_share: uint256 = (
@@ -1082,7 +1081,7 @@ def _claim_admin_fees():
     # Set admin virtual LP balances to zero because we claimed:
     self.admin_lp_virtual_balance = 0
 
-    self.xcp_profit = xcp_profit
+    self.profit = profit
     self.last_admin_fee_claim_timestamp = block.timestamp
 
     # Since we reduce balances: virtual price goes down
@@ -1091,8 +1090,8 @@ def _claim_admin_fees():
     # Adjust D after admin seemingly removes liquidity
     self.D = D - unsafe_div(D * admin_share, total_supply_including_admin_share)
 
-    if xcp_profit > xcp_profit_a:
-        self.xcp_profit_a = xcp_profit  # <-------- Cache last claimed profit.
+    if profit > profit_checkpoint:
+        self.profit_checkpoint = profit  # <-------- Cache last claimed profit.
 
     # --------------------------- Handle Transfers ---------------------------
 
@@ -1753,6 +1752,25 @@ def DOMAIN_SEPARATOR() -> bytes32:
     @return bytes32 Domain Separator set for the current chain.
     """
     return self._domain_separator()
+
+@view
+@external
+def xcp_profit() -> uint256:
+    """
+    @notice Returns the current profit of the pool.
+    @return uint256 Profit value.
+    """
+    return self.profit
+
+
+@view
+@external
+def xcp_profit_a() -> uint256:
+    """
+    @notice Returns the profit at the last admin fee claim.
+    @return uint256 Profit value.
+    """
+    return self.profit_checkpoint
 
 
 # ------------------------- AMM Admin Functions ------------------------------
