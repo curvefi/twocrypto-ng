@@ -148,6 +148,7 @@ future_A_gamma_time: public(uint256)  # <------ Time when ramping is finished.
 
 balances: public(uint256[N_COINS])
 D: public(uint256)
+D_rebalance: public(uint256)
 profit: uint256
 profit_checkpoint: uint256  # <--- Full profit at last claim of admin fees.
 
@@ -569,6 +570,66 @@ def add_liquidity(
 
     return d_token
 
+@external
+@nonreentrant("lock")
+def donate(amounts: uint256[N_COINS]):
+
+    A_gamma: uint256[2] = self._A_gamma()
+    xp: uint256[N_COINS] = self.balances
+    amountsp: uint256[N_COINS] = empty(uint256[N_COINS])
+    old_D: uint256 = 0
+
+    assert amounts[0] + amounts[1] > 0  # dev: no coins to add
+
+    # --------------------- Get prices, balances -----------------------------
+
+    price_scale: uint256 = self.cached_price_scale
+
+    # -------------------------------------- Update balances and calculate xp.
+    xp_old: uint256[N_COINS] = xp
+    amounts_received: uint256[N_COINS] = empty(uint256[N_COINS])
+
+    ########################## TRANSFER IN <-------
+
+    for i in range(N_COINS):
+        if amounts[i] > 0:
+            # Updates self.balances here:
+            amounts_received[i] = self._transfer_in(
+                i,
+                amounts[i],
+                msg.sender,
+                False,  # <--------------------- Disable optimistic transfers.
+            )
+            xp[i] = xp[i] + amounts_received[i]
+
+    xp = [
+        xp[0] * PRECISIONS[0],
+        unsafe_div(xp[1] * price_scale * PRECISIONS[1], PRECISION)
+    ]
+    xp_old = [
+        xp_old[0] * PRECISIONS[0],
+        unsafe_div(xp_old[1] * price_scale * PRECISIONS[1], PRECISION)
+    ]
+
+    for i in range(N_COINS):
+        if amounts_received[i] > 0:
+            amountsp[i] = xp[i] - xp_old[i]
+
+    # -------------------- Calculate LP tokens to mint -----------------------
+    if self.future_A_gamma_time > block.timestamp:  # <--- A_gamma is ramping.
+        # ----- Recalculate the invariant if A or gamma are undergoing a ramp.
+        old_D = MATH.newton_D(A_gamma[0], A_gamma[1], xp_old, 0)
+    else:
+        old_D = self.D
+
+    D: uint256 = MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
+    self.D_rebalance = D - old_D
+
+    if old_D > 0:
+        self.tweak_price(A_gamma, xp, D)
+    else:
+        raise "Donation not allowed for empty pool"
+
 
 @external
 @nonreentrant("lock")
@@ -920,9 +981,10 @@ def tweak_price(
 
     self.profit = profit
 
-    # ------------ Rebalance liquidity if there's enough profits to adjust it:
-    if virtual_price * 2 - 10**18 > profit + 2 * rebalancing_params[0]:
-        #                          allowed_extra_profit --------^
+    rebalancing_reserves: uint256 = self.D_rebalance
+    if (
+        rebalancing_reserves * 10**18 / (self.D + rebalancing_reserves)
+       ) > 10**15: # <--- 0.1% of total D (rebalancing + liquidity) is donations
 
         # ------------------- Get adjustment step ----------------------------
 
@@ -961,29 +1023,51 @@ def tweak_price(
             ]
 
             # ------------------------------------------ Update D with new xp.
-            D: uint256 = MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
+            D_total: uint256 = MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
 
-            # ------------------------------------- Convert xp to real prices.
-            xp = [
-                unsafe_div(D, N_COINS),
-                D * PRECISION / (N_COINS * new_price_scale)
-            ]
+            # We define D as the total value of the pool, including donations.
+            # The following invariant should always hold: D_total = D + D_donation.
+            # D is the value of the user deposits expressed in invariant terms.
 
-            # ---------- Calculate new virtual_price using new xp and D. Reuse
-            #              `old_virtual_price` (but it has new virtual_price).
-            old_virtual_price = unsafe_div(
-                10**18 * isqrt(xp[0] * xp[1]), total_supply
-            )  # <----- unsafe_div because we did safediv before (if vp>1e18)
+            can_rebalance: bool = False
 
-            # ---------------------------- Proceed if we've got enough profit.
-            if (
-                old_virtual_price > 10**18 and
-                2 * old_virtual_price - 10**18 > profit
-            ):
+            D_delta: uint256 = 0
+            old_D_total: uint256 = self.D + self.D_rebalance
 
-                self.D = D
-                self.virtual_price = old_virtual_price
+            # if the old D_total is greater than the new D_total, it means that
+            # the pool has lost value. In this case, we need to check if the
+            # rebalancing reserves can cover the loss. If it can, we decrease
+            # the rebalancing reserves.
+            if old_D_total > D_total:
+                D_delta = old_D_total - D_total
+                # if the rebalancing reserves can cover the loss, we use them.
+                if (self.D_rebalance > D_delta):
+                    self.D_rebalance -= D_delta
+
+                    can_rebalance = True
+            # if the old D_total is less than the new D_total, it means that
+            # the pool has gained value. This can happen when the oracle price goes
+            # in the direction of a future price.
+            # In this case we increase the rebalancing reserves, with the profit made
+            # by the rebalance to avoid people extract value from the pool.
+            else:
+                D_delta = D_total - old_D_total
+                self.D_rebalance += D_delta
+
+                can_rebalance = True
+
+            # TODO handle case where D_total == old_D_total
+
+            if can_rebalance:
                 self.cached_price_scale = new_price_scale
+                # Just `D` represents the value of the user deposits.
+                D: uint256 = D_total - self.D_rebalance
+                # Virtual price is calculated taking into account **only** the
+                # user deposits. This way donations can't be used to inflate
+                # the virtual price.
+                self.virtual_price = unsafe_div(
+                    10**18 * self.get_xcp(D, new_price_scale), total_supply
+                )
 
                 return new_price_scale
 
