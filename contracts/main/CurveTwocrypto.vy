@@ -1263,7 +1263,7 @@ def _calc_withdraw_one_coin(
 
     # --------- Calculate `approx_fee` (assuming balanced state) in ith token.
     # -------------------------------- We only need this for fee in the event.
-    approx_fee: uint256 = N_COINS * D_fee * xx[i] / D  # <------------------<---------- TODO: Check math.
+    approx_fee: uint256 = N_COINS * D_fee * xx[i] / D
 
     # ------------------------------------------------------------------------
     D -= (dD - D_fee)  # <----------------------------------- Charge fee on D.
