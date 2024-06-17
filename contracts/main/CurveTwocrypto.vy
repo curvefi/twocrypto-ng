@@ -845,6 +845,9 @@ def tweak_price(
 
     last_timestamp: uint256 = self.last_timestamp
     alpha: uint256 = 0
+
+    # The following condition ensures that this part is only triggered
+    # the first time tweak price is called in a block.
     if last_timestamp < block.timestamp:  # 0th index is for price_oracle.
 
         #   The moving average price oracle is calculated using the last_price
@@ -880,8 +883,10 @@ def tweak_price(
     # price_scale. This distance is used to calculate the amount of adjustment
     # to be done to the price_scale.
 
-    # ----------------------- Calculate last_prices --------------------------
+    # ----------------------- Update last_prices --------------------------
 
+    # This is done after the oracle upkeeping because the oracle doesn't take
+    # into account trades that happen in the current block.
     self.last_prices = unsafe_div(
         MATH.get_p(_xp, D_before_rebalance, A_gamma) * price_scale,
         10**18
@@ -982,7 +987,8 @@ def tweak_price(
 
                 return new_price_scale
 
-    # --------- price_scale was not adjusted. Update the profit counter and D.
+
+    # --------- price_scale was not adjusted. Update D and the virtual price.
     self.D = D_before_rebalance
     self.virtual_price = virtual_price
 
