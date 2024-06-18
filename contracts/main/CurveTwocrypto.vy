@@ -721,13 +721,14 @@ def remove_liquidity_one_coin(
 
     dy: uint256 = 0
     D: uint256 = 0
+    D_rebalance_fee: uint256 = 0
     p: uint256 = 0
     xp: uint256[N_COINS] = empty(uint256[N_COINS])
     approx_fee: uint256 = 0
 
     # ------------------------------------------------------------------------
 
-    dy, D, xp, approx_fee = self._calc_withdraw_one_coin(
+    dy, D, D_rebalance_fee, xp, approx_fee = self._calc_withdraw_one_coin(
         A_gamma,
         token_amount,
         i
@@ -740,8 +741,7 @@ def remove_liquidity_one_coin(
     # Burn user's tokens:
     self.burnFrom(msg.sender, token_amount)
 
-    price_scale: uint256 = self.tweak_price(A_gamma, xp, D)
-    #        Safe to use D from _calc_withdraw_one_coin here ---^
+    price_scale: uint256 = self.tweak_price(A_gamma, xp, D, D_rebalance_fee)
 
     # ------------------------- Transfers ------------------------------------
 
@@ -875,6 +875,7 @@ def tweak_price(
     A_gamma: uint256[2],
     _xp: uint256[N_COINS],
     D_before_rebalance: uint256,
+    D_rebalance_fee: uint256 = 0
 ) -> uint256:
     """
     @notice Updates price_oracle, last_price and conditionally adjusts
@@ -899,6 +900,15 @@ def tweak_price(
     total_supply: uint256 = self.totalSupply
     old_profit: uint256 = self.profit
     old_virtual_price: uint256 = self.virtual_price
+
+    # We cache the rebalancing reserves to avoid recalculating them. We add
+    # D_rebalance_fee to D_rebalance to account for fees that the pool earned
+    # while saving an SSTORE instead of increasing self.D_rebalance directly.
+    rebalance_reserves: uint256 = self.D_rebalance + D_rebalance_fee
+
+    # This will be used later to compute whether the ratio between donations and
+    # total D is big enough to allow for a rebalance.
+    D_total_before_rebalance: uint256 = D_before_rebalance + rebalance_reserves
 
     # ------------------ Update Price Oracle if needed -----------------------
 
@@ -979,10 +989,8 @@ def tweak_price(
 
     self.profit = profit
 
-    rebalancing_reserves: uint256 = self.D_rebalance
-    if (
-        rebalancing_reserves * 10**18 / (self.D + rebalancing_reserves)
-       ) > 10**15: # <--- 0.1% of total D (rebalancing + liquidity) is donations
+    # We check whether D / (D + D_rebalance) is big enough to attempt a rebalance.
+    if (rebalance_reserves * 10**18 / D_total_before_rebalance) > 10**15:
 
         # ------------------- Get adjustment step ----------------------------
 
@@ -1021,45 +1029,75 @@ def tweak_price(
             ]
 
             # ------------------------------------------ Update D with new xp.
+
+            # We define `D_total` as the total value of the pool, including donations.
+            # The following invariant should always hold:
+            # D_total = D + D_donation.
+            # Where D is the value of the users' deposits expressed in "invariant terms".
             D_total: uint256 = MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
 
-            # We define D as the total value of the pool, including donations.
-            # The following invariant should always hold: D_total = D + D_donation.
-            # D is the value of the user deposits expressed in invariant terms.
-
+            # Flag variable to check if rebalancing can be done.
             can_rebalance: bool = False
 
-            D_delta: uint256 = 0
-            old_D_total: uint256 = self.D + self.D_rebalance
+            # "delta D" variable to store the change in D_total due to rebalance.
+            # Can be positive or negative depending on whether the pool has gained
+            # or lost value.
+            dD: uint256 = 0
 
             # if the old D_total is greater than the new D_total, it means that
             # the pool has lost value. In this case, we need to check if the
             # rebalancing reserves can cover the loss. If it can, we decrease
             # the rebalancing reserves.
-            if old_D_total > D_total:
-                D_delta = old_D_total - D_total
+            if D_total_before_rebalance > D_total:
+                # We compute the loss "delta D" made by the rebalance.
+                dD = D_total_before_rebalance - D_total
+
                 # if the rebalancing reserves can cover the loss, we use them.
-                if (self.D_rebalance > D_delta):
-                    self.D_rebalance -= D_delta
+                # Otherwise, we don't rebalance.
+                if (rebalance_reserves >= dD):
+                    rebalance_reserves -= dD
 
                     can_rebalance = True
+
             # if the old D_total is less than the new D_total, it means that
             # the pool has gained value. This can happen when the oracle price goes
             # in the direction of a future price.
             # In this case we increase the rebalancing reserves, with the profit made
             # by the rebalance to avoid people extract value from the pool.
             else:
-                D_delta = D_total - old_D_total
-                self.D_rebalance += D_delta
+                # We compute the profit "delta D" made by the rebalance.
+                dD = D_total - D_total_before_rebalance
 
+                # We increase the rebalancing reserves with the profit to be
+                # used for future rebalances.
+                rebalance_reserves += dD
+
+                # If rebalancing leads to profit, doing it is a no brainer
+                # as it improves the pool competitiveness.
                 can_rebalance = True
 
             # TODO handle case where D_total == old_D_total
 
             if can_rebalance:
-                self.cached_price_scale = new_price_scale
+
                 # Just `D` represents the value of the user deposits.
-                D: uint256 = D_total - self.D_rebalance
+                D: uint256 = D_total - rebalance_reserves
+
+                # We store the new D value in the pool. This updates liquidity
+                # if there was any withdrawal or deposit and locks in the profit
+                # made by LPs (if any).
+                self.D = D
+
+                # We update D_rebalance with the new rebalancing reserves.
+                # This takes into account both dD change due to rebalance and
+                # any fee that was token because of `exchange`, `add_liquidity`
+                # or `remove_liquidity_one_coin`.
+                self.D_rebalance = rebalance_reserves
+
+                # This is the key to the rebalancing mechanism. We store the
+                # new price scale effectively changing the slope of the curve.
+                self.cached_price_scale = new_price_scale
+
                 # Virtual price is calculated taking into account **only** the
                 # user deposits. This way donations can't be used to inflate
                 # the virtual price.
@@ -1070,9 +1108,20 @@ def tweak_price(
                 return new_price_scale
 
 
-    # --------- price_scale was not adjusted. Update D and the virtual price.
+    # If we end up not rebalancing because the pool doesn't have enough
+    # funds in D_rebalance, we still need to update the state to reflect
+    # the changes in the pool because of `exchange`, `add_liquidity` or
+    # `remove_liquidity_one_coin`:
+
+    # * We update `D` (user liquidity) and `virtual_price` to reflect the
+    # impact of the aforementioned operations on the pool.
     self.D = D_before_rebalance
     self.virtual_price = virtual_price
+
+    # * We update the rebalancing reserves to reflect the fees allocated for
+    # rebalancing that were collected by the pool (rebalancing_reserves =
+    # self.D_rebalance + D_rebalance_fee).
+    self.D_rebalance = rebalance_reserves
 
     return price_scale
 
@@ -1299,7 +1348,25 @@ def _calc_withdraw_one_coin(
     A_gamma: uint256[2],
     token_amount: uint256,
     i: uint256,
-) -> (uint256, uint256, uint256[N_COINS], uint256):
+) -> (uint256, uint256, uint256, uint256[N_COINS], uint256):
+    """
+    @notice Math heavy part of remove_liquidity_one_coin.
+    @dev Calculates the amount of token i to withdraw, the new D, the fee
+         charged on D and the new scaled balances.
+    @param A_gamma Array of A and gamma parameters.
+    @param token_amount Amount of LP tokens to burn.
+    @param i Index of the token to withdraw.
+    @return dy, D, D_rebalance_fee, xp, approx_fee
+    @dev dy: Amount of token i to withdraw.
+         D: New value of D after withdrawal.
+         D_rebalance_fee: part of the fee charged on D for rebalancing.
+         xp: New scaled balances after withdrawal.
+         approx_fee: Fee charged on the ith token (do not use for calculations).
+    """
+    # TODO nomenclature incosistent:
+    # token_supply -> total_supply
+    # token_amount -> amount
+    # xx -> x or balances
 
     token_supply: uint256 = self.totalSupply
     assert token_amount <= token_supply  # dev: token amount more than supply
@@ -1357,7 +1424,10 @@ def _calc_withdraw_one_coin(
     dy: uint256 = (xp[i] - y) * PRECISION / price_scale_i
     xp[i] = y
 
-    return dy, D, xp, approx_fee
+    # We return D_fee/2 as `D_rebalance_fee` because we want to use half of
+    # the fee to rebalance the pool. The other half is accrued as profit by
+    # liquidity providers.
+    return dy, D, D_fee/2, xp, approx_fee
 
 
 # ------------------------ ERC20 functions -----------------------------------
