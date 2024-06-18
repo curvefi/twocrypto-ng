@@ -513,8 +513,7 @@ def add_liquidity(
 
     # -------------------- Calculate LP tokens to mint -----------------------
 
-    if self.future_A_gamma_time > block.timestamp:  # <--- A_gamma is ramping.
-
+    if self._is_ramping():
         # ----- Recalculate the invariant if A or gamma are undergoing a ramp.
         old_D = MATH.newton_D(A_gamma[0], A_gamma[1], xp_old, 0)
 
@@ -616,7 +615,7 @@ def donate(amounts: uint256[N_COINS]):
             amountsp[i] = xp[i] - xp_old[i]
 
     # -------------------- Calculate LP tokens to mint -----------------------
-    if self.future_A_gamma_time > block.timestamp:  # <--- A_gamma is ramping.
+    if self._is_ramping():
         # ----- Recalculate the invariant if A or gamma are undergoing a ramp.
         old_D = MATH.newton_D(A_gamma[0], A_gamma[1], xp_old, 0)
     else:
@@ -731,9 +730,8 @@ def remove_liquidity_one_coin(
     dy, D, xp, approx_fee = self._calc_withdraw_one_coin(
         A_gamma,
         token_amount,
-        i,
-        (self.future_A_gamma_time > block.timestamp),  # <------- During ramps
-    )  #                                                  we need to update D.
+        i
+    )
 
     assert dy >= min_amount, "Slippage"
 
@@ -1301,7 +1299,6 @@ def _calc_withdraw_one_coin(
     A_gamma: uint256[2],
     token_amount: uint256,
     i: uint256,
-    update_D: bool,
 ) -> (uint256, uint256, uint256[N_COINS], uint256):
 
     token_supply: uint256 = self.totalSupply
@@ -1309,7 +1306,7 @@ def _calc_withdraw_one_coin(
     assert i < N_COINS  # dev: coin out of range
 
     xx: uint256[N_COINS] = self.balances
-    D0: uint256 = 0
+    D: uint256 = 0
 
     # -------------------------- Calculate D0 and xp -------------------------
 
@@ -1321,12 +1318,10 @@ def _calc_withdraw_one_coin(
     if i == 0:
         price_scale_i = PRECISION * PRECISIONS[0]
 
-    if update_D:  # <-------------- D is updated if pool is undergoing a ramp.
-        D0 = MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
+    if self._is_ramping():
+        D = MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
     else:
-        D0 = self.D
-
-    D: uint256 = D0
+        D = self.D
 
     # -------------------------------- Fee Calc ------------------------------
 
@@ -1527,6 +1522,16 @@ def burnFrom(_to: address, _value: uint256) -> bool:
 
 # ------------------------- AMM View Functions -------------------------------
 
+@view
+@internal
+def _is_ramping() -> bool:
+    """
+    @notice Checks if A and gamma are ramping.
+    @return bool True if A and/or gamma are ramping, False otherwise.
+    """
+    # TODO think >= is correct, however previously it was > so should check this
+    return self.future_A_gamma_time >= block.timestamp
+
 
 @internal
 @view
@@ -1712,8 +1717,7 @@ def calc_withdraw_one_coin(token_amount: uint256, i: uint256) -> uint256:
     return self._calc_withdraw_one_coin(
         self._A_gamma(),
         token_amount,
-        i,
-        (self.future_A_gamma_time > block.timestamp)
+        i
     )[0]
 
 
@@ -1878,7 +1882,7 @@ def ramp_A_gamma(
     @param future_time The timestamp at which the ramping will end.
     """
     assert msg.sender == factory.admin()  # dev: only owner
-    assert block.timestamp > self.future_A_gamma_time # dev: ramp undergoing
+    assert not self._is_ramping()  # dev: ramping already in progress
     assert future_time > block.timestamp + MIN_RAMP_TIME - 1  # dev: insufficient time
 
     A_gamma: uint256[2] = self._A_gamma()
