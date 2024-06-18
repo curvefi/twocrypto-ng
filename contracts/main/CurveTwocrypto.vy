@@ -885,7 +885,7 @@ def tweak_price(
     @param A_gamma Array of A and gamma parameters.
     @param _xp Array of current balances.
     @param D_before_rebalance Value of D computed by the caller method, without
-           taking into account whether the pool should be rebalanced or not.
+           taking into account whether the pool should be rebalanced.
     """
 
     # ---------------------------- Read storage ------------------------------
@@ -1330,10 +1330,10 @@ def _calc_withdraw_one_coin(
     # behavior where the higher the imbalance caused the more fee the AMM
     # charges.
 
-    # xp is adjusted assuming xp[0] ~= xp[1] ~= x[2], which is usually not the
-    #  case. We charge self._fee(xp), where xp is an imprecise adjustment post
-    #  withdrawal in one coin. If the withdraw is too large: charge max fee by
-    #   default. This is because the fee calculation will otherwise underflow.
+    # xp is adjusted assuming xp[0] ~= xp[1], which is usually not the case.
+    # We charge self._fee(xp), where xp is an imprecise adjustment post
+    # withdrawal in one coin. If the withdraw is too large: charge max fee by
+    # default. This is because the fee calculation will otherwise underflow.
 
     xp_imprecise: uint256[N_COINS] = xp
     xp_correction: uint256 = xp[i] * N_COINS * token_amount / token_supply
