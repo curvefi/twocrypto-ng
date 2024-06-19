@@ -869,7 +869,7 @@ def tweak_price(
     A_gamma: uint256[2],
     _xp: uint256[N_COINS],
     D_before_rebalance: uint256,
-    D_rebalance_fee: uint256 = 0
+    dD_rebalance: uint256 = 0
 ) -> uint256:
     """
     @notice Updates price_oracle, last_price and conditionally adjusts
@@ -879,8 +879,9 @@ def tweak_price(
     @dev Contains main liquidity rebalancing logic, by tweaking `price_scale`.
     @param A_gamma Array of A and gamma parameters.
     @param _xp Array of current balances.
-    @param D_before_rebalance Value of D computed by the caller method, without
-           taking into account whether the pool should be rebalanced.
+    @param D_before_rebalance New value of D computed by the caller method, without
+           taking into account future pool rebalances (if any).
+    @param dD_rebalance Variation of D allocated to the rebalance operation.
     """
 
     # ---------------------------- Read storage ------------------------------
@@ -896,13 +897,13 @@ def tweak_price(
     old_virtual_price: uint256 = self.virtual_price
 
     # We cache the rebalancing reserves to avoid recalculating them. We add
-    # D_rebalance_fee to D_rebalance to account for fees that the pool earned
+    # dD_rebalance to D_rebalance to account for fees that the pool earned
     # while saving an SSTORE instead of increasing self.D_rebalance directly.
-    rebalance_reserves: uint256 = self.D_rebalance + D_rebalance_fee
+    D_rebalance: uint256 = self.D_rebalance + dD_rebalance
 
     # This will be used later to compute whether the ratio between donations and
     # total D is big enough to allow for a rebalance.
-    D_total_before_rebalance: uint256 = D_before_rebalance + rebalance_reserves
+    D_total_before_rebalance: uint256 = D_before_rebalance + D_rebalance
 
     # ------------------ Update Price Oracle if needed -----------------------
 
@@ -984,7 +985,7 @@ def tweak_price(
     self.profit = profit
 
     # We check whether D / (D + D_rebalance) is big enough to attempt a rebalance.
-    if (rebalance_reserves * 10**18 / D_total_before_rebalance) > 10**15:
+    if (D_rebalance * 10**18 / D_total_before_rebalance) > 10**15:
 
         # ------------------- Get adjustment step ----------------------------
 
@@ -1046,12 +1047,18 @@ def tweak_price(
                 # We compute the loss "delta D" made by the rebalance.
                 dD = D_total_before_rebalance - D_total
 
-                # if the rebalancing reserves can cover the loss, we use them.
-                # Otherwise, we don't rebalance.
-                if (rebalance_reserves >= dD):
-                    rebalance_reserves -= dD
+                # if the rebalancing reserves can cover the loss, we use them
+                # and we update the liquidity.
+                if (D_rebalance >= dD):
+                    self._update_liquidity(
+                        D_total,
+                        # We decrease the rebalancing reserves with the loss.
+                        D_rebalance - dD,
+                        new_price_scale,
+                        total_supply
+                    )
 
-                    can_rebalance = True
+                    return new_price_scale
 
             # if the old D_total is less than the new D_total, it means that
             # the pool has gained value. This can happen when the oracle price goes
@@ -1062,45 +1069,18 @@ def tweak_price(
                 # We compute the profit "delta D" made by the rebalance.
                 dD = D_total - D_total_before_rebalance
 
-                # We increase the rebalancing reserves with the profit to be
-                # used for future rebalances.
-                rebalance_reserves += dD
-
-                # If rebalancing leads to profit, doing it is a no brainer
-                # as it improves the pool competitiveness.
-                can_rebalance = True
-
-            # TODO handle case where D_total == old_D_total
-
-            if can_rebalance:
-
-                # Just `D` represents the value of the user deposits.
-                D: uint256 = D_total - rebalance_reserves
-
-                # We store the new D value in the pool. This updates liquidity
-                # if there was any withdrawal or deposit and locks in the profit
-                # made by LPs (if any).
-                self.D = D
-
-                # We update D_rebalance with the new rebalancing reserves.
-                # This takes into account both dD change due to rebalance and
-                # any fee that was token because of `exchange`, `add_liquidity`
-                # or `remove_liquidity_one_coin`.
-                self.D_rebalance = rebalance_reserves
-
-                # This is the key to the rebalancing mechanism. We store the
-                # new price scale effectively changing the slope of the curve.
-                self.cached_price_scale = new_price_scale
-
-                # Virtual price is calculated taking into account **only** the
-                # user deposits. This way donations can't be used to inflate
-                # the virtual price.
-                self.virtual_price = unsafe_div(
-                    10**18 * self.get_xcp(D, new_price_scale), total_supply
+                # If rebalancing leads to profit, updating liquidity is a
+                # no brainer as it improves the pool competitiveness.
+                self._update_liquidity(
+                    D_total,
+                    # We increase the rebalancing reserves with the profit to be
+                    # used for future rebalances.
+                    D_rebalance + dD,
+                    new_price_scale,
+                    total_supply
                 )
 
                 return new_price_scale
-
 
     # If we end up not rebalancing because the pool doesn't have enough
     # funds in D_rebalance, we still need to update the state to reflect
@@ -1112,12 +1092,39 @@ def tweak_price(
     self.D = D_before_rebalance
     self.virtual_price = virtual_price
 
-    # * We update the rebalancing reserves to reflect the fees allocated for
-    # rebalancing that were collected by the pool (rebalancing_reserves =
-    # self.D_rebalance + D_rebalance_fee).
-    self.D_rebalance = rebalance_reserves
+    # * We increase the rebalancing reserves to reflect the fees allocated for
+    # rebalancing that were collected by the pool because D_rebalance =
+    # self.D_rebalance + dD_rebalance.
+    self.D_rebalance = D_rebalance
 
     return price_scale
+
+@internal
+def _update_liquidity(D_total: uint256, D_rebalance: uint256, price_scale: uint256, total_supply: uint256):
+    # Just `D` represents the value of the user deposits.
+    D: uint256 = D_total - D_rebalance
+
+    # We store the new D value in the pool. This updates liquidity
+    # if there was any withdrawal or deposit and locks in the profit
+    # made by LPs (if any).
+    self.D = D
+
+    # We update D_rebalance with the new rebalancing reserves.
+    # This takes into account both dD change due to rebalance and
+    # any fee that was token because of `exchange`, `add_liquidity`
+    # or `remove_liquidity_one_coin`.
+    self.D_rebalance = D_rebalance
+
+    # This is the key to the rebalancing mechanism. We store the
+    # new price scale effectively changing the slope of the curve.
+    self.cached_price_scale = price_scale
+
+    # Virtual price is calculated taking into account **only** the
+    # user deposits. This way donations can't be used to inflate
+    # the virtual price.
+    self.virtual_price = unsafe_div(
+        10**18 * self.get_xcp(D, price_scale), total_supply
+    )
 
 
 @internal
