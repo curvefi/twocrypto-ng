@@ -502,6 +502,7 @@ def add_liquidity(
         xp[0] * PRECISIONS[0],
         unsafe_div(xp[1] * price_scale * PRECISIONS[1], PRECISION)
     ]
+
     xp_old = [
         xp_old[0] * PRECISIONS[0],
         unsafe_div(xp_old[1] * price_scale * PRECISIONS[1], PRECISION)
@@ -516,9 +517,7 @@ def add_liquidity(
     if self._is_ramping():
         # ----- Recalculate the invariant if A or gamma are undergoing a ramp.
         old_D = MATH.newton_D(A_gamma[0], A_gamma[1], xp_old, 0)
-
     else:
-
         old_D = self.D
 
     D: uint256 = MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
@@ -575,7 +574,6 @@ def donate(amounts: uint256[N_COINS]):
 
     A_gamma: uint256[2] = self._A_gamma()
     xp: uint256[N_COINS] = self.balances
-    amountsp: uint256[N_COINS] = empty(uint256[N_COINS])
     old_D: uint256 = 0
 
     assert amounts[0] + amounts[1] > 0  # dev: no coins to add
@@ -605,18 +603,15 @@ def donate(amounts: uint256[N_COINS]):
         xp[0] * PRECISIONS[0],
         unsafe_div(xp[1] * price_scale * PRECISIONS[1], PRECISION)
     ]
-    xp_old = [
-        xp_old[0] * PRECISIONS[0],
-        unsafe_div(xp_old[1] * price_scale * PRECISIONS[1], PRECISION)
-    ]
-
-    for i in range(N_COINS):
-        if amounts_received[i] > 0:
-            amountsp[i] = xp[i] - xp_old[i]
 
     # -------------------- Calculate LP tokens to mint -----------------------
     if self._is_ramping():
         # ----- Recalculate the invariant if A or gamma are undergoing a ramp.
+        xp_old = [
+            xp_old[0] * PRECISIONS[0],
+            unsafe_div(xp_old[1] * price_scale * PRECISIONS[1], PRECISION)
+        ]
+
         old_D = MATH.newton_D(A_gamma[0], A_gamma[1], xp_old, 0)
     else:
         old_D = self.D
