@@ -983,7 +983,7 @@ def tweak_price(
         #       If A and gamma are not undergoing ramps (t < block.timestamp),
         #         ensure new virtual_price is not less than old virtual_price,
         #                                        else the pool suffers a loss.
-        if self.future_A_gamma_time < block.timestamp:
+        if not self._is_ramping():
             # this usually reverts when withdrawing a very small amount of LP tokens
             assert virtual_price > old_virtual_price # dev: virtual price decreased
 
