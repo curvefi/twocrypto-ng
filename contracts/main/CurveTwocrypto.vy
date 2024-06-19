@@ -617,10 +617,9 @@ def donate(amounts: uint256[N_COINS]):
         old_D = self.D
 
     D: uint256 = MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
-    self.D_rebalance = D - old_D
 
     if old_D > 0:
-        self.tweak_price(A_gamma, xp, D)
+        self.tweak_price(A_gamma, xp, D, D - old_D)
     else:
         raise "Donation not allowed for empty pool"
 
