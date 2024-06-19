@@ -1418,7 +1418,10 @@ def _calc_withdraw_one_coin(
     approx_fee: uint256 = N_COINS * D_fee * xx[i] / D
 
     # ------------------------------------------------------------------------
-    D -= (dD - D_fee)  # <----------------------------------- Charge fee on D.
+    # The way we charge a fee on the withdrawal is by reducing the amount of
+    # dD (delta D) that the user can withdraw. By doing this we are increasing
+    # `D`` by `D_fee`.
+    D = D - (dD - D_fee)
     # --------------------------------- Calculate `y_out`` with `(D - D_fee)`.
     y: uint256 = MATH.get_y(A_gamma[0], A_gamma[1], xp, D, i)[0]
     dy: uint256 = (xp[i] - y) * PRECISION / price_scale_i
