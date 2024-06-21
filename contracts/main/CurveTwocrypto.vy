@@ -989,18 +989,18 @@ def tweak_price(
 
         #                Calculate the vector distance between price_scale and
         #                                                        price_oracle.
-        norm: uint256 = unsafe_div(
+        distance: uint256 = unsafe_div(
             unsafe_mul(price_oracle, 10**18), price_scale
         )
-        if norm > 10**18:
-            norm = unsafe_sub(norm, 10**18)
+        if distance > 10**18:
+            distance = unsafe_sub(distance, 10**18)
         else:
-            norm = unsafe_sub(10**18, norm)
+            distance = unsafe_sub(10**18, distance)
         adjustment_step: uint256 = max(
-            rebalancing_params[1], unsafe_div(norm, 5)
+            rebalancing_params[1], unsafe_div(distance, 5)
         )  #           ^------------------------------------- adjustment_step.
 
-        if norm > adjustment_step:  # <---------- We only adjust prices if the
+        if distance > adjustment_step:  # <---------- We only adjust prices if the
             #          vector distance between price_oracle and price_scale is
             #             large enough. This check ensures that no rebalancing
             #           occurs if the distance is low i.e. the pool prices are
@@ -1009,10 +1009,10 @@ def tweak_price(
             # ------------------------------------- Calculate new price scale.
 
             new_price_scale: uint256 = unsafe_div(
-                price_scale * unsafe_sub(norm, adjustment_step) +
+                price_scale * unsafe_sub(distance, adjustment_step) +
                 adjustment_step * price_oracle,
-                norm
-            )  # <---- norm is non-zero and gt adjustment_step; unsafe = safe.
+                distance
+            )  # <- distance is non-zero and gt adjustment_step; unsafe = safe.
 
             # ---------------- Update stale xp (using price_scale) with p_new.
 
