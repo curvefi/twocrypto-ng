@@ -820,9 +820,7 @@ def _exchange(
 
     # ----------- Update invariant if A, gamma are undergoing ramps ---------
 
-    t: uint256 = self.future_A_gamma_time
-    if t > block.timestamp:
-
+    if self._is_ramping():
         x0 *= PRECISIONS[i]
 
         if i > 0:
