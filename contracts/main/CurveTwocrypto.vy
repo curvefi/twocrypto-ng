@@ -823,8 +823,8 @@ def _exchange(
 
     # ----------------------- Calculate dy and fees --------------------------
 
-    D: uint256 = self.D
-    y_out: uint256[2] = MATH.get_y(A_gamma[0], A_gamma[1], xp, D, j)
+    old_D: uint256 = self.D
+    y_out: uint256[2] = MATH.get_y(A_gamma[0], A_gamma[1], xp, old_D, j)
     dy = xp[j] - y_out[0]
     xp[j] -= dy
     dy -= 1
@@ -845,9 +845,9 @@ def _exchange(
 
     # ------ Tweak price_scale with good initial guess for newton_D ----------
 
-    D = MATH.newton_D(A_gamma[0], A_gamma[1], xp, y_out[1])
+    D: uint256 = MATH.newton_D(A_gamma[0], A_gamma[1], xp, y_out[1])
 
-    price_scale = self.tweak_price(A_gamma, xp, D)
+    price_scale = self.tweak_price(A_gamma, xp, D, (D - old_D) / 2)
 
     return [dy, fee, price_scale]
 
