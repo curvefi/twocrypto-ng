@@ -526,7 +526,7 @@ def add_liquidity(
     if old_D > 0:
         d_token = token_supply * D / old_D - token_supply
     else:
-        d_token = self.get_xcp(D, price_scale)  # <----- Making initial virtual price equal to 1.
+        d_token = self._xcp(D, price_scale)  # <----- Making initial virtual price equal to 1.
 
     assert d_token > 0  # dev: nothing minted
 
@@ -1108,7 +1108,7 @@ def _update_liquidity(D_total: uint256, D_rebalance: uint256, price_scale: uint2
     # user deposits. This way donations can't be used to inflate
     # the virtual price.
     self.virtual_price = unsafe_div(
-        UNIT * self.get_xcp(D, price_scale), total_supply
+        UNIT * self._xcp(D, price_scale), total_supply
     )
 
 
@@ -1191,7 +1191,7 @@ def _claim_admin_fees():
         current_lp_token_supply + admin_share
     )
     vprice = (
-        UNIT * self.get_xcp(D, price_scale) /
+        UNIT * self._xcp(D, price_scale) /
         total_supply_including_admin_share
     )
 
@@ -1293,7 +1293,7 @@ def _fee(xp: uint256[N_COINS]) -> uint256:
 
 @internal
 @pure
-def get_xcp(D: uint256, price_scale: uint256) -> uint256:
+def _xcp(D: uint256, price_scale: uint256) -> uint256:
 
     x: uint256[N_COINS] = [
         unsafe_div(D, N_COINS),
@@ -1590,7 +1590,6 @@ def _is_ramping() -> bool:
     @notice Checks if A and gamma are ramping.
     @return bool True if A and/or gamma are ramping, False otherwise.
     """
-    # TODO think >= is correct, however previously it was > so should check this
     return self.future_A_gamma_time >= block.timestamp
 
 
@@ -1720,7 +1719,7 @@ def get_virtual_price() -> uint256:
          virtual price.
     @return uint256 Virtual Price.
     """
-    return UNIT * self.get_xcp(self.D, self.cached_price_scale) / self.totalSupply
+    return UNIT * self._xcp(self.D, self.cached_price_scale) / self.totalSupply
 
 
 @external
