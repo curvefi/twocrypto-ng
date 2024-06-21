@@ -1029,9 +1029,6 @@ def tweak_price(
             # Where D is the value of the users' deposits expressed in "invariant terms".
             D_total: uint256 = MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
 
-            # Flag variable to check if rebalancing can be done.
-            can_rebalance: bool = False
-
             # "delta D" variable to store the change in D_total due to rebalance.
             # Can be positive or negative depending on whether the pool has gained
             # or lost value.
