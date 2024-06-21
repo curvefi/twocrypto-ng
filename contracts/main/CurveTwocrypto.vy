@@ -122,7 +122,7 @@ event ClaimAdminFee:
 # ----------------------- Storage/State Variables ----------------------------
 
 N_COINS: constant(uint256) = 2
-PRECISION: constant(uint256) = 10**18  # <------- The precision to convert to.
+UNIT: constant(uint256) = 10**18  # <------- The precision to convert to.
 PRECISIONS: immutable(uint256[N_COINS])
 
 MATH: public(immutable(Math))
@@ -256,7 +256,7 @@ def __init__(
     self.cached_price_oracle = initial_price
     self.last_prices = initial_price
     self.last_timestamp = block.timestamp
-    self.profit_checkpoint = 10**18
+    self.profit_checkpoint = UNIT
 
     #         Cache DOMAIN_SEPARATOR. If chain.id is not CACHED_CHAIN_ID, then
     #     DOMAIN_SEPARATOR will be re-calculated each time `permit` is called.
@@ -284,7 +284,7 @@ def __init__(
 def _xp(balances: uint256[N_COINS], price_scale: uint256) -> uint256[N_COINS]:
     return [
         balances[0] * PRECISIONS[0],
-        unsafe_div(balances[1] * price_scale * PRECISIONS[1], PRECISION)
+        unsafe_div(balances[1] * price_scale * PRECISIONS[1], UNIT)
     ]
 
 # ------------------- Token transfers in and out of the AMM ------------------
@@ -548,9 +548,9 @@ def add_liquidity(
         # (re)instatiating an empty pool:
 
         self.D = D
-        self.virtual_price = 10**18
-        self.profit = 10**18
-        self.profit_checkpoint = 10**18
+        self.virtual_price = UNIT
+        self.profit = UNIT
+        self.profit_checkpoint = UNIT
 
         self.mint(receiver, d_token)
 
@@ -805,7 +805,7 @@ def _exchange(
     price_scale: uint256 = self.cached_price_scale
     xp = [
         xp[0] * PRECISIONS[0],
-        unsafe_div(xp[1] * price_scale * PRECISIONS[1], PRECISION)
+        unsafe_div(xp[1] * price_scale * PRECISIONS[1], UNIT)
     ]
 
     # ----------- Update invariant if A, gamma are undergoing ramps ---------
@@ -814,7 +814,7 @@ def _exchange(
         x0 *= PRECISIONS[i]
 
         if i > 0:
-            x0 = unsafe_div(x0 * price_scale, PRECISION)
+            x0 = unsafe_div(x0 * price_scale, UNIT)
 
         x1: uint256 = xp[i]  # <------------------ Back up old value in xp ...
         xp[i] = x0                                                         # |
@@ -830,7 +830,7 @@ def _exchange(
     dy -= 1
 
     if j > 0:
-        dy = dy * PRECISION / price_scale
+        dy = dy * UNIT / price_scale
     dy /= PRECISIONS[j]
 
     fee: uint256 = unsafe_div(self._fee(xp) * dy, 10**10)
@@ -840,7 +840,7 @@ def _exchange(
 
     y *= PRECISIONS[j]
     if j > 0:
-        y = unsafe_div(y * price_scale, PRECISION)
+        y = unsafe_div(y * price_scale, UNIT)
     xp[j] = y  # <------------------------------------------------- Update xp.
 
     # ------ Tweak price_scale with good initial guess for newton_D ----------
@@ -911,7 +911,7 @@ def tweak_price(
         alpha = MATH.wad_exp(
             -convert(
                 unsafe_div(
-                    unsafe_sub(block.timestamp, last_timestamp) * 10**18,
+                    unsafe_sub(block.timestamp, last_timestamp) * UNIT,
                     rebalancing_params[2]  # <----------------------- ma_time.
                 ),
                 int256,
@@ -923,9 +923,9 @@ def tweak_price(
         # ----------------- We cap state price that goes into the EMA with
         #                                                 2 x price_scale.
         price_oracle = unsafe_div(
-            min(last_prices, 2 * price_scale) * (10**18 - alpha) +
+            min(last_prices, 2 * price_scale) * (UNIT - alpha) +
             price_oracle * alpha,  # ^-------- Cap spot price into EMA.
-            10**18
+            UNIT
         )
 
         self.cached_price_oracle = price_oracle
@@ -941,22 +941,22 @@ def tweak_price(
     # into account trades that happen in the current block.
     self.last_prices = unsafe_div(
         MATH.get_p(_xp, D_before_rebalance, A_gamma) * price_scale,
-        10**18
+        UNIT
     )
 
     # ---------- Update profit numbers without price adjustment first --------
 
     xp: uint256[N_COINS] = [
         unsafe_div(D_before_rebalance, N_COINS),
-        D_before_rebalance * PRECISION / (N_COINS * price_scale)  # <------ safediv.
+        D_before_rebalance * UNIT / (N_COINS * price_scale)  # <------ safediv.
     ]  #                                                     with price_scale.
 
-    profit: uint256 = 10**18
-    virtual_price: uint256 = 10**18
+    profit: uint256 = UNIT
+    virtual_price: uint256 = UNIT
 
     if old_virtual_price > 0:
         xcp: uint256 = isqrt(xp[0] * xp[1])
-        virtual_price = 10**18 * xcp / total_supply
+        virtual_price = UNIT * xcp / total_supply
 
         profit = unsafe_div(
             old_profit * virtual_price,
@@ -973,19 +973,19 @@ def tweak_price(
     self.profit = profit
 
     # We check whether D / (D + D_rebalance) is big enough to attempt a rebalance.
-    if (D_rebalance * 10**18 / D_total_before_rebalance) > 10**15:
+    if (D_rebalance * UNIT / D_total_before_rebalance) > 10**15:
 
         # ------------------- Get adjustment step ----------------------------
 
         #                Calculate the vector distance between price_scale and
         #                                                        price_oracle.
         distance: uint256 = unsafe_div(
-            unsafe_mul(price_oracle, 10**18), price_scale
+            unsafe_mul(price_oracle, UNIT), price_scale
         )
-        if distance > 10**18:
-            distance = unsafe_sub(distance, 10**18)
+        if distance > UNIT:
+            distance = unsafe_sub(distance, UNIT)
         else:
-            distance = unsafe_sub(10**18, distance)
+            distance = unsafe_sub(UNIT, distance)
         adjustment_step: uint256 = max(
             rebalancing_params[1], unsafe_div(distance, 5)
         )  #           ^------------------------------------- adjustment_step.
@@ -1108,7 +1108,7 @@ def _update_liquidity(D_total: uint256, D_rebalance: uint256, price_scale: uint2
     # user deposits. This way donations can't be used to inflate
     # the virtual price.
     self.virtual_price = unsafe_div(
-        10**18 * self.get_xcp(D, price_scale), total_supply
+        UNIT * self.get_xcp(D, price_scale), total_supply
     )
 
 
@@ -1145,7 +1145,7 @@ def _claim_admin_fees():
     # 2. there are less than 10**18 (or 1 unit of) lp tokens, else it can lead
     #    to manipulated virtual prices.
 
-    if profit <= profit_checkpoint or current_lp_token_supply < 10**18:
+    if profit <= profit_checkpoint or current_lp_token_supply < UNIT:
         return
 
     # ---------- Conditions met to claim admin fees: compute state. ----------
@@ -1180,8 +1180,8 @@ def _claim_admin_fees():
     if fee_receiver != empty(address) and fees > 0:
 
         # -------------------------------- Calculate admin share to be minted.
-        frac = vprice * 10**18 / (vprice - fees) - 10**18
-        admin_share += current_lp_token_supply * frac / 10**18
+        frac = vprice * UNIT / (vprice - fees) - UNIT
+        admin_share += current_lp_token_supply * frac / UNIT
 
         # ------ Subtract fees from profits that will be used for rebalancing.
         profit -= fees * 2
@@ -1191,12 +1191,12 @@ def _claim_admin_fees():
         current_lp_token_supply + admin_share
     )
     vprice = (
-        10**18 * self.get_xcp(D, price_scale) /
+        UNIT * self.get_xcp(D, price_scale) /
         total_supply_including_admin_share
     )
 
     # Do not claim fees if doing so causes virtual price to drop below 10**18.
-    if vprice < 10**18:
+    if vprice < UNIT:
         return
 
     # ---------------------------- Update State ------------------------------
@@ -1244,7 +1244,7 @@ def xp(
 
     return [
         balances[0] * PRECISIONS[0],
-        unsafe_div(balances[1] * PRECISIONS[1] * price_scale, PRECISION)
+        unsafe_div(balances[1] * PRECISIONS[1] * price_scale, UNIT)
     ]
 
 
@@ -1280,14 +1280,14 @@ def _fee(xp: uint256[N_COINS]) -> uint256:
 
     fee_params: uint256[3] = self._unpack_3(self.packed_fee_params)
     f: uint256 = xp[0] + xp[1]
-    f = fee_params[2] * 10**18 / (
-        fee_params[2] + 10**18 -
-        (10**18 * N_COINS**N_COINS) * xp[0] / f * xp[1] / f
+    f = fee_params[2] * UNIT / (
+        fee_params[2] + UNIT -
+        (UNIT * N_COINS**N_COINS) * xp[0] / f * xp[1] / f
     )
 
     return unsafe_div(
-        fee_params[0] * f + fee_params[1] * (10**18 - f),
-        10**18
+        fee_params[0] * f + fee_params[1] * (UNIT - f),
+        UNIT
     )
 
 
@@ -1297,7 +1297,7 @@ def get_xcp(D: uint256, price_scale: uint256) -> uint256:
 
     x: uint256[N_COINS] = [
         unsafe_div(D, N_COINS),
-        D * PRECISION / (price_scale * N_COINS)
+        D * UNIT / (price_scale * N_COINS)
     ]
 
     return isqrt(x[0] * x[1])  # <------------------- Geometric Mean.
@@ -1368,7 +1368,7 @@ def _calc_withdraw_one_coin(
     price_scale_i: uint256 = 0
 
     if i == 0:
-        price_scale_i = PRECISION * PRECISIONS[0]
+        price_scale_i = UNIT * PRECISIONS[0]
     else:
         price_scale_i = price_scale * PRECISIONS[1]
 
@@ -1412,7 +1412,7 @@ def _calc_withdraw_one_coin(
     D = D - (dD - D_fee)
     # --------------------------------- Calculate `y_out`` with `(D - D_fee)`.
     y: uint256 = MATH.get_y(A_gamma[0], A_gamma[1], xp, D, i)[0]
-    dy: uint256 = (xp[i] - y) * PRECISION / price_scale_i
+    dy: uint256 = (xp[i] - y) * UNIT / price_scale_i
     xp[i] = y
 
     # We return D_fee/2 as `D_rebalance_fee` because we want to use half of
@@ -1616,16 +1616,16 @@ def internal_price_oracle() -> uint256:
         ma_time: uint256 = self._unpack_3(self.packed_rebalancing_params)[2]
         alpha: uint256 = MATH.wad_exp(
             -convert(
-                unsafe_sub(block.timestamp, last_prices_timestamp) * 10**18 / ma_time,
+                unsafe_sub(block.timestamp, last_prices_timestamp) * UNIT / ma_time,
                 int256,
             )
         )
 
         # ---- We cap state price that goes into the EMA with 2 x price_scale.
         return (
-            min(last_prices, 2 * price_scale) * (10**18 - alpha) +
+            min(last_prices, 2 * price_scale) * (UNIT - alpha) +
             price_oracle * alpha
-        ) / 10**18
+        ) / UNIT
 
     return price_oracle
 
@@ -1707,7 +1707,7 @@ def lp_price() -> uint256:
             0th index
     @return uint256 LP price.
     """
-    return 2 * self.virtual_price * isqrt(self.internal_price_oracle() * 10**18) / 10**18
+    return 2 * self.virtual_price * isqrt(self.internal_price_oracle() * UNIT) / UNIT
 
 
 @external
@@ -1720,7 +1720,7 @@ def get_virtual_price() -> uint256:
          virtual price.
     @return uint256 Virtual Price.
     """
-    return 10**18 * self.get_xcp(self.D, self.cached_price_scale) / self.totalSupply
+    return UNIT * self.get_xcp(self.D, self.cached_price_scale) / self.totalSupply
 
 
 @external
@@ -1955,13 +1955,13 @@ def ramp_A_gamma(
     assert future_gamma > MIN_GAMMA - 1
     assert future_gamma < MAX_GAMMA + 1
 
-    ratio: uint256 = 10**18 * future_A / A_gamma[0]
-    assert ratio < 10**18 * MAX_A_CHANGE + 1 # dev: A change too high
-    assert ratio > 10**18 / MAX_A_CHANGE - 1 # dev: A change too low
+    ratio: uint256 = UNIT * future_A / A_gamma[0]
+    assert ratio < UNIT * MAX_A_CHANGE + 1 # dev: A change too high
+    assert ratio > UNIT / MAX_A_CHANGE - 1 # dev: A change too low
 
-    ratio = 10**18 * future_gamma / A_gamma[1]
-    assert ratio < 10**18 * MAX_A_CHANGE + 1 # dev: gamma change too high
-    assert ratio > 10**18 / MAX_A_CHANGE - 1 # dev: gamma change too low
+    ratio = UNIT * future_gamma / A_gamma[1]
+    assert ratio < UNIT * MAX_A_CHANGE + 1 # dev: gamma change too high
+    assert ratio > UNIT / MAX_A_CHANGE - 1 # dev: gamma change too low
 
     self.initial_A_gamma = initial_A_gamma
     self.initial_A_gamma_time = block.timestamp
@@ -2041,7 +2041,7 @@ def apply_new_parameters(
         new_mid_fee = current_fee_params[0]
     assert new_mid_fee <= new_out_fee  # dev: mid-fee is too high
 
-    if new_fee_gamma < 10**18:
+    if new_fee_gamma < UNIT:
         assert new_fee_gamma > 0  # dev: fee_gamma out of range [1 .. 10**18]
     else:
         new_fee_gamma = current_fee_params[2]
@@ -2056,10 +2056,10 @@ def apply_new_parameters(
 
     current_rebalancing_params: uint256[3] = self._unpack_3(self.packed_rebalancing_params)
 
-    if new_allowed_extra_profit > 10**18:
+    if new_allowed_extra_profit > UNIT:
         new_allowed_extra_profit = current_rebalancing_params[0]
 
-    if new_adjustment_step > 10**18:
+    if new_adjustment_step > UNIT:
         new_adjustment_step = current_rebalancing_params[1]
 
     if new_ma_time < 872542:  # <----- Calculated as: 7 * 24 * 60 * 60 / ln(2)
