@@ -576,7 +576,7 @@ def donate(amounts: uint256[N_COINS]):
     xp: uint256[N_COINS] = self.balances
     old_D: uint256 = 0
 
-    assert amounts[0] + amounts[1] > 0  # dev: no coins to add
+    assert amounts[0] + amounts[1] > 0  # dev: no coins to donate
 
     # --------------------- Get prices, balances -----------------------------
 
@@ -595,7 +595,7 @@ def donate(amounts: uint256[N_COINS]):
                 i,
                 amounts[i],
                 msg.sender,
-                False,  # <--------------------- Disable optimistic transfers.
+                True,
             )
             xp[i] = xp[i] + amounts_received[i]
 
