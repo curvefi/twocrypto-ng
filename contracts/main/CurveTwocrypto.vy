@@ -279,6 +279,13 @@ def __init__(
     log Transfer(empty(address), self, 0)  # <------- Fire empty transfer from
     #                                       0x0 to self for indexers to catch.
 
+@view
+@internal
+def _xp(balances: uint256[N_COINS], price_scale: uint256) -> uint256[N_COINS]:
+    return [
+        balances[0] * PRECISIONS[0],
+        unsafe_div(balances[1] * price_scale * PRECISIONS[1], PRECISION)
+    ]
 
 # ------------------- Token transfers in and out of the AMM ------------------
 
@@ -469,7 +476,7 @@ def add_liquidity(
     """
 
     A_gamma: uint256[2] = self._A_gamma()
-    xp: uint256[N_COINS] = self.balances
+    balances: uint256[N_COINS] = self.balances
     amountsp: uint256[N_COINS] = empty(uint256[N_COINS])
     d_token: uint256 = 0
     d_token_fee: uint256 = 0
@@ -482,8 +489,9 @@ def add_liquidity(
     price_scale: uint256 = self.cached_price_scale
 
     # -------------------------------------- Update balances and calculate xp.
-    xp_old: uint256[N_COINS] = xp
     amounts_received: uint256[N_COINS] = empty(uint256[N_COINS])
+
+    xp_old: uint256[N_COINS] = self._xp(balances, price_scale)
 
     ########################## TRANSFER IN <-------
 
@@ -496,17 +504,9 @@ def add_liquidity(
                 msg.sender,
                 False,  # <--------------------- Disable optimistic transfers.
             )
-            xp[i] = xp[i] + amounts_received[i]
+            balances[i] = balances[i] + amounts_received[i]
 
-    xp = [
-        xp[0] * PRECISIONS[0],
-        unsafe_div(xp[1] * price_scale * PRECISIONS[1], PRECISION)
-    ]
-
-    xp_old = [
-        xp_old[0] * PRECISIONS[0],
-        unsafe_div(xp_old[1] * price_scale * PRECISIONS[1], PRECISION)
-    ]
+    xp: uint256[N_COINS] = self._xp(balances, price_scale)
 
     for i in range(N_COINS):
         if amounts_received[i] > 0:
@@ -573,7 +573,7 @@ def add_liquidity(
 def donate(amounts: uint256[N_COINS]):
 
     A_gamma: uint256[2] = self._A_gamma()
-    xp: uint256[N_COINS] = self.balances
+    balances: uint256[N_COINS] = self.balances
     old_D: uint256 = 0
 
     assert amounts[0] + amounts[1] > 0  # dev: no coins to donate
@@ -583,35 +583,25 @@ def donate(amounts: uint256[N_COINS]):
     price_scale: uint256 = self.cached_price_scale
 
     # -------------------------------------- Update balances and calculate xp.
-    xp_old: uint256[N_COINS] = xp
-    amounts_received: uint256[N_COINS] = empty(uint256[N_COINS])
+    xp_old: uint256[N_COINS] = self._xp(balances, price_scale)
 
     ########################## TRANSFER IN <-------
 
     for i in range(N_COINS):
         if amounts[i] > 0:
-            # Updates self.balances here:
-            amounts_received[i] = self._transfer_in(
+            amounts_received: uint256 = self._transfer_in(
                 i,
                 amounts[i],
                 msg.sender,
                 True,
             )
-            xp[i] = xp[i] + amounts_received[i]
+            balances[i] = balances[i] + amounts_received
 
-    xp = [
-        xp[0] * PRECISIONS[0],
-        unsafe_div(xp[1] * price_scale * PRECISIONS[1], PRECISION)
-    ]
+    xp: uint256[N_COINS] = self._xp(balances, price_scale)
 
     # -------------------- Calculate LP tokens to mint -----------------------
     if self._is_ramping():
         # ----- Recalculate the invariant if A or gamma are undergoing a ramp.
-        xp_old = [
-            xp_old[0] * PRECISIONS[0],
-            unsafe_div(xp_old[1] * price_scale * PRECISIONS[1], PRECISION)
-        ]
-
         old_D = MATH.newton_D(A_gamma[0], A_gamma[1], xp_old, 0)
     else:
         old_D = self.D
@@ -1362,24 +1352,26 @@ def _calc_withdraw_one_coin(
     # TODO nomenclature incosistent:
     # token_supply -> total_supply
     # token_amount -> amount
-    # xx -> x or balances
 
     token_supply: uint256 = self.totalSupply
     assert token_amount <= token_supply  # dev: token amount more than supply
     assert i < N_COINS  # dev: coin out of range
 
-    xx: uint256[N_COINS] = self.balances
+    balances: uint256[N_COINS] = self.balances
+    price_scale: uint256 = self.cached_price_scale
     D: uint256 = 0
 
     # -------------------------- Calculate D0 and xp -------------------------
 
-    price_scale_i: uint256 = self.cached_price_scale * PRECISIONS[1]
-    xp: uint256[N_COINS] = [
-        xx[0] * PRECISIONS[0],
-        unsafe_div(xx[1] * price_scale_i, PRECISION)
-    ]
+    xp: uint256[N_COINS] = self._xp(balances, price_scale)
+
+    price_scale_i: uint256 = 0
+
     if i == 0:
         price_scale_i = PRECISION * PRECISIONS[0]
+    else:
+        price_scale_i = price_scale * PRECISIONS[1]
+
 
     if self._is_ramping():
         D = MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
@@ -1411,7 +1403,7 @@ def _calc_withdraw_one_coin(
 
     # --------- Calculate `approx_fee` (assuming balanced state) in ith token.
     # -------------------------------- We only need this for fee in the event.
-    approx_fee: uint256 = N_COINS * D_fee * xx[i] / D
+    approx_fee: uint256 = N_COINS * D_fee * balances[i] / D
 
     # ------------------------------------------------------------------------
     # The way we charge a fee on the withdrawal is by reducing the amount of
