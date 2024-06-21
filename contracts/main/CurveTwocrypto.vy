@@ -1349,10 +1349,6 @@ def _calc_withdraw_one_coin(
          xp: New scaled balances after withdrawal.
          approx_fee: Fee charged on the ith token (do not use for calculations).
     """
-    # TODO nomenclature incosistent:
-    # token_supply -> total_supply
-    # token_amount -> amount
-
     token_supply: uint256 = self.totalSupply
     assert token_amount <= token_supply  # dev: token amount more than supply
     assert i < N_COINS  # dev: coin out of range
