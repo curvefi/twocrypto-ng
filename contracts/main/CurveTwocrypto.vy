@@ -2,7 +2,7 @@
 # pragma optimize gas
 # pragma evm-version paris
 """
-@title CurveTwocryptoOptimized
+@title CurveTwocrypto
 @author Curve.Fi
 @license Copyright (c) Curve.Fi, 2023 - all rights reserved
 @notice A Curve AMM pool for 2 unpegged assets (e.g. WETH, USD).
