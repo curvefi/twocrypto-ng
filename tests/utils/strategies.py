@@ -99,7 +99,12 @@ price = integers(min_value=int(1e10), max_value=int(1e26))
 
 # we put bigger values first to shrink
 # towards 18 in case of failure (instead of 2)
-token = sampled_from([18, 8, 6, 2]).map(
+# 18 is for the most common case
+# 9 is for tokens bridged from solana
+# 8 is for WBTC
+# 6 is for USDC and co
+# 2 is for EURs and co
+token = sampled_from([18, 9, 8, 6, 2]).map(
     # token = just(18).map(
     lambda x: boa.load("contracts/mocks/ERC20Mock.vy", "USD", "USD", x)
 )
