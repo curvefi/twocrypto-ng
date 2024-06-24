@@ -27,7 +27,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run Tests
-        run: python -m pytest tests/unitary -n auto --ignore=tests/unitary/pool/stateful --ignore=tests/unitary/math
+        run: python -m pytest tests/unitary -n auto --ignore=tests/unitary/math
 
   stateful-tests:
     runs-on: ubuntu-latest
@@ -50,7 +50,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run Stateful Tests
-        run: python -m pytest tests/unitary/pool/stateful -n auto --ignore=tests/unitary/pool/stateful/legacy
+        run: python -m pytest tests/stateful -n auto
 
   math-tests:
     runs-on: ubuntu-latest
@@ -72,5 +72,5 @@ jobs:
       - name: Install Requirements
         run: pip install -r requirements.txt
 
-      - name: Run Tests
+      - name: Run Math Tests
         run: python -m pytest tests/unitary/math -n auto
