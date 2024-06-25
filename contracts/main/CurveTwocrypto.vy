@@ -609,7 +609,7 @@ def donate(amounts: uint256[N_COINS]):
     D: uint256 = MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
 
     if old_D > 0:
-        self.tweak_price(A_gamma, xp, D, D - old_D)
+        self.tweak_price(A_gamma, xp, old_D, D - old_D)
     else:
         raise "Donation not allowed for empty pool"
 
@@ -968,7 +968,7 @@ def tweak_price(
         #                                        else the pool suffers a loss.
         if not self._is_ramping():
             # this usually reverts when withdrawing a very small amount of LP tokens
-            assert virtual_price > old_virtual_price # dev: virtual price decreased
+            assert virtual_price >= old_virtual_price # dev: virtual price decreased
 
     self.profit = profit
 
