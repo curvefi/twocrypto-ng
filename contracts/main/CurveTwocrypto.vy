@@ -796,22 +796,18 @@ def _exchange(
     assert dx_received > 0  # dev: do not exchange 0 coins
 
     A_gamma: uint256[2] = self._A_gamma()
-    xp: uint256[N_COINS] = self.balances
+    balances: uint256[N_COINS] = self.balances
     dy: uint256 = 0
 
-    y: uint256 = xp[j]
-    x0: uint256 = xp[i] - dx_received  # old xp[i]
+    y: uint256 = balances[j]
 
     price_scale: uint256 = self.cached_price_scale
-    xp = [
-        xp[0] * PRECISIONS[0],
-        unsafe_div(xp[1] * price_scale * PRECISIONS[1], UNIT)
-    ]
+    xp: uint256[N_COINS] = self._xp(balances, price_scale)
 
     # ----------- Update invariant if A, gamma are undergoing ramps ---------
 
     if self._is_ramping():
-        x0 *= PRECISIONS[i]
+        x0: uint256 = (balances[i] - dx_received) * PRECISIONS[i] # old xp[i]
 
         if i > 0:
             x0 = unsafe_div(x0 * price_scale, UNIT)
@@ -1233,19 +1229,6 @@ def _claim_admin_fees():
             self._transfer_out(i, admin_tokens[i], fee_receiver)
 
         log ClaimAdminFee(fee_receiver, admin_tokens)
-
-
-@internal
-@pure
-def xp(
-    balances: uint256[N_COINS],
-    price_scale: uint256,
-) -> uint256[N_COINS]:
-
-    return [
-        balances[0] * PRECISIONS[0],
-        unsafe_div(balances[1] * PRECISIONS[1] * price_scale, UNIT)
-    ]
 
 
 @view
@@ -1757,7 +1740,7 @@ def fee() -> uint256:
          removed.
     @return uint256 fee bps.
     """
-    return self._fee(self.xp(self.balances, self.cached_price_scale))
+    return self._fee(self._xp(self.balances, self.cached_price_scale))
 
 
 @view
