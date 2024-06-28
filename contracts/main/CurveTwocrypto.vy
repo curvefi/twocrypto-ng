@@ -819,7 +819,7 @@ def _exchange(
 
     # ----------------------- Calculate dy and fees --------------------------
 
-    old_D: uint256 = self.D
+    old_D: uint256 = self.D + self.D_rebalance
     y_out: uint256[2] = MATH.get_y(A_gamma[0], A_gamma[1], xp, old_D, j)
     dy = xp[j] - y_out[0]
     xp[j] -= dy
@@ -852,7 +852,7 @@ def _exchange(
 def tweak_price(
     A_gamma: uint256[2],
     _xp: uint256[N_COINS],
-    D_before_rebalance: uint256,
+    D_total_before_rebalance: uint256,
     dD_rebalance: uint256 = 0
 ) -> uint256:
     """
@@ -887,7 +887,7 @@ def tweak_price(
 
     # This will be used later to compute whether the ratio between donations and
     # total D is big enough to allow for a rebalance.
-    D_total_before_rebalance: uint256 = D_before_rebalance + D_rebalance
+    D_before_rebalance: uint256 = D_total_before_rebalance - D_rebalance
 
     # ------------------ Update Price Oracle if needed -----------------------
 
@@ -936,7 +936,7 @@ def tweak_price(
     # This is done after the oracle upkeeping because the oracle doesn't take
     # into account trades that happen in the current block.
     self.last_prices = unsafe_div(
-        MATH.get_p(_xp, D_before_rebalance, A_gamma) * price_scale,
+        MATH.get_p(_xp, D_total_before_rebalance, A_gamma) * price_scale,
         UNIT
     )
 
