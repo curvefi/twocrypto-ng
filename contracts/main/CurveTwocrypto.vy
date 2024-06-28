@@ -123,6 +123,7 @@ event ClaimAdminFee:
 
 N_COINS: constant(uint256) = 2
 UNIT: constant(uint256) = 10**18  # <------- The precision to convert to.
+FEE_UNIT: constant(uint256) = 10**10
 PRECISIONS: immutable(uint256[N_COINS])
 
 MATH: public(immutable(Math))
@@ -533,13 +534,13 @@ def add_liquidity(
     if old_D > 0:
 
         d_token_fee = (
-            self._calc_token_fee(amountsp, xp) * d_token / 10**10 + 1
+            self._calc_token_fee(amountsp, xp) * d_token / FEE_UNIT + 1
         )
 
         d_token -= d_token_fee
         token_supply += d_token
         self.mint(receiver, d_token)
-        self.admin_lp_virtual_balance += unsafe_div(ADMIN_FEE * d_token_fee, 10**10)
+        self.admin_lp_virtual_balance += unsafe_div(ADMIN_FEE * d_token_fee, FEE_UNIT)
 
         price_scale = self.tweak_price(A_gamma, xp, D, d_token_fee/2)
 
@@ -829,7 +830,7 @@ def _exchange(
         dy = dy * UNIT / price_scale
     dy /= PRECISIONS[j]
 
-    fee: uint256 = unsafe_div(self._fee(xp) * dy, 10**10)
+    fee: uint256 = unsafe_div(self._fee(xp) * dy, FEE_UNIT)
     dy -= fee  # <--------------------- Subtract fee from the outgoing amount.
     assert dy >= min_dy, "Slippage"
     y -= dy
@@ -1163,7 +1164,7 @@ def _claim_admin_fees():
     #         are left with half; so divide by 2.
 
     fees: uint256 = unsafe_div(
-        unsafe_sub(profit, profit_checkpoint) * ADMIN_FEE, 2 * 10**10
+        unsafe_sub(profit, profit_checkpoint) * ADMIN_FEE, 2 * FEE_UNIT
     )
 
     # ------------------------------ Claim admin fees by minting admin's share
@@ -1378,7 +1379,7 @@ def _calc_withdraw_one_coin(
         fee = self._fee(xp_imprecise)
 
     dD: uint256 = unsafe_div(token_amount * D, token_supply)
-    D_fee: uint256 = fee * dD / (2 * 10**10) + 1  # <------- Actual fee on D.
+    D_fee: uint256 = fee * dD / (2 * FEE_UNIT) + 1  # <------- Actual fee on D.
 
     # --------- Calculate `approx_fee` (assuming balanced state) in ith token.
     # -------------------------------- We only need this for fee in the event.
