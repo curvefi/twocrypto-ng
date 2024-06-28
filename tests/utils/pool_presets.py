@@ -1,9 +1,14 @@
 # read from csv file with the same name
+import os
+
 import pandas as pd
 
-df = pd.read_csv("tests/utils/pool_presets.csv")
+script_dir = os.path.dirname(__file__)
+csv_path = os.path.join(script_dir, "pool_presets.csv")
 
-all_presets = df.iloc[1:].to_dict(orient="records")
+df = pd.read_csv(csv_path)
+
+all_presets = df.iloc[0:].to_dict(orient="records")
 
 numeric_columns = [
     "A",
@@ -20,3 +25,7 @@ all_presets = [
     {k: int(v) if k in numeric_columns else v for k, v in d.items()}
     for d in all_presets
 ]
+
+
+def get_preset_by_name(name):
+    return [d for d in all_presets if d["name"] == name][0]
