@@ -969,7 +969,7 @@ def tweak_price(
     self.profit = profit
 
     # We check whether D / (D + D_rebalance) is big enough to attempt a rebalance.
-    if (D_rebalance * UNIT / D_total_before_rebalance) > 10**15:
+    if (D_rebalance * UNIT / D_total_before_rebalance) > 10**12:
 
         # ------------------- Get adjustment step ----------------------------
 
