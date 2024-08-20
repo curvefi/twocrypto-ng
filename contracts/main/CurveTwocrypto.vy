@@ -150,6 +150,7 @@ future_A_gamma_time: public(uint256)  # <------ Time when ramping is finished.
 balances: public(uint256[N_COINS])
 D: public(uint256)
 D_rebalance: public(uint256)
+D_admin: public(uint256)
 profit: uint256
 profit_checkpoint: uint256  # <--- Full profit at last claim of admin fees.
 
@@ -540,7 +541,7 @@ def add_liquidity(
         d_token -= d_token_fee
         token_supply += d_token
         self.mint(receiver, d_token)
-        self.admin_lp_virtual_balance += unsafe_div(ADMIN_FEE * d_token_fee, FEE_UNIT)
+        self.D_admin += d_token_fee
 
         price_scale = self.tweak_price(A_gamma, xp, D, d_token_fee/2)
 
@@ -700,20 +701,20 @@ def remove_liquidity_one_coin(
     @return Amount of tokens at index i received by the `receiver`
     """
 
-    self._claim_admin_fees()  # <--------- Auto-claim admin fees occasionally.
+    # self._claim_admin_fees()  # <--------- Auto-claim admin fees occasionally.
 
     A_gamma: uint256[2] = self._A_gamma()
 
     dy: uint256 = 0
     D: uint256 = 0
-    D_rebalance_fee: uint256 = 0
+    D_fee: uint256 = 0
     p: uint256 = 0
     xp: uint256[N_COINS] = empty(uint256[N_COINS])
     approx_fee: uint256 = 0
 
     # ------------------------------------------------------------------------
 
-    dy, D, D_rebalance_fee, xp, approx_fee = self._calc_withdraw_one_coin(
+    dy, D, D_fee, xp, approx_fee = self._calc_withdraw_one_coin(
         A_gamma,
         token_amount,
         i
@@ -726,7 +727,8 @@ def remove_liquidity_one_coin(
     # Burn user's tokens:
     self.burnFrom(msg.sender, token_amount)
 
-    price_scale: uint256 = self.tweak_price(A_gamma, xp, D, D_rebalance_fee)
+    self.D_admin += D_fee / 4
+    price_scale: uint256 = self.tweak_price(A_gamma, xp, D, D_fee / 2)
 
     # ------------------------- Transfers ------------------------------------
 
@@ -844,7 +846,10 @@ def _exchange(
 
     D: uint256 = MATH.newton_D(A_gamma[0], A_gamma[1], xp, y_out[1])
 
-    price_scale = self.tweak_price(A_gamma, xp, D, (D - old_D) / 2)
+    D_fee: uint256 = D - old_D
+
+    self.D_admin += D_fee / 4
+    price_scale = self.tweak_price(A_gamma, xp, D, D_fee / 2)
 
     return [dy, fee, price_scale]
 
@@ -1395,10 +1400,7 @@ def _calc_withdraw_one_coin(
     dy: uint256 = (xp[i] - y) * UNIT / price_scale_i
     xp[i] = y
 
-    # We return D_fee/2 as `D_rebalance_fee` because we want to use half of
-    # the fee to rebalance the pool. The other half is accrued as profit by
-    # liquidity providers.
-    return dy, D, D_fee/2, xp, approx_fee
+    return dy, D, D_fee, xp, approx_fee
 
 
 # ------------------------ ERC20 functions -----------------------------------
