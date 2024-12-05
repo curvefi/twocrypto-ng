@@ -148,7 +148,7 @@ future_A_gamma_time: public(uint256)  # <------ Time when ramping is finished.
 #                                                            and not set to 0.
 
 balances: public(uint256[N_COINS])
-D: public(uint256)
+D_user: public(uint256)
 D_rebalance: public(uint256)
 D_admin: public(uint256)
 profit: uint256
@@ -520,7 +520,7 @@ def add_liquidity(
         # ----- Recalculate the invariant if A or gamma are undergoing a ramp.
         old_D = MATH.newton_D(A_gamma[0], A_gamma[1], xp_old, 0)
     else:
-        old_D = self.D
+        old_D = self.D_user
 
     D: uint256 = MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
 
@@ -549,7 +549,7 @@ def add_liquidity(
 
         # (re)instatiating an empty pool:
 
-        self.D = D
+        self.D_user = D
         self.virtual_price = UNIT
         self.profit = UNIT
         self.profit_checkpoint = UNIT
@@ -606,7 +606,7 @@ def donate(amounts: uint256[N_COINS]):
         # ----- Recalculate the invariant if A or gamma are undergoing a ramp.
         old_D = MATH.newton_D(A_gamma[0], A_gamma[1], xp_old, 0)
     else:
-        old_D = self.D
+        old_D = self.D_user
 
     D: uint256 = MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
 
@@ -664,7 +664,7 @@ def remove_liquidity(
             withdraw_amounts[i] = balances[i] * amount / total_supply
             assert withdraw_amounts[i] >= min_amounts[i]
 
-    D: uint256 = self.D
+    D: uint256 = self.D_user
     self.D = D - unsafe_div(D * amount, total_supply)  # <----------- Reduce D
     #      proportional to the amount of tokens leaving. Since withdrawals are
     #       balanced, this is a simple subtraction. If amount == total_supply,
@@ -817,12 +817,12 @@ def _exchange(
 
         x1: uint256 = xp[i]  # <------------------ Back up old value in xp ...
         xp[i] = x0                                                         # |
-        self.D = MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)              # |
+        self.D_user = MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)              # |
         xp[i] = x1  # <-------------------------------------- ... and restore.
 
     # ----------------------- Calculate dy and fees --------------------------
 
-    old_D: uint256 = self.D + self.D_rebalance
+    old_D: uint256 = self.D_user + self.D_rebalance
     y_out: uint256[2] = MATH.get_y(A_gamma[0], A_gamma[1], xp, old_D, j)
     dy = xp[j] - y_out[0]
     xp[j] -= dy
