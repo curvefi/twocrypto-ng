@@ -808,6 +808,41 @@ def _exchange(
 
     return [dy, fee, price_scale]
 
+@external
+@nonreentrant("lock")
+def donate(amounts: uint256[N_COINS], expect_up: bool) -> uint256:
+    # TODO maybe add a donation timelock (one donation per block, every hour) and a donation cap (5% of the liquidity?)
+
+    amounts_received: uint256[N_COINS] = empty(uint256[N_COINS])
+    balances: uint256[N_COINS] = self.balances
+
+    for i in range(N_COINS):
+        if amounts[i] > 0:
+            amounts_received[i] = self._transfer_in(
+                i,
+                amounts[i],
+                msg.sender,
+                False,
+            )
+            balances[i] += amounts_received[i]
+
+    price_scale: uint256 = self.cached_price_scale
+    xp: uint256[N_COINS] = self.xp(balances, price_scale)
+
+    # tweak price here is in "donation mode".
+    new_price_scale: uint256 = self.tweak_price(self._A_gamma(), xp, 0, 0, True)
+
+    assert new_price_scale != price_scale, "Didn't rebalance"
+
+    # TODO extra safety checks, maybe remove in prod?
+    if expect_up:
+        assert price_scale > new_price_scale, "Didn't rebalance upwards"
+    else:
+        assert price_scale < new_price_scale, "Didn't rebalance downwards"
+
+    # TODO add event log
+
+    return new_price_scale
 
 @internal
 def tweak_price(
@@ -815,6 +850,7 @@ def tweak_price(
     _xp: uint256[N_COINS],
     new_D: uint256,
     K0_prev: uint256 = 0,
+    donation: bool = False,
 ) -> uint256:
     """
     @notice Updates price_oracle, last_price and conditionally adjusts
@@ -949,11 +985,20 @@ def tweak_price(
 
             # ------------------------------------- Calculate new price scale.
 
-            p_new: uint256 = unsafe_div(
-                price_scale * unsafe_sub(norm, adjustment_step) +
-                adjustment_step * price_oracle,
-                norm
-            )  # <---- norm is non-zero and gt adjustment_step; unsafe = safe.
+            p_new: uint256 = 0
+
+            if donation:
+                # TODO this might be too expensive in some cases
+                # when donating we don't want to move at once to the oracle price
+                # setting the adjustement step to 0 in the formula above simplifies
+                # to this:
+                p_new = price_oracle
+            else:
+                p_new = unsafe_div(
+                    price_scale * unsafe_sub(norm, adjustment_step) +
+                    adjustment_step * price_oracle,
+                    norm
+                )  # <---- norm is non-zero and gt adjustment_step; unsafe = safe.
 
             # ---------------- Update stale xp (using price_scale) with p_new.
 
@@ -980,9 +1025,10 @@ def tweak_price(
             # ---------------------------- Proceed if we've got enough profit.
             if (
                 old_virtual_price > 10**18 and
-                2 * old_virtual_price - 10**18 > xcp_profit
+                (2 * old_virtual_price - 10**18 > xcp_profit) or (
+                donation and old_virtual_price >= xcp_profit)  # donation is fully used
             ):
-
+                assert xcp_profit - old_xcp_profit < 10**15, "donation shouldn't increase the profit"
                 self.D = D
                 self.virtual_price = old_virtual_price
                 self.cached_price_scale = p_new
