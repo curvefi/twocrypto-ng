@@ -580,6 +580,41 @@ def add_liquidity(
 
 @external
 @nonreentrant("lock")
+def donate(amounts: uint256[N_COINS]):
+    A_gamma: uint256[2] = self._A_gamma()
+    xp: uint256[N_COINS] = self.balances
+    assert amounts[0] + amounts[1] > 0  # dev: no coins to add
+    price_scale: uint256 = self.cached_price_scale
+
+    ########################## TRANSFER IN <-------
+    for i in range(N_COINS):
+        if amounts[i] > 0:
+            # Updates self.balances here:
+            xp[i] += self._transfer_in(
+                i,
+                amounts[i],
+                msg.sender,
+                False,  # <--------------------- Disable optimistic transfers.
+            )
+    self.balances = xp
+
+    # Calculate D for new balances
+    xp = [xp[0] * PRECISIONS[0], xp[1] * price_scale * PRECISIONS[1] / PRECISION]
+    D: uint256 = MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
+
+    # Update D and virtual_price
+    self.D = D  # D = D/D_old * D_old
+    xp = [
+        unsafe_div(D, N_COINS),
+        D * PRECISION / (N_COINS * price_scale)  # <------ safediv.
+    ]  #                                                     with price_scale.
+    # virtual_price = virtual_price * D / D_old (as per simulator),
+    # but recalc here gives the same result
+    self.virtual_price = 10**18 * isqrt(xp[0] * xp[1]) / self.totalSupply
+
+
+@external
+@nonreentrant("lock")
 def remove_liquidity(
     _amount: uint256,
     min_amounts: uint256[N_COINS],
