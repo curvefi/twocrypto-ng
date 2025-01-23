@@ -2,7 +2,6 @@ import boa
 
 
 def test_revert_unauthorised_access(user, factory):
-
     with boa.env.prank(user):
         with boa.reverts("dev: admin only"):
             factory.set_pool_implementation(boa.env.generate_address(), 0)
@@ -15,7 +14,6 @@ def test_revert_unauthorised_access(user, factory):
 
 
 def test_revert_unauthorised_set_fee_receiver(user, factory, fee_receiver):
-
     with boa.env.prank(user):
         with boa.reverts("dev: admin only"):
             factory.set_fee_receiver(user)
@@ -24,7 +22,6 @@ def test_revert_unauthorised_set_fee_receiver(user, factory, fee_receiver):
 
 
 def test_revert_unauthorised_new_admin(user, factory, owner):
-
     with boa.env.prank(user), boa.reverts("dev: admin only"):
         factory.commit_transfer_ownership(user)
 

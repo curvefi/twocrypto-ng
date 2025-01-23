@@ -167,9 +167,7 @@ def pool(
 def pool_from_preset(draw, preset=sampled_from(all_presets)):
     params = draw(preset)
 
-    note(
-        "[POOL PRESET: {}] \n {}".format(params["name"], params["description"])
-    )
+    note("[POOL PRESET: {}] \n {}".format(params["name"], params["description"]))
 
     return draw(
         pool(

@@ -23,9 +23,7 @@ MAX_SAMPLES = 20
 STEP_COUNT = 100
 
 # [0.2, 0.3 ... 0.9, 1, 2, 3 ... 10], used as sample values for the ramp step
-change_steps = [x / 10 if x < 10 else x for x in range(2, 11)] + list(
-    range(2, 11)
-)
+change_steps = [x / 10 if x < 10 else x for x in range(2, 11)] + list(range(2, 11))
 
 
 class RampTest(NumbaGoUp):
@@ -46,10 +44,7 @@ class RampTest(NumbaGoUp):
         """
         Checks if the pool is not already ramping.
         """
-        return (
-            boa.env.evm.patch.timestamp
-            > self.swap.initial_A_gamma_time() + (MIN_RAMP_TIME - 1)
-        )
+        return boa.env.evm.patch.timestamp > self.swap.initial_A_gamma_time() + (MIN_RAMP_TIME - 1)
 
     @initialize(
         A_change=change_step_strategy,
@@ -84,9 +79,7 @@ class RampTest(NumbaGoUp):
         Then proceeds to ramp the pool with the new values (with admin rights).
         """
         new_A = self.swap.A() * A_change
-        new_A = int(
-            max(MIN_A, min(MAX_A, new_A))
-        )  # clamp new_A to stay in [MIN_A, MAX_A]
+        new_A = int(max(MIN_A, min(MAX_A, new_A)))  # clamp new_A to stay in [MIN_A, MAX_A]
 
         new_gamma = self.swap.gamma() * gamma_change
         new_gamma = int(

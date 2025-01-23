@@ -29,11 +29,7 @@ def inv_target_decimal_n2(A, gamma, x, D):
         K = gamma**2 * K0 / (gamma + 10**18 - K0) ** 2 / 10**18
     K *= A
 
-    f = (
-        K * D ** (N - 1) * sum(x)
-        + x_prod
-        - (K * D**N + (Decimal(D) / N) ** N)
-    )
+    f = K * D ** (N - 1) * sum(x) + x_prod - (K * D**N + (Decimal(D) / N) ** N)
 
     return f
 
@@ -58,9 +54,7 @@ def test_get_y_revert(math_contract):
 @given(
     A=A,
     gamma=gamma,
-    D=integers(
-        min_value=10**18, max_value=10**14 * 10**18
-    ),  # 1 USD to 100T USD
+    D=integers(min_value=10**18, max_value=10**14 * 10**18),  # 1 USD to 100T USD
     xD=integers(
         min_value=10**17 // 2, max_value=10**19 // 2
     ),  # ratio 1e18 * x/D, typically 1e18 * 1
@@ -92,9 +86,7 @@ def test_get_y(math_unoptimized, math_optimized, A, D, xD, yD, gamma, j, _tmp):
         else:  # Did not converge?
             raise
     unoptimized_gas = math_unoptimized._computation.net_gas_used
-    event(
-        "unoptimizied implementation used {:.0e} gas".format(unoptimized_gas)
-    )
+    event("unoptimizied implementation used {:.0e} gas".format(unoptimized_gas))
 
     try:
         result_get_y, K0 = math_optimized.get_y(A, gamma, X, D, j)
@@ -109,10 +101,7 @@ def test_get_y(math_unoptimized, math_optimized, A, D, xD, yD, gamma, j, _tmp):
             if gamma > 2 * 10**16:
                 lim_mul = lim_mul * 2 * 10**16 // gamma
             frac = result_original * 10**18 // D
-            if (
-                abs(frac - 10**36 // 2 // lim_mul) < 100
-                or abs(frac - lim_mul // 2) < 100
-            ):
+            if abs(frac - 10**36 // 2 // lim_mul) < 100 or abs(frac - lim_mul // 2) < 100:
                 return
             else:
                 raise
@@ -121,18 +110,12 @@ def test_get_y(math_unoptimized, math_optimized, A, D, xD, yD, gamma, j, _tmp):
     optimized_gas = math_optimized._computation.net_gas_used
     event("optimizied implementation used {:.0e} gas".format(optimized_gas))
 
-    note(
-        "{"
-        f"'ANN': {A}, 'GAMMA': {gamma}, 'x': {X}, 'D': {D}, 'index': {j}"
-        "}\n"
-    )
+    note("{" f"'ANN': {A}, 'GAMMA': {gamma}, 'x': {X}, 'D': {D}, 'index': {j}" "}\n")
 
     if K0 == 0:
         event("fallback to newton_y")
         return
 
-    assert abs(result_original - result_get_y) <= max(
-        10**4, result_original / 1e8
-    ) or abs(calculate_F_by_y0(result_get_y)) <= abs(
-        calculate_F_by_y0(result_original)
-    )
+    assert abs(result_original - result_get_y) <= max(10**4, result_original / 1e8) or abs(
+        calculate_F_by_y0(result_get_y)
+    ) <= abs(calculate_F_by_y0(result_original))

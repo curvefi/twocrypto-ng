@@ -12,7 +12,6 @@ def test_A_gamma(swap, params):
 
 
 def test_revert_ramp_A_gamma(swap, factory_admin):
-
     A = swap.A()
     gamma = swap.gamma()
     future_A = A * 10  # 10 is too large of a jump
@@ -26,7 +25,6 @@ def test_revert_ramp_A_gamma(swap, factory_admin):
 
 # https://github.com/curvefi/curve-factory-crypto/blob/master/tests/test_a_gamma.py
 def test_ramp_A_gamma(swap, factory_admin):
-
     A = swap.A()
     gamma = swap.gamma()
     A_gamma_initial = [A, gamma]
@@ -43,22 +41,10 @@ def test_ramp_A_gamma(swap, factory_admin):
         boa.env.time_travel(UNIX_DAY)
         A_gamma = [swap.A(), swap.gamma()]
         assert (
-            abs(
-                A_gamma[0]
-                - (
-                    A_gamma_initial[0]
-                    + (future_A - A_gamma_initial[0]) * i / 7
-                )
-            )
+            abs(A_gamma[0] - (A_gamma_initial[0] + (future_A - A_gamma_initial[0]) * i / 7))
             < 1e-4 * A_gamma_initial[0]
         )
         assert (
-            abs(
-                A_gamma[1]
-                - (
-                    A_gamma_initial[1]
-                    + (future_gamma - A_gamma_initial[1]) * i / 7
-                )
-            )
+            abs(A_gamma[1] - (A_gamma_initial[1] + (future_gamma - A_gamma_initial[1]) * i / 7))
             < 1e-4 * A_gamma_initial[1]
         )

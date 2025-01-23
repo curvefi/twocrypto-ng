@@ -14,7 +14,6 @@ from hexbytes import HexBytes
 @pytest.fixture(scope="module")
 def sign_permit():
     def _sign_permit(swap, owner, spender, value, deadline):
-
         PERMIT_STRUCT = {
             "types": {
                 "EIP712Domain": [
@@ -50,9 +49,7 @@ def sign_permit():
             nonce=swap.nonces(owner.address),
             deadline=deadline,
         )
-        signable_message = SignableMessage(
-            b"\x01", hash_domain(struct), hash_message(struct)
-        )
+        signable_message = SignableMessage(b"\x01", hash_domain(struct), hash_message(struct))
         return EthAccount.sign_message(signable_message, owner._private_key)
 
     return _sign_permit

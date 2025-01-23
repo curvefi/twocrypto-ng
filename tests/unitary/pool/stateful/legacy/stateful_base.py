@@ -15,9 +15,7 @@ MAX_D = 10**12 * 10**18  # $1T is hopefully a reasonable cap for tests
 class StatefulBase(RuleBasedStateMachine):
     # strategy to pick two random amount for the two tokens
     # in the pool. Useful for depositing, withdrawing, etc.
-    two_token_amounts = boa_st(
-        "uint256[2]", min_value=0, max_value=10**9 * 10**18
-    )
+    two_token_amounts = boa_st("uint256[2]", min_value=0, max_value=10**9 * 10**18)
 
     # strategy to pick a random amount for an action like exchange amounts,
     # remove_liquidity (to determine the LP share),
@@ -36,20 +34,16 @@ class StatefulBase(RuleBasedStateMachine):
     # strategy to pick which address should perform the action
     user = boa_st("address")
 
-    percentage = hyp_st.integers(min_value=1, max_value=100).map(
-        lambda x: x / 100
-    )
+    percentage = hyp_st.integers(min_value=1, max_value=100).map(lambda x: x / 100)
 
     def __init__(self):
-
         super().__init__()
 
         self.decimals = [int(c.decimals()) for c in self.coins]
         self.user_balances = {u: [0] * 2 for u in self.users}
         self.initial_prices = INITIAL_PRICES
         self.initial_deposit = [
-            10**4 * 10 ** (18 + d) // p
-            for p, d in zip(self.initial_prices, self.decimals)
+            10**4 * 10 ** (18 + d) // p for p, d in zip(self.initial_prices, self.decimals)
         ]  # $10k * 2
 
         self.xcp_profit = 10**18
@@ -68,7 +62,6 @@ class StatefulBase(RuleBasedStateMachine):
         self.setup()
 
     def setup(self, user_id=0):
-
         user = self.users[user_id]
         for coin, q in zip(self.coins, self.initial_deposit):
             mint_for_testing(coin, user, q)
@@ -88,13 +81,8 @@ class StatefulBase(RuleBasedStateMachine):
         prices = [10**18] + [self.swap.price_scale()]
         xp_0 = [self.swap.balances(i) for i in range(2)]
         xp = xp_0
-        xp_0 = [
-            x * p // 10**d for x, p, d in zip(xp_0, prices, self.decimals)
-        ]
-        xp = [
-            (x + a) * p // 10**d
-            for a, x, p, d in zip(amounts, xp, prices, self.decimals)
-        ]
+        xp_0 = [x * p // 10**d for x, p, d in zip(xp_0, prices, self.decimals)]
+        xp = [(x + a) * p // 10**d for a, x, p, d in zip(amounts, xp, prices, self.decimals)]
 
         if D:
             for _xp in [xp_0, xp]:
@@ -125,9 +113,7 @@ class StatefulBase(RuleBasedStateMachine):
     def exchange(self, exchange_amount_in, exchange_i, user):
         exchange_j = 1 - exchange_i
         try:
-            calc_amount = self.swap.get_dy(
-                exchange_i, exchange_j, exchange_amount_in
-            )
+            calc_amount = self.swap.get_dy(exchange_i, exchange_j, exchange_amount_in)
         except Exception:
             _amounts = [0] * 2
             _amounts[exchange_i] = exchange_amount_in
@@ -144,12 +130,8 @@ class StatefulBase(RuleBasedStateMachine):
         d_balance_i = self.coins[exchange_i].balanceOf(user)
         d_balance_j = self.coins[exchange_j].balanceOf(user)
         try:
-            self.coins[exchange_i].approve(
-                self.swap, 2**256 - 1, sender=user
-            )
-            out = self.swap.exchange(
-                exchange_i, exchange_j, exchange_amount_in, 0, sender=user
-            )
+            self.coins[exchange_i].approve(self.swap, 2**256 - 1, sender=user)
+            out = self.swap.exchange(exchange_i, exchange_j, exchange_amount_in, 0, sender=user)
         except Exception:
             # Small amounts may fail with rounding errors
             if (
@@ -167,9 +149,7 @@ class StatefulBase(RuleBasedStateMachine):
         self.swap.get_dy(
             exchange_j,
             exchange_i,
-            10**16
-            * 10 ** self.decimals[exchange_j]
-            // INITIAL_PRICES[exchange_j],
+            10**16 * 10 ** self.decimals[exchange_j] // INITIAL_PRICES[exchange_j],
         )
 
         d_balance_i -= self.coins[exchange_i].balanceOf(user)
@@ -209,9 +189,7 @@ class StatefulBase(RuleBasedStateMachine):
         assert virtual_price >= 10**18 - 10
         assert get_virtual_price >= 10**18 - 10
 
-        assert (
-            xcp_profit - self.xcp_profit > -3
-        ), f"{xcp_profit} vs {self.xcp_profit}"
+        assert xcp_profit - self.xcp_profit > -3, f"{xcp_profit} vs {self.xcp_profit}"
         assert (virtual_price - 10**18) * 2 - (
             xcp_profit - 10**18
         ) >= -5, f"vprice={virtual_price}, xcp_profit={xcp_profit}"
@@ -221,7 +199,6 @@ class StatefulBase(RuleBasedStateMachine):
 
     @invariant()
     def up_only_profit(self):
-
         current_profit = xcp_profit = self.swap.xcp_profit()
         xcp_profit_a = self.swap.xcp_profit_a()
         current_profit = (xcp_profit + xcp_profit_a + 1) // 2
@@ -231,20 +208,13 @@ class StatefulBase(RuleBasedStateMachine):
 
     @contextlib.contextmanager
     def upkeep_on_claim(self):
-
-        admin_balances_pre = [
-            c.balanceOf(self.fee_receiver) for c in self.coins
-        ]
-        pool_is_ramping = (
-            self.swap.future_A_gamma_time() > boa.env.evm.state.patch.timestamp
-        )
+        admin_balances_pre = [c.balanceOf(self.fee_receiver) for c in self.coins]
+        pool_is_ramping = self.swap.future_A_gamma_time() > boa.env.evm.state.patch.timestamp
 
         try:
-
             yield
 
         finally:
-
             new_xcp_profit_a = self.swap.xcp_profit_a()
             old_xcp_profit_a = self.xcp_profit_a
 
@@ -253,19 +223,12 @@ class StatefulBase(RuleBasedStateMachine):
                 claimed = True
                 self.xcp_profit_a = new_xcp_profit_a
 
-            admin_balances_post = [
-                c.balanceOf(self.fee_receiver) for c in self.coins
-            ]
+            admin_balances_post = [c.balanceOf(self.fee_receiver) for c in self.coins]
 
             if claimed:
-
                 for i in range(2):
-                    claimed_amount = (
-                        admin_balances_post[i] - admin_balances_pre[i]
-                    )
-                    assert (
-                        claimed_amount > 0
-                    )  # check if non zero amounts of claim
+                    claimed_amount = admin_balances_post[i] - admin_balances_pre[i]
+                    assert claimed_amount > 0  # check if non zero amounts of claim
                     assert not pool_is_ramping  # cannot claim while ramping
 
                     # update self.balances

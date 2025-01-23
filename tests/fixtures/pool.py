@@ -7,7 +7,6 @@ INITIAL_PRICES = [10**18, 1500 * 10**18]  # price relative to coin_id = 0
 
 
 def _get_deposit_amounts(amount_per_token_usd, initial_prices, coins):
-
     precisions = [10 ** coin.decimals() for coin in coins]
 
     deposit_amounts = [
@@ -24,11 +23,8 @@ def _crypto_swap_with_deposit(
     initial_prices,
     dollar_amt_each_coin=int(1.5 * 10**6),
 ):
-
     # add 1M of each token to the pool
-    quantities = _get_deposit_amounts(
-        dollar_amt_each_coin, initial_prices, coins
-    )
+    quantities = _get_deposit_amounts(dollar_amt_each_coin, initial_prices, coins)
 
     for coin, quantity in zip(coins, quantities):
         # mint coins for user:
@@ -49,7 +45,6 @@ def _crypto_swap_with_deposit(
 
 @pytest.fixture(scope="module")
 def params():
-
     return {
         "A": 400000,
         "gamma": 145000000000000,
@@ -71,7 +66,6 @@ def swap(
     params,
     deployer,
 ):
-
     with boa.env.prank(deployer):
         swap = factory.deploy_pool(
             "Curve.fi USD<>WETH",  # _name: String[64]
@@ -99,7 +93,6 @@ def swap_multiprecision(
     stgusdc,
     deployer,
 ):
-
     # STG/USDC pool params (on deployment)
     _params = {
         "A": 400000,
@@ -140,6 +133,4 @@ def swap_with_deposit(swap, coins, user):
 
 @pytest.fixture(scope="module")
 def yuge_swap(swap, coins, user):
-    return _crypto_swap_with_deposit(
-        coins, user, swap, INITIAL_PRICES, dollar_amt_each_coin=10**10
-    )
+    return _crypto_swap_with_deposit(coins, user, swap, INITIAL_PRICES, dollar_amt_each_coin=10**10)

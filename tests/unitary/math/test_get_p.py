@@ -13,7 +13,6 @@ SETTINGS = {"max_examples": 20, "deadline": None}
 # flake8: noqa: E501
 @pytest.fixture(scope="module")
 def dydx_safemath():
-
     get_price_impl = """
 N_COINS: constant(uint256) = 2
 A_MULTIPLIER: constant(uint256) = 10000
@@ -41,7 +40,6 @@ def get_p(
 
 
 def _get_dydx_vyper(swap, price_calc):
-
     xp = swap.internal.xp(
         swap._storage.balances.get(),
         swap.price_scale(),
@@ -51,21 +49,17 @@ def _get_dydx_vyper(swap, price_calc):
 
 
 def _get_prices_vyper(swap, price_calc):
-
     price_token_1_wrt_0 = _get_dydx_vyper(swap, price_calc)
     return price_token_1_wrt_0 * swap.price_scale() // 10**18
 
 
 def _get_prices_numeric_nofee(swap, views, i):
-
     if i == 0:  # token at index 1 is being pupmed.
-
         dx = int(0.01 * 10**36 // INITIAL_PRICES[1])
         dolla_out = views.internal._get_dy_nofee(1, 0, dx, swap)[0]
         price = dolla_out * 10**18 // dx
 
     else:  # token at index 1 is being dupmed.
-
         dx = 10**16  # 0.01 USD
         dy = views.internal._get_dy_nofee(0, 1, dx, swap)[0]
         price = dx * 10**18 // dy
@@ -90,7 +84,6 @@ def test_dxdy_similar(
     coins,
     i,
 ):
-
     previous_p = yuge_swap.price_scale()
     j = 1 - i
 

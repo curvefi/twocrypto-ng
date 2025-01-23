@@ -15,7 +15,6 @@ def _apply_new_params(swap, params):
 
 
 def test_commit_incorrect_fee_params(swap, factory_admin, params):
-
     p = copy.deepcopy(params)
     p["mid_fee"] = p["out_fee"] + 1
     with boa.env.prank(factory_admin):
@@ -35,12 +34,10 @@ def test_commit_incorrect_fee_params(swap, factory_admin, params):
 
 
 def test_commit_incorrect_fee_gamma(swap, factory_admin, params):
-
     p = copy.deepcopy(params)
     p["fee_gamma"] = 0
 
     with boa.env.prank(factory_admin):
-
         with boa.reverts("fee_gamma out of range [1 .. 10**18]"):
             _apply_new_params(swap, p)
 
@@ -52,14 +49,12 @@ def test_commit_incorrect_fee_gamma(swap, factory_admin, params):
 
 
 def test_commit_rebalancing_params(swap, factory_admin, params):
-
     p = copy.deepcopy(params)
     p["allowed_extra_profit"] = 10**18 + 1
     p["adjustment_step"] == 10**18 + 1
     p["ma_time"] = 872542 + 1
 
     with boa.env.prank(factory_admin):
-
         with boa.env.anchor():
             _apply_new_params(swap, p)
             logs = swap.get_logs()[0]
@@ -75,6 +70,5 @@ def test_commit_rebalancing_params(swap, factory_admin, params):
 
 
 def test_revert_unauthorised_commit(swap, user, params):
-
     with boa.env.prank(user), boa.reverts(dev="only owner"):
         _apply_new_params(swap, params)

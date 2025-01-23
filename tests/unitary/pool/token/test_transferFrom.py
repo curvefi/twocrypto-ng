@@ -117,9 +117,7 @@ def test_transfer_zero_tokens(loaded_alice, bob, charlie, swap):
     assert swap.balanceOf(charlie) == receiver_balance
 
 
-def test_transfer_zero_tokens_without_approval(
-    loaded_alice, bob, charlie, swap
-):
+def test_transfer_zero_tokens_without_approval(loaded_alice, bob, charlie, swap):
     sender_balance = swap.balanceOf(loaded_alice)
     receiver_balance = swap.balanceOf(charlie)
 
@@ -177,9 +175,7 @@ def test_transfer_to_self(loaded_alice, swap):
         swap.transferFrom(loaded_alice, loaded_alice, amount)
 
     assert swap.balanceOf(loaded_alice) == sender_balance
-    assert (
-        swap.allowance(loaded_alice, loaded_alice) == sender_balance - amount
-    )
+    assert swap.allowance(loaded_alice, loaded_alice) == sender_balance - amount
 
 
 def test_transfer_to_self_no_approval(loaded_alice, swap):
