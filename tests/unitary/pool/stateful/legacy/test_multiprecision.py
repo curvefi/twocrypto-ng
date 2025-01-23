@@ -20,9 +20,7 @@ def swap(swap_multiprecision):
 
 
 class Multiprecision(NumbaGoUp):
-    exchange_amount_in = strategy(
-        "uint256", min_value=10**18, max_value=50000 * 10**18
-    )
+    exchange_amount_in = strategy("uint256", min_value=10**18, max_value=50000 * 10**18)
     user = strategy("address")
     exchange_i = strategy("uint8", max_value=1)
 
@@ -32,9 +30,7 @@ class Multiprecision(NumbaGoUp):
         user=user,
     )
     def exchange(self, exchange_amount_in, exchange_i, user):
-        exchange_amount_in = exchange_amount_in // 10 ** (
-            18 - self.decimals[exchange_i]
-        )
+        exchange_amount_in = exchange_amount_in // 10 ** (18 - self.decimals[exchange_i])
         super().exchange(exchange_amount_in, exchange_i, user)
 
 

@@ -3,7 +3,6 @@ from eth_utils import to_checksum_address
 
 
 def mint_for_testing(token_contract, addr, amount, mint_eth=False):
-
     addr = to_checksum_address(addr)
 
     if token_contract.symbol() == "WETH":

@@ -82,11 +82,7 @@ class StatefulBase(RuleBasedStateMachine):
         # correct amounts to the right number of decimals
         balanced_amounts = self.correct_all_decimals(balanced_amounts)
 
-        note(
-            "seeding pool with balanced amounts: {:.2e} {:.2e}".format(
-                *balanced_amounts
-            )
-        )
+        note("seeding pool with balanced amounts: {:.2e} {:.2e}".format(*balanced_amounts))
         self.add_liquidity(balanced_amounts, user)
         note("[SUCCESS]")
 
@@ -100,9 +96,7 @@ class StatefulBase(RuleBasedStateMachine):
     def correct_decimals(self, amount: int, coin_idx: int) -> int:
         """Takes an amount that uses 18 decimals and reduces its precision"""
 
-        corrected_amount = int(
-            amount // (10 ** (18 - self.decimals[coin_idx]))
-        )
+        corrected_amount = int(amount // (10 ** (18 - self.decimals[coin_idx])))
         # sometimes a non-zero amount generated
         # by the strategy is <= 0 when corrected
         if amount > 0:
@@ -159,15 +153,11 @@ class StatefulBase(RuleBasedStateMachine):
 
         # we compute the percentage change from the old equilibrium
         # to have a sense of how much an operation changed the pool
-        percentage_change = (
-            self.equilibrium - old_equilibrium
-        ) / old_equilibrium
+        percentage_change = (self.equilibrium - old_equilibrium) / old_equilibrium
 
         # we report equilibrium as log to make it easier to read
         note(
-            "pool equilibrium {:.2f} (center is at 0) ".format(
-                log10(self.equilibrium)
-            )
+            "pool equilibrium {:.2f} (center is at 0) ".format(log10(self.equilibrium))
             + "| change from old equilibrium: {:.4%}".format(percentage_change)
         )
 
@@ -275,16 +265,12 @@ class StatefulBase(RuleBasedStateMachine):
             log_equilibrium = log10(self.equilibrium)
             # we store the old equilibrium to restore it after we make sure
             # that the pool can be healed
-            event(
-                "newton_y broke with log10 of x/y = {:.1f}".format(
-                    log_equilibrium
-                )
-            )
+            event("newton_y broke with log10 of x/y = {:.1f}".format(log_equilibrium))
 
             # we make sure that the pool is reasonably imbalanced
-            assert (
-                abs(log_equilibrium) >= 0.1
-            ), "pool ({:.2e}) is not imbalanced".format(log_equilibrium)
+            assert abs(log_equilibrium) >= 0.1, "pool ({:.2e}) is not imbalanced".format(
+                log_equilibrium
+            )
 
             # we return False because the swap failed
             # (safe failure, but still a failure)
@@ -330,9 +316,7 @@ class StatefulBase(RuleBasedStateMachine):
         self.pool.remove_liquidity(amount, [0] * 2, sender=user)
 
         # compute the change in balances
-        amounts = [
-            (c.balanceOf(user) - a) for c, a in zip(self.coins, amounts)
-        ]
+        amounts = [(c.balanceOf(user) - a) for c, a in zip(self.coins, amounts)]
 
         # total apply should have decreased by the amount of liquidity
         # withdrawn
@@ -350,9 +334,7 @@ class StatefulBase(RuleBasedStateMachine):
             event("full liquidity removal")
             self.virtual_price = 1e18
 
-    def remove_liquidity_one_coin(
-        self, percentage: float, coin_idx: int, user: str
-    ):
+    def remove_liquidity_one_coin(self, percentage: float, coin_idx: int, user: str):
         """Wrapper around the `remove_liquidity_one_coin` method of the pool.
         Always prefer this instead of calling the pool method directly
         when constructing rules.
@@ -369,9 +351,7 @@ class StatefulBase(RuleBasedStateMachine):
         assume(user != self.fee_receiver)
 
         # store balances of the fee receiver before the removal
-        admin_balances_pre = [
-            c.balanceOf(self.fee_receiver) for c in self.coins
-        ]
+        admin_balances_pre = [c.balanceOf(self.fee_receiver) for c in self.coins]
         # store the balance of the user before the removal
         user_balances_pre = self.coins[coin_idx].balanceOf(user)
 
@@ -419,9 +399,7 @@ class StatefulBase(RuleBasedStateMachine):
                 event("successful removal of liquidity with low amounts")
 
         # compute the change in balances
-        user_balances_post = abs(
-            user_balances_pre - self.coins[coin_idx].balanceOf(user)
-        )
+        user_balances_post = abs(user_balances_pre - self.coins[coin_idx].balanceOf(user))
 
         # update internal balances
         self.balances[coin_idx] -= user_balances_post
@@ -450,17 +428,11 @@ class StatefulBase(RuleBasedStateMachine):
 
             # store the balances of the fee receiver after the removal
             # (should be higher than before the removal)
-            admin_balances_post = [
-                c.balanceOf(self.fee_receiver) for c in self.coins
-            ]
+            admin_balances_post = [c.balanceOf(self.fee_receiver) for c in self.coins]
 
             for i in range(2):
                 claimed_amount = admin_balances_post[i] - admin_balances_pre[i]
-                note(
-                    "admin received {:.2e} of token {}".format(
-                        claimed_amount, i
-                    )
-                )
+                note("admin received {:.2e} of token {}".format(claimed_amount, i))
                 assert (
                     claimed_amount > 0
                     # decimals: with such a low precision admin fees might be 0
@@ -529,8 +501,7 @@ class StatefulBase(RuleBasedStateMachine):
                         )
                     else:
                         assert c.balanceOf(self.pool) < b, (
-                            "one withdrawal didn't reduce the liquidity"
-                            "of the pool"
+                            "one withdrawal didn't reduce the liquidity" "of the pool"
                         )
             for c in self.coins:
                 # there should not be any liquidity left in the pool
@@ -547,7 +518,7 @@ class StatefulBase(RuleBasedStateMachine):
                 ), "pool still has signficant liquidity after all withdrawals"
 
     @invariant()
-    def balances(self):
+    def balances(self):  # noqa: F811
         balances = [self.pool.balances(i) for i in range(2)]
         balance_of = [c.balanceOf(self.pool) for c in self.coins]
         for i in range(2):
@@ -566,17 +537,11 @@ class StatefulBase(RuleBasedStateMachine):
 
         # profit, cached vp and current vp should be at least 1e18
         assert self.xcp_profit >= 1e18, "profit should be at least 1e18"
-        assert (
-            self.pool.virtual_price() >= 1e18
-        ), "cached virtual price should be at least 1e18"
-        assert (
-            self.pool.get_virtual_price() >= 1e18
-        ), "virtual price should be at least 1e18"
+        assert self.pool.virtual_price() >= 1e18, "cached virtual price should be at least 1e18"
+        assert self.pool.get_virtual_price() >= 1e18, "virtual price should be at least 1e18"
 
         for d in self.depositors:
-            assert (
-                self.pool.balanceOf(d) > 0
-            ), "tracked depositors should not have 0 lp tokens"
+            assert self.pool.balanceOf(d) > 0, "tracked depositors should not have 0 lp tokens"
 
     @precondition(lambda self: self.swapped_once)
     @invariant()
@@ -585,8 +550,7 @@ class StatefulBase(RuleBasedStateMachine):
             self.pool.xcp_profit() - 1e18
         ), "virtual price should be at least twice the profit"
         assert (
-            abs(log(self.pool.virtual_price() / self.pool.get_virtual_price()))
-            < 1e-10
+            abs(log(self.pool.virtual_price() / self.pool.get_virtual_price())) < 1e-10
         ), "cached virtual price shouldn't lag behind current virtual price"
 
     @invariant()

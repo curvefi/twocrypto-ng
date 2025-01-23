@@ -35,7 +35,6 @@ def test_initial(swap_with_deposit):
 )
 @settings(**SETTINGS)
 def test_last_price_remove_liq(swap_with_deposit, user, token_frac, i):
-
     prices = INITIAL_PRICES
     token_amount = token_frac * swap_with_deposit.totalSupply() // 10**18
 
@@ -55,7 +54,6 @@ def test_last_price_remove_liq(swap_with_deposit, user, token_frac, i):
 )
 @settings(**SETTINGS)
 def test_ma(swap_with_deposit, coins, user, amount, i, t):
-
     prices1 = INITIAL_PRICES
     amount = amount * 10**18 // prices1[i]
     mint_for_testing(coins[i], user, amount)
@@ -95,7 +93,6 @@ def test_ma(swap_with_deposit, coins, user, amount, i, t):
 )
 @settings(**SETTINGS)
 def test_price_scale_range(swap_with_deposit, coins, user, amount, i, t):
-
     prices1 = INITIAL_PRICES
     amount = amount * 10**18 // prices1[i]
     mint_for_testing(coins[i], user, amount)
@@ -160,9 +157,7 @@ def test_price_scale_change(swap_with_deposit, i, coins, users):
 def test_lp_price(swap_with_deposit):
     tvl = (
         swap_with_deposit.balances(0)
-        + swap_with_deposit.balances(1)
-        * swap_with_deposit.price_scale()
-        // 10**18
+        + swap_with_deposit.balances(1) * swap_with_deposit.price_scale() // 10**18
     )
     naive_price = tvl * 10**18 // swap_with_deposit.totalSupply()
     assert approx(naive_price, swap_with_deposit.lp_price(), 0)

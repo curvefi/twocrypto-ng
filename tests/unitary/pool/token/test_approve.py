@@ -10,7 +10,6 @@ def test_initial_approval_is_zero(swap, alice, users, idx):
 
 
 def test_approve(swap, alice, bob):
-
     with boa.env.prank(alice):
         swap.approve(bob, 10**19)
 
@@ -18,7 +17,6 @@ def test_approve(swap, alice, bob):
 
 
 def test_modify_approve_zero_nonzero(swap, alice, bob):
-
     with boa.env.prank(alice):
         swap.approve(bob, 10**19)
         swap.approve(bob, 0)
@@ -28,7 +26,6 @@ def test_modify_approve_zero_nonzero(swap, alice, bob):
 
 
 def test_revoke_approve(swap, alice, bob):
-
     with boa.env.prank(alice):
         swap.approve(bob, 10**19)
         swap.approve(bob, 0)
@@ -37,7 +34,6 @@ def test_revoke_approve(swap, alice, bob):
 
 
 def test_approve_self(swap, alice):
-
     with boa.env.prank(alice):
         swap.approve(alice, 10**19)
 
@@ -57,7 +53,6 @@ def test_returns_true(swap, alice, bob):
 
 
 def test_approval_event_fires(swap, alice, bob):
-
     with boa.env.prank(alice):
         swap.approve(bob, 10**19)
 

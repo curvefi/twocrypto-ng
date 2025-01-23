@@ -7,6 +7,7 @@ and kept for reference.
 
 Original file: https://github.com/curvefi/curve-crypto-contract/blob/d7d04cd9ae038970e40be850df99de8c1ff7241b/tests/simulation_int_many.py
 """
+
 from itertools import permutations
 
 import hypothesis.strategies as st
@@ -72,9 +73,7 @@ def test_reduction_coefficient(x, y, gamma):
 @given(
     A=st.integers(MIN_A, MAX_A),
     x=st.integers(10**18, 10**15 * 10**18),  # 1 USD to 1e15 USD
-    yx=st.integers(
-        10**14, 10**18
-    ),  # <- ratio 1e18 * y/x, typically 1e18 * 1
+    yx=st.integers(10**14, 10**18),  # <- ratio 1e18 * y/x, typically 1e18 * 1
     perm=st.integers(0, 1),  # <- permutation mapping to values
     gamma=st.integers(MIN_GAMMA, MAX_GAMMA),
 )
@@ -131,24 +130,16 @@ def test_y_noloss(A, x, yx, gamma, i, inx):
         D1 = curve.D()
     except ValueError:
         return  # Convergence checked separately - we deliberately try unsafe numbers
-    is_safe = all(
-        f >= MIN_XD and f <= MAX_XD
-        for f in [xx * 10**18 // D1 for xx in curve.x]
-    )
+    is_safe = all(f >= MIN_XD and f <= MAX_XD for f in [xx * 10**18 // D1 for xx in curve.x])
     curve.x[i] = in_amount
     curve.x[j] = out_amount
     try:
         D2 = curve.D()
     except ValueError:
         return  # Convergence checked separately - we deliberately try unsafe numbers
-    is_safe &= all(
-        f >= MIN_XD and f <= MAX_XD
-        for f in [xx * 10**18 // D2 for xx in curve.x]
-    )
+    is_safe &= all(f >= MIN_XD and f <= MAX_XD for f in [xx * 10**18 // D2 for xx in curve.x])
     if is_safe:
-        assert (
-            2 * (D1 - D2) / (D1 + D2) < MIN_FEE
-        )  # Only loss is prevented - gain is ok
+        assert 2 * (D1 - D2) / (D1 + D2) < MIN_FEE  # Only loss is prevented - gain is ok
 
 
 @given(
@@ -165,6 +156,4 @@ def test_y_from_D(A, D, xD, yD, gamma, j):
     y = solve_x(A, gamma, xp, D, j)
     xp[j] = y
     D2 = solve_D(A, gamma, xp)
-    assert (
-        2 * (D - D2) / (D2 + D) < MIN_FEE
-    )  # Only loss is prevented - gain is ok
+    assert 2 * (D - D2) / (D2 + D) < MIN_FEE  # Only loss is prevented - gain is ok

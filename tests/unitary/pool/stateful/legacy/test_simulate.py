@@ -13,14 +13,11 @@ STEP_COUNT = 100
 
 
 class StatefulSimulation(StatefulBase):
-    exchange_amount_in = strategy(
-        "uint256", min_value=10**17, max_value=10**5 * 10**18
-    )
+    exchange_amount_in = strategy("uint256", min_value=10**17, max_value=10**5 * 10**18)
     exchange_i = strategy("uint8", max_value=1)
     user = strategy("address")
 
     def setup(self):
-
         super().setup()
 
         for u in self.users[1:]:
@@ -42,9 +39,7 @@ class StatefulSimulation(StatefulBase):
             self.swap.out_fee() / 1e10,
             self.swap.fee_gamma(),
             self.swap.adjustment_step() / 1e18,
-            int(
-                self.swap.ma_time() / 0.693
-            ),  # crypto swap returns ma time in sec
+            int(self.swap.ma_time() / 0.693),  # crypto swap returns ma time in sec
         )
         for i in range(2):
             self.trader.curve.x[i] = self.swap.balances(i)
@@ -61,12 +56,7 @@ class StatefulSimulation(StatefulBase):
         user=user,
     )
     def exchange(self, exchange_amount_in, exchange_i, user):
-
-        dx = (
-            exchange_amount_in
-            * 10**18
-            // self.trader.price_oracle[exchange_i]
-        )
+        dx = exchange_amount_in * 10**18 // self.trader.price_oracle[exchange_i]
         self.swap_no += 1
         super().exchange(dx, exchange_i, user)
 
@@ -78,9 +68,7 @@ class StatefulSimulation(StatefulBase):
 
         # exchange checks:
         assert approx(self.swap_out, dy_trader, 1e-3)
-        assert approx(
-            self.swap.price_oracle(), self.trader.price_oracle[1], 1.5e-3
-        )
+        assert approx(self.swap.price_oracle(), self.trader.price_oracle[1], 1.5e-3)
 
         boa.env.time_travel(12)
 

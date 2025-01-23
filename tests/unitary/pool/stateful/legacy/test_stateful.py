@@ -47,7 +47,6 @@ class NumbaGoUp(StatefulBase):
             mint_for_testing(coin, user, q)
 
         try:
-
             tokens = self.swap.balanceOf(user)
             self.swap.add_liquidity(amounts, 0, sender=user)
             tokens = self.swap.balanceOf(user) - tokens
@@ -55,7 +54,6 @@ class NumbaGoUp(StatefulBase):
             self.balances = new_balances
 
         except Exception:
-
             if self.check_limits(amounts):
                 raise
             return str(user)
@@ -88,9 +86,7 @@ class NumbaGoUp(StatefulBase):
                 self.swap.remove_liquidity(token_amount, [0] * 2, sender=user)
             tokens -= self.swap.balanceOf(user)
             self.total_supply -= tokens
-            amounts = [
-                (c.balanceOf(user) - a) for c, a in zip(self.coins, amounts)
-            ]
+            amounts = [(c.balanceOf(user) - a) for c, a in zip(self.coins, amounts)]
             self.balances = [b - a for a, b in zip(amounts, self.balances)]
 
             # Virtual price resets if everything is withdrawn
@@ -105,34 +101,26 @@ class NumbaGoUp(StatefulBase):
     )
     def remove_liquidity_one_coin(self, token_amount, exchange_i, user):
         try:
-            calc_out_amount = self.swap.calc_withdraw_one_coin(
-                token_amount, exchange_i
-            )
+            calc_out_amount = self.swap.calc_withdraw_one_coin(token_amount, exchange_i)
         except Exception:
             if (
                 self.check_limits([0] * 2)
                 and not (token_amount > self.total_supply)
                 and token_amount > 10000
             ):
-                self.swap.calc_withdraw_one_coin(
-                    token_amount, exchange_i, sender=user
-                )
+                self.swap.calc_withdraw_one_coin(token_amount, exchange_i, sender=user)
             return
 
         d_token = self.swap.balanceOf(user)
         if d_token < token_amount:
             with boa.reverts():
-                self.swap.remove_liquidity_one_coin(
-                    token_amount, exchange_i, 0, sender=user
-                )
+                self.swap.remove_liquidity_one_coin(token_amount, exchange_i, 0, sender=user)
             return
 
         d_balance = self.coins[exchange_i].balanceOf(user)
         try:
             with self.upkeep_on_claim():
-                self.swap.remove_liquidity_one_coin(
-                    token_amount, exchange_i, 0, sender=user
-                )
+                self.swap.remove_liquidity_one_coin(token_amount, exchange_i, 0, sender=user)
         except Exception:
             # Small amounts may fail with rounding errors
             if (
@@ -147,18 +135,14 @@ class NumbaGoUp(StatefulBase):
         # an exchange succeeded
         _deposit = [0] * 2
         _deposit[exchange_i] = (
-            10**16
-            * 10 ** self.decimals[exchange_i]
-            // ([10**18] + INITIAL_PRICES)[exchange_i]
+            10**16 * 10 ** self.decimals[exchange_i] // ([10**18] + INITIAL_PRICES)[exchange_i]
         )
         assert self.swap.calc_token_amount(_deposit, True)
 
         d_balance = self.coins[exchange_i].balanceOf(user) - d_balance
         d_token = d_token - self.swap.balanceOf(user)
 
-        assert (
-            calc_out_amount == d_balance
-        ), f"{calc_out_amount} vs {d_balance} for {token_amount}"
+        assert calc_out_amount == d_balance, f"{calc_out_amount} vs {d_balance} for {token_amount}"
 
         self.balances[exchange_i] -= d_balance
         self.total_supply -= d_token
