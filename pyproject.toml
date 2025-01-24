@@ -16,15 +16,16 @@ titanoboa = { git = "https://github.com/vyperlang/titanoboa.git", rev = "a8d5a6c
 
 [tool.uv]
 dev-dependencies = [
-    "pytest-xdist>=3.6.1",
+    "pytest-xdist==3.6.1",
     "mamushi==0.0.4",
     "pre-commit==3.8.0",
     "ruff==0.6.9",
     "pytest==8.2.2",
     "plyvel-ci==1.5.1",
-    "jupyter>=1.0.0",
-    "python-dotenv>=1.0.1",
-    "hypothesis"
+    "jupyter==1.0.0",
+    "python-dotenv==1.0.1",
+    "hypothesis==6.124.2",
+    "pandas==2.2.3",
 ]
 
 [tool.ruff]
