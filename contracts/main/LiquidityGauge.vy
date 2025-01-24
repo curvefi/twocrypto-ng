@@ -1,4 +1,4 @@
-# pragma version 0.3.10
+# pragma version ~=0.4.0
 # pragma optimize gas
 # pragma evm-version paris
 """
@@ -8,9 +8,9 @@
 @notice Implementation contract for use with Curve Factory
 @dev Differs from v5.0.0 in that it uses create_from_blueprint to deploy Gauges
 """
-from vyper.interfaces import ERC20
+from ethereum.ercs import IERC20
 
-implements: ERC20
+implements: IERC20
 
 
 interface CRV20:
@@ -26,7 +26,6 @@ interface ERC20Extended:
 
 interface ERC1271:
     def isValidSignature(_hash: bytes32, _signature: Bytes[65]) -> bytes32: view
-
 interface Factory:
     def admin() -> address: view
 
@@ -165,7 +164,7 @@ period_timestamp: public(uint256[100000000000000000000000000000])
 integrate_inv_supply: public(uint256[100000000000000000000000000000])  # bump epoch when rate() changes
 
 
-@external
+@deploy
 def __init__(_lp_token: address):
     """
     @notice Contract constructor
@@ -175,7 +174,7 @@ def __init__(_lp_token: address):
     factory = msg.sender
     self.manager = msg.sender
 
-    _symbol: String[32] = ERC20Extended(_lp_token).symbol()
+    _symbol: String[32] = staticcall ERC20Extended(_lp_token).symbol()
     _name: String[64] = concat("Curve.fi ", symbol, " Gauge Deposit")
 
     name = _name
@@ -183,15 +182,15 @@ def __init__(_lp_token: address):
 
     self.period_timestamp[0] = block.timestamp
     self.inflation_params = (
-        (CRV20(CRV).future_epoch_time_write() << 216)
-        + CRV20(CRV).rate()
+        (extcall CRV20(CRV).future_epoch_time_write() << 216)
+        + staticcall CRV20(CRV).rate()
     )
 
     NAME_HASH = keccak256(_name)
     salt = block.prevhash
     CACHED_CHAIN_ID = chain.id
     CACHED_DOMAIN_SEPARATOR = keccak256(
-        _abi_encode(
+        abi_encode(
             EIP712_TYPEHASH,
             NAME_HASH,
             VERSION_HASH,
@@ -209,7 +208,7 @@ def __init__(_lp_token: address):
 def _domain_separator() -> bytes32:
     if chain.id != CACHED_CHAIN_ID:
         return keccak256(
-            _abi_encode(
+            abi_encode(
                 EIP712_TYPEHASH,
                 NAME_HASH,
                 VERSION_HASH,
@@ -243,21 +242,21 @@ def _checkpoint(addr: address):
         new_rate = 0
 
     if prev_future_epoch >= _period_time:
-        future_epoch_time_write: uint256 = CRV20(CRV).future_epoch_time_write()
+        future_epoch_time_write: uint256 = extcall CRV20(CRV).future_epoch_time_write()
         if not gauge_is_killed:
-            new_rate = CRV20(CRV).rate()
+            new_rate = staticcall CRV20(CRV).rate()
         self.inflation_params = (future_epoch_time_write << 216) + new_rate
 
     # Update integral of 1/supply
     if block.timestamp > _period_time:
         _working_supply: uint256 = self.working_supply
-        Controller(GAUGE_CONTROLLER).checkpoint_gauge(self)
+        extcall Controller(GAUGE_CONTROLLER).checkpoint_gauge(self)
         prev_week_time: uint256 = _period_time
-        week_time: uint256 = min((_period_time + WEEK) / WEEK * WEEK, block.timestamp)
+        week_time: uint256 = min((_period_time + WEEK) // WEEK * WEEK, block.timestamp)
 
-        for i in range(500):
+        for i: uint256 in range(500):
             dt: uint256 = week_time - prev_week_time
-            w: uint256 = Controller(GAUGE_CONTROLLER).gauge_relative_weight(self, prev_week_time)
+            w: uint256 = staticcall Controller(GAUGE_CONTROLLER).gauge_relative_weight(self, prev_week_time)
 
             if _working_supply > 0:
                 if prev_future_epoch >= prev_week_time and prev_future_epoch < week_time:
@@ -266,11 +265,11 @@ def _checkpoint(addr: address):
                     # the last epoch.
                     # If more than one epoch is crossed - the gauge gets less,
                     # but that'd meen it wasn't called for more than 1 year
-                    _integrate_inv_supply += rate * w * (prev_future_epoch - prev_week_time) / _working_supply
+                    _integrate_inv_supply += rate * w * (prev_future_epoch - prev_week_time) // _working_supply
                     rate = new_rate
-                    _integrate_inv_supply += rate * w * (week_time - prev_future_epoch) / _working_supply
+                    _integrate_inv_supply += rate * w * (week_time - prev_future_epoch) // _working_supply
                 else:
-                    _integrate_inv_supply += rate * w * dt / _working_supply
+                    _integrate_inv_supply += rate * w * dt // _working_supply
                 # On precisions of the calculation
                 # rate ~= 10e18
                 # last_weight > 0.01 * 1e18 = 1e16 (if pool weight is 1%)
@@ -290,7 +289,7 @@ def _checkpoint(addr: address):
 
     # Update user-specific integrals
     _working_balance: uint256 = self.working_balances[addr]
-    self.integrate_fraction[addr] += _working_balance * (_integrate_inv_supply - self.integrate_inv_supply_of[addr]) / 10 ** 18
+    self.integrate_fraction[addr] += _working_balance * (_integrate_inv_supply - self.integrate_inv_supply_of[addr]) // 10 ** 18
     self.integrate_inv_supply_of[addr] = _integrate_inv_supply
     self.integrate_checkpoint_of[addr] = block.timestamp
 
@@ -313,7 +312,7 @@ def _checkpoint_rewards(_user: address, _total_supply: uint256, _claim: bool, _r
                 receiver = _user
 
     reward_count: uint256 = self.reward_count
-    for i in range(MAX_REWARDS):
+    for i: uint256 in range(MAX_REWARDS):
         if i == reward_count:
             break
         token: address = self.reward_tokens[i]
@@ -324,7 +323,7 @@ def _checkpoint_rewards(_user: address, _total_supply: uint256, _claim: bool, _r
 
         if duration != 0 and _total_supply != 0:
             self.reward_data[token].last_update = last_update
-            integral += duration * self.reward_data[token].rate * 10**18 / _total_supply
+            integral += duration * self.reward_data[token].rate * 10**18 // _total_supply
             self.reward_data[token].integral = integral
 
         if _user != empty(address):
@@ -333,14 +332,14 @@ def _checkpoint_rewards(_user: address, _total_supply: uint256, _claim: bool, _r
 
             if integral_for < integral:
                 self.reward_integral_for[token][_user] = integral
-                new_claimable = user_balance * (integral - integral_for) / 10**18
+                new_claimable = user_balance * (integral - integral_for) // 10**18
 
             claim_data: uint256 = self.claim_data[_user][token]
             total_claimable: uint256 = (claim_data >> 128) + new_claimable
             if total_claimable > 0:
                 total_claimed: uint256 = claim_data % 2**128
                 if _claim:
-                    assert ERC20(token).transfer(receiver, total_claimable, default_return_value=True)
+                    assert extcall IERC20(token).transfer(receiver, total_claimable, default_return_value=True)
                     self.claim_data[_user][token] = total_claimed + total_claimable
                 elif new_claimable > 0:
                     self.claim_data[_user][token] = total_claimed + (total_claimable << 128)
@@ -357,12 +356,12 @@ def _update_liquidity_limit(addr: address, l: uint256, L: uint256):
     @param L Total amount of liquidity (LP tokens)
     """
     # To be called after totalSupply is updated
-    voting_balance: uint256 = VotingEscrowBoost(VEBOOST_PROXY).adjusted_balance_of(addr)
-    voting_total: uint256 = ERC20(VOTING_ESCROW).totalSupply()
+    voting_balance: uint256 = staticcall VotingEscrowBoost(VEBOOST_PROXY).adjusted_balance_of(addr)
+    voting_total: uint256 = staticcall IERC20(VOTING_ESCROW).totalSupply()
 
-    lim: uint256 = l * TOKENLESS_PRODUCTION / 100
+    lim: uint256 = l * TOKENLESS_PRODUCTION // 100
     if voting_total > 0:
-        lim += L * voting_balance / voting_total * (100 - TOKENLESS_PRODUCTION) / 100
+        lim += L * voting_balance // voting_total * (100 - TOKENLESS_PRODUCTION) // 100
 
     lim = min(l, lim)
     old_bal: uint256 = self.working_balances[addr]
@@ -403,7 +402,7 @@ def _transfer(_from: address, _to: address, _value: uint256):
 
 
 @external
-@nonreentrant('lock')
+@nonreentrant
 def deposit(_value: uint256, _addr: address = msg.sender, _claim_rewards: bool = False):
     """
     @notice Deposit `_value` LP tokens
@@ -427,14 +426,14 @@ def deposit(_value: uint256, _addr: address = msg.sender, _claim_rewards: bool =
 
         self._update_liquidity_limit(_addr, new_balance, total_supply)
 
-        ERC20(lp_token).transferFrom(msg.sender, self, _value)
+        extcall IERC20(lp_token).transferFrom(msg.sender, self, _value)
 
         log Deposit(_addr, _value)
         log Transfer(empty(address), _addr, _value)
 
 
 @external
-@nonreentrant('lock')
+@nonreentrant
 def withdraw(_value: uint256, _claim_rewards: bool = False):
     """
     @notice Withdraw `_value` LP tokens
@@ -456,14 +455,14 @@ def withdraw(_value: uint256, _claim_rewards: bool = False):
 
         self._update_liquidity_limit(msg.sender, new_balance, total_supply)
 
-        ERC20(lp_token).transfer(msg.sender, _value)
+        extcall IERC20(lp_token).transfer(msg.sender, _value)
 
     log Withdraw(msg.sender, _value)
     log Transfer(msg.sender, empty(address), _value)
 
 
 @external
-@nonreentrant('lock')
+@nonreentrant
 def claim_rewards(_addr: address = msg.sender, _receiver: address = empty(address)):
     """
     @notice Claim available reward tokens for `_addr`
@@ -478,7 +477,7 @@ def claim_rewards(_addr: address = msg.sender, _receiver: address = empty(addres
 
 
 @external
-@nonreentrant('lock')
+@nonreentrant
 def transferFrom(_from: address, _to: address, _value: uint256) -> bool:
     """
      @notice Transfer tokens from one address to another.
@@ -499,7 +498,7 @@ def transferFrom(_from: address, _to: address, _value: uint256) -> bool:
 
 
 @external
-@nonreentrant('lock')
+@nonreentrant
 def transfer(_to: address, _value: uint256) -> bool:
     """
     @notice Transfer token for a specified address
@@ -566,7 +565,7 @@ def permit(
             b"\x19\x01",
             self._domain_separator(),
             keccak256(
-                _abi_encode(
+                abi_encode(
                     EIP2612_TYPEHASH, _owner, _spender, _value, nonce, _deadline
                 )
             ),
@@ -648,13 +647,13 @@ def kick(addr: address):
     @param addr Address to kick
     """
     t_last: uint256 = self.integrate_checkpoint_of[addr]
-    t_ve: uint256 = VotingEscrow(VOTING_ESCROW).user_point_history__ts(
-        addr, VotingEscrow(VOTING_ESCROW).user_point_epoch(addr)
+    t_ve: uint256 = staticcall VotingEscrow(VOTING_ESCROW).user_point_history__ts(
+        addr, staticcall VotingEscrow(VOTING_ESCROW).user_point_epoch(addr)
     )
     _balance: uint256 = self.balanceOf[addr]
 
-    assert ERC20(VOTING_ESCROW).balanceOf(addr) == 0 or t_ve > t_last # dev: kick not allowed
-    assert self.working_balances[addr] > _balance * TOKENLESS_PRODUCTION / 100  # dev: kick not needed
+    assert staticcall IERC20(VOTING_ESCROW).balanceOf(addr) == 0 or t_ve > t_last # dev: kick not allowed
+    assert self.working_balances[addr] > _balance * TOKENLESS_PRODUCTION // 100  # dev: kick not needed
 
     self._checkpoint(addr)
     self._update_liquidity_limit(addr, self.balanceOf[addr], self.totalSupply)
@@ -672,14 +671,14 @@ def set_gauge_manager(_gauge_manager: address):
         method, but only for the gauge which they are the manager of.
     @param _gauge_manager The account to set as the new manager of the gauge.
     """
-    assert msg.sender in [self.manager, Factory(factory).admin()]  # dev: only manager or factory admin
+    assert msg.sender in [self.manager, staticcall Factory(factory).admin()]  # dev: only manager or factory admin
 
     self.manager = _gauge_manager
     log SetGaugeManager(_gauge_manager)
 
 
 @external
-@nonreentrant("lock")
+@nonreentrant
 def deposit_reward_token(_reward_token: address, _amount: uint256, _epoch: uint256 = WEEK):
     """
     @notice Deposit a reward token for distribution
@@ -692,24 +691,24 @@ def deposit_reward_token(_reward_token: address, _amount: uint256, _epoch: uint2
     self._checkpoint_rewards(empty(address), self.totalSupply, False, empty(address))
 
     # transferFrom reward token and use transferred amount henceforth:
-    amount_received: uint256 = ERC20(_reward_token).balanceOf(self)
-    assert ERC20(_reward_token).transferFrom(
+    amount_received: uint256 = staticcall IERC20(_reward_token).balanceOf(self)
+    assert extcall IERC20(_reward_token).transferFrom(
         msg.sender,
         self,
         _amount,
         default_return_value=True
     )
-    amount_received = ERC20(_reward_token).balanceOf(self) - amount_received
+    amount_received = staticcall IERC20(_reward_token).balanceOf(self) - amount_received
 
     period_finish: uint256 = self.reward_data[_reward_token].period_finish
     assert amount_received > _epoch  # dev: rate will tend to zero!
 
     if block.timestamp >= period_finish:
-        self.reward_data[_reward_token].rate = amount_received / _epoch  # TODO: consider using precision here hmm
+        self.reward_data[_reward_token].rate = amount_received // _epoch  # TODO: consider using precision here hmm
     else:
         remaining: uint256 = period_finish - block.timestamp
         leftover: uint256 = remaining * self.reward_data[_reward_token].rate
-        self.reward_data[_reward_token].rate = (amount_received + leftover) / _epoch
+        self.reward_data[_reward_token].rate = (amount_received + leftover) // _epoch
 
     self.reward_data[_reward_token].last_update = block.timestamp
     self.reward_data[_reward_token].period_finish = block.timestamp + _epoch
@@ -722,7 +721,7 @@ def add_reward(_reward_token: address, _distributor: address):
     @param _reward_token The token to add as an additional reward
     @param _distributor Address permitted to fund this contract with the reward token
     """
-    assert msg.sender in [self.manager, Factory(factory).admin()]  # dev: only manager or factory admin
+    assert msg.sender in [self.manager, staticcall Factory(factory).admin()]  # dev: only manager or factory admin
     assert _distributor != empty(address)  # dev: distributor cannot be zero address
 
     reward_count: uint256 = self.reward_count
@@ -743,7 +742,7 @@ def set_reward_distributor(_reward_token: address, _distributor: address):
     """
     current_distributor: address = self.reward_data[_reward_token].distributor
 
-    assert msg.sender in [current_distributor, Factory(factory).admin(), self.manager]
+    assert msg.sender in [current_distributor, staticcall Factory(factory).admin(), self.manager]
     assert current_distributor != empty(address)
     assert _distributor != empty(address)
 
@@ -757,7 +756,7 @@ def set_killed(_is_killed: bool):
     @dev When killed, the gauge always yields a rate of 0 and so cannot mint CRV
     @param _is_killed Killed status to set
     """
-    assert msg.sender == Factory(factory).admin()  # dev: only owner
+    assert msg.sender == staticcall Factory(factory).admin()  # dev: only owner
 
     self.is_killed = _is_killed
 
@@ -791,10 +790,10 @@ def claimable_reward(_user: address, _reward_token: address) -> uint256:
     if total_supply != 0:
         last_update: uint256 = min(block.timestamp, self.reward_data[_reward_token].period_finish)
         duration: uint256 = last_update - self.reward_data[_reward_token].last_update
-        integral += (duration * self.reward_data[_reward_token].rate * 10**18 / total_supply)
+        integral += (duration * self.reward_data[_reward_token].rate * 10**18 // total_supply)
 
     integral_for: uint256 = self.reward_integral_for[_reward_token][_user]
-    new_claimable: uint256 = self.balanceOf[_user] * (integral - integral_for) / 10**18
+    new_claimable: uint256 = self.balanceOf[_user] * (integral - integral_for) // 10**18
 
     return (self.claim_data[_user][_reward_token] >> 128) + new_claimable
 
@@ -807,7 +806,7 @@ def claimable_tokens(addr: address) -> uint256:
     @return uint256 number of claimable tokens per user
     """
     self._checkpoint(addr)
-    return self.integrate_fraction[addr] - Minter(MINTER).minted(addr, self)
+    return self.integrate_fraction[addr] - staticcall Minter(MINTER).minted(addr, self)
 
 
 @view
