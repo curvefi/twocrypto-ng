@@ -1,10 +1,8 @@
 # pragma version ~=0.4.0
-# pragma optimize gas
-# pragma evm-version paris
 """
-@title CurveTwocryptoFactor
+@title TwocryptoFactory
 @author Curve.Fi
-@license Copyright (c) Curve.Fi, 2020-2023 - all rights reserved
+@license Copyright (c) Curve.Fi, 2025 - all rights reserved
 @notice Permissionless 2-coin cryptoswap pool deployer and registry
 """
 

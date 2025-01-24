@@ -2,9 +2,9 @@
 # pragma optimize gas
 # pragma evm-version paris
 """
-@title CurveCryptoViews2Optimized
+@title TwocryptoView
 @author Curve.Fi
-@license Copyright (c) Curve.Fi, 2020-2023 - all rights reserved
+@license Copyright (c) Curve.Fi, 2025 - all rights reserved
 @notice This contract contains view-only external methods which can be
         gas-inefficient when called from smart contracts.
 """
