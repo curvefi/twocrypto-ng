@@ -1,18 +1,17 @@
-# pragma version 0.3.10
+# pragma version ~=0.4.0
 # pragma optimize gas
 # pragma evm-version paris
 """
-@title CurveTwocryptoFactory
+@title CurveTwocryptoFactor
 @author Curve.Fi
 @license Copyright (c) Curve.Fi, 2020-2023 - all rights reserved
 @notice Permissionless 2-coin cryptoswap pool deployer and registry
 """
 
+from ethereum.ercs import IERC20Detailed as IERC20
+
 interface TwocryptoPool:
     def balances(i: uint256) -> uint256: view
-
-interface ERC20:
-    def decimals() -> uint256: view
 
 
 event TwocryptoPoolDeployed:
@@ -93,7 +92,7 @@ pool_data: HashMap[address, PoolArray]
 pool_list: public(DynArray[address, 4294967296])   # master list of pools
 
 
-@external
+@deploy
 def __init__():
     self.deployer = tx.origin
 
@@ -178,8 +177,8 @@ def deploy_pool(
 
     decimals: uint256[N_COINS] = empty(uint256[N_COINS])
     precisions: uint256[N_COINS] = empty(uint256[N_COINS])
-    for i in range(N_COINS):
-        d: uint256 = ERC20(_coins[i]).decimals()
+    for i: uint256 in range(N_COINS):
+        d: uint256 = convert(staticcall IERC20(_coins[i]).decimals(), uint256)
         assert d < 19, "Max 18 decimals for coins"
         decimals[i] = d
         precisions[i] = 10 ** (18 - d)
@@ -430,7 +429,7 @@ def get_balances(_pool: address) -> uint256[N_COINS]:
     @param _pool Pool address
     @return uint256 list of balances
     """
-    return [TwocryptoPool(_pool).balances(0), TwocryptoPool(_pool).balances(1)]
+    return [staticcall TwocryptoPool(_pool).balances(0), staticcall TwocryptoPool(_pool).balances(1)]
 
 
 @view
