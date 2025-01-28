@@ -29,8 +29,8 @@ def test_commit_incorrect_fee_params(swap, factory_admin, params):
         p["mid_fee"] = params["mid_fee"]
         p["out_fee"] = 10**10 + 1  # <-- MAX_FEE
         _apply_new_params(swap, p)
-        logs = swap.get_logs()[0]
-        assert logs.args[1] == params["out_fee"]
+        log = swap.get_logs()[0]
+        assert log.out_fee == params["out_fee"]
 
 
 def test_commit_incorrect_fee_gamma(swap, factory_admin, params):
@@ -45,7 +45,7 @@ def test_commit_incorrect_fee_gamma(swap, factory_admin, params):
         _apply_new_params(swap, p)
 
     # it will not change fee_gamma as it is above 10**18
-    assert swap.get_logs()[0].args[2] == params["fee_gamma"]
+    assert swap.get_logs()[0].fee_gamma == params["fee_gamma"]
 
 
 def test_commit_rebalancing_params(swap, factory_admin, params):
@@ -60,9 +60,9 @@ def test_commit_rebalancing_params(swap, factory_admin, params):
             logs = swap.get_logs()[0]
 
             # values revert to contract's storage values:
-            assert logs.args[3] == params["allowed_extra_profit"]
-            assert logs.args[4] == params["adjustment_step"]
-            assert logs.args[5] == params["ma_time"]
+            assert logs.allowed_extra_profit == params["allowed_extra_profit"]
+            assert logs.adjustment_step == params["adjustment_step"]
+            assert logs.ma_time == params["ma_time"]
 
         with boa.reverts("MA time should be longer than 60/ln(2)"):
             p["ma_time"] = 86

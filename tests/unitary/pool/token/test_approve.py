@@ -59,10 +59,10 @@ def test_approval_event_fires(swap, alice, bob):
     logs = swap.get_logs()
 
     assert len(logs) == 1
-    assert logs[0].event_type.name == "Approval"
-    assert logs[0].topics[0].lower() == alice.lower()
-    assert logs[0].topics[1].lower() == bob.lower()
-    assert logs[0].args[0] == 10**19
+    assert type(logs[0]).__name__ == "Approval"
+    assert logs[0].owner.lower() == alice.lower()
+    assert logs[0].spender.lower() == bob.lower()
+    assert logs[0].value == 10**19
 
 
 def test_infinite_approval(swap, alice, bob):

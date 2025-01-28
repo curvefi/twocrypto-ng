@@ -12,7 +12,7 @@ from hypothesis.stateful import (
 )
 from hypothesis.strategies import integers
 
-from contracts.main import CurveTwocryptoFactory as factory
+from contracts.main import TwocryptoFactory as factory
 from contracts.mocks import ERC20Mock as ERC20
 from tests.utils.constants import UNIX_DAY
 from tests.utils.strategies import address, pool_from_preset
