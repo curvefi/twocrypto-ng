@@ -1,5 +1,4 @@
 # pragma version ~=0.4.0
-
 """
 @title TwocryptoMath
 @author Curve.Fi
