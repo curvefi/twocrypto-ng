@@ -6,71 +6,35 @@ env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
-  unit-tests:
+  tests:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        folder:
+          - "tests/unitary"
+          - "tests/stateful"
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.4.18"
+          enable-cache: true  # Enables built-in caching for uv
 
       - name: Cache Compiler Installations
         uses: actions/cache@v2
         with:
           path: |
             ~/.vvm
-          key: compiler-cache-${{ hashFiles('**/requirements.txt') }}
+          key: compiler-cache-${{ hashFiles('**/uv.lock') }}
 
-      - name: Setup Python 3.10.4
-        uses: actions/setup-python@v2
-        with:
-          python-version: 3.10.4
+      - name: Set up Python 3.12.6
+        run: uv python install 3.12.6
 
       - name: Install Requirements
-        run: pip install -r requirements.txt
+        run: uv sync --extra=dev
 
-      - name: Run Tests
-        run: python -m pytest tests/unitary -n auto --ignore=tests/unitary/pool/stateful --ignore=tests/unitary/math
-
-  stateful-tests:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-
-      - name: Cache Compiler Installations
-        uses: actions/cache@v2
-        with:
-          path: |
-            ~/.vvm
-          key: compiler-cache-${{ hashFiles('**/requirements.txt') }}
-
-      - name: Setup Python 3.10.4
-        uses: actions/setup-python@v2
-        with:
-          python-version: 3.10.4
-
-      - name: Install Requirements
-        run: pip install -r requirements.txt
-
-      - name: Run Stateful Tests
-        run: python -m pytest tests/unitary/pool/stateful -n auto --ignore=tests/unitary/pool/stateful/legacy
-
-  math-tests:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-
-      - name: Cache Compiler Installations
-        uses: actions/cache@v2
-        with:
-          path: |
-            ~/.vvm
-          key: compiler-cache-${{ hashFiles('**/requirements.txt') }}
-
-      - name: Setup Python 3.10.4
-        uses: actions/setup-python@v2
-        with:
-          python-version: 3.10.4
-
-      - name: Install Requirements
-        run: pip install -r requirements.txt
-
-      - name: Run Tests
-        run: python -m pytest tests/unitary/math -n auto
+      - name: Run tests in ${{ matrix.folder }}
+        run: uv run pytest ${{ matrix.folder }} -n auto
