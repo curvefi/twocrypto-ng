@@ -80,7 +80,7 @@ def test_get_y(math_unoptimized, math_optimized, A, D, xD, yD, gamma, j, _tmp):
     except Exception as e:
         event("hit unsafe for unoptimizied")
         if "unsafe value" in str(e):
-            assert "gamma" not in str(e)
+            assert "unsafe value for gamma" not in str(e)
             assert gamma > 2 * 10**16
             return
         else:  # Did not converge?

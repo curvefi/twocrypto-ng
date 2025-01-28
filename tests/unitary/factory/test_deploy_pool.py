@@ -8,7 +8,7 @@ from tests.unitary.pool.token.test_permit import ZERO_ADDRESS
 def empty_factory(deployer, fee_receiver, owner):
     with boa.env.prank(deployer):
         factory = boa.load(
-            "contracts/main/CurveTwocryptoFactory.vy",
+            "contracts/main/TwocryptoFactory.vy",
         )
 
     assert factory.admin() == ZERO_ADDRESS
@@ -31,7 +31,7 @@ def test_deployer_cannot_set_ownership_twice(empty_factory, deployer):
 def test_nondeployer_cannot_set_ownership(deployer):
     with boa.env.prank(deployer):
         factory = boa.load(
-            "contracts/main/CurveTwocryptoFactory.vy",
+            "contracts/main/TwocryptoFactory.vy",
         )
 
     with boa.env.prank(boa.env.generate_address()), boa.reverts():

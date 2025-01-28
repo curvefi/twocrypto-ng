@@ -25,16 +25,16 @@ def get_p(
 
     assert _D > 10**17 - 1 and _D < 10**15 * 10**18 + 1  # dev: unsafe D values
 
-    K0: uint256 = 4 * _xp[0] * _xp[1] / _D * 10**36 / _D
+    K0: uint256 = 4 * _xp[0] * _xp[1] // _D * 10**36 // _D
     GK0: uint256  = (
-        2 * K0 * K0 / 10**36 * K0 / 10**36
+        2 * K0 * K0 // 10**36 * K0 // 10**36
         + (_A_gamma[1] + 10**18)**2
-        - K0**2 / 10**36 * (2 * _A_gamma[1] + 3 * 10**18) / 10**18
+        - K0**2 // 10**36 * (2 * _A_gamma[1] + 3 * 10**18) // 10**18
     )
-    NNAG2: uint256 = _A_gamma[0] * _A_gamma[1]**2 / A_MULTIPLIER
-    denominator: uint256 = GK0 + NNAG2 * _xp[0] / _D * K0 / 10**36
-    numerator: uint256 = _xp[0] * ( GK0 + NNAG2 * _xp[1] / _D * K0 / 10**36 ) / _xp[1]
-    return numerator * 10**18 / denominator
+    NNAG2: uint256 = _A_gamma[0] * _A_gamma[1]**2 // A_MULTIPLIER
+    denominator: uint256 = GK0 + NNAG2 * _xp[0] // _D * K0 // 10**36
+    numerator: uint256 = _xp[0] * ( GK0 + NNAG2 * _xp[1] // _D * K0 // 10**36 ) // _xp[1]
+    return numerator * 10**18 // denominator
 """
     return boa.loads(get_price_impl)
 

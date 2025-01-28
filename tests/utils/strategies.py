@@ -10,10 +10,10 @@ from hypothesis import assume, note
 from hypothesis.strategies import composite, integers, just, sampled_from
 
 # compiling contracts
-from contracts.main import CurveCryptoMathOptimized2 as math_deployer
-from contracts.main import CurveCryptoViews2Optimized as view_deployer
-from contracts.main import CurveTwocryptoFactory as factory_deployer
-from contracts.main import CurveTwocryptoOptimized as amm_deployer
+from contracts.main import TwocryptoMath as math_deployer
+from contracts.main import TwocryptoView as view_deployer
+from contracts.main import TwocryptoFactory as factory_deployer
+from contracts.main import Twocrypto as amm_deployer
 from contracts.main import LiquidityGauge as gauge_deployer
 from tests.utils.constants import (
     MAX_A,
