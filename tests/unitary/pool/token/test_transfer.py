@@ -86,7 +86,6 @@ def test_transfer_event_fires(loaded_alice, bob, swap):
 
     assert len(logs) == 1
     assert type(logs[0]).__name__ == "Transfer"
-    print(logs[0])
     assert logs[0].value == amount
     assert logs[0].sender.lower() == loaded_alice.lower()
     assert logs[0].receiver.lower() == bob.lower()
