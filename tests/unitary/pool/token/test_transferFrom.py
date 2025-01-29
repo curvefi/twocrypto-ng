@@ -198,12 +198,10 @@ def test_transfer_event_fires(loaded_alice, bob, charlie, swap):
 
     assert len(logs) == 2
     assert type(logs[0]).__name__ == "Approval"
-    print(logs[0])
     assert logs[0].value == 0  # since everything got transferred
     assert logs[0].owner.lower() == loaded_alice.lower()
     assert logs[0].spender.lower() == bob.lower()
 
-    print(logs[1])
     assert type(logs[1]).__name__ == "Transfer"
     assert logs[1].value == amount
     assert logs[1].sender.lower() == loaded_alice.lower()
