@@ -4,6 +4,7 @@ on: [push]
 
 env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  RPC_ETHEREUM: ${{ secrets.RPC_ETHEREUM }}
 
 jobs:
   tests:
@@ -13,6 +14,7 @@ jobs:
         folder:
           - "tests/unitary"
           - "tests/stateful"
+#          - "tests/integration"
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
