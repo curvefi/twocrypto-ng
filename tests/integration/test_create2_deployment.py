@@ -9,10 +9,7 @@ from eth_utils import keccak
 def forked_chain():
     rpc_url = os.getenv("RPC_ETHEREUM")
     assert rpc_url is not None, "Provider url is not set, add RPC_ETHEREUM param to env"
-    env = boa.Env()
-    env.fork(rpc_url)
-    with boa.swap_env(env):
-        yield
+    boa.fork(rpc_url)
 
 
 @pytest.fixture(scope="module")
@@ -85,7 +82,7 @@ def deploy_contract(
 @pytest.fixture(scope="module")
 def math_contract(forked_chain, create2deployer):
     return deploy_contract(
-        boa.load_partial("contracts/main/CurveCryptoMathOptimized2.vy"),
+        boa.load_partial("contracts/main/TwocryptoMath.vy"),
         abi_encoded_args=b"",
         create2deployer=create2deployer,
         calculated_address="0x2005995a71243be9FB995DaB4742327dc76564Df",
@@ -107,7 +104,7 @@ def gauge_implementation(forked_chain, create2deployer):
 @pytest.fixture(scope="module")
 def amm_implementation(forked_chain, create2deployer):
     return deploy_contract(
-        boa.load_partial("contracts/main/CurveTwocryptoOptimized.vy"),
+        boa.load_partial("contracts/main/Twocrypto.vy"),
         abi_encoded_args=b"",
         create2deployer=create2deployer,
         calculated_address="0x04Fd6beC7D45EFA99a27D29FB94b55c56dD07223",
@@ -118,7 +115,7 @@ def amm_implementation(forked_chain, create2deployer):
 @pytest.fixture(scope="module")
 def views_contract(forked_chain, create2deployer):
     return deploy_contract(
-        boa.load_partial("contracts/main/CurveCryptoViews2Optimized.vy"),
+        boa.load_partial("contracts/main/TwocryptoView.vy"),
         abi_encoded_args=b"",
         create2deployer=create2deployer,
         calculated_address="0x07CdEBF81977E111B08C126DEFA07818d0045b80",
@@ -139,7 +136,7 @@ def factory(
     create2deployer,
 ):
     _factory = deploy_contract(
-        boa.load_partial("contracts/main/CurveTwocryptoFactory.vy"),
+        boa.load_partial("contracts/main/TwocryptoFactory.vy"),
         abi_encoded_args=b"",
         create2deployer=create2deployer,
         calculated_address="0x98EE851a00abeE0d95D08cF4CA2BdCE32aeaAF7F",
