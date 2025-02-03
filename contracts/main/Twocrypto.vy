@@ -904,7 +904,7 @@ def tweak_price(
     if old_virtual_price > 0:
 
         xcp: uint256 = isqrt(xp[0] * xp[1])
-        virtual_price = 10**18 * xcp // total_supply
+        virtual_price = 10**18 * xcp // total_supply + 1
 
         xcp_profit = unsafe_div(
             old_xcp_profit * virtual_price,
@@ -915,8 +915,7 @@ def tweak_price(
         #         ensure new virtual_price is not less than old virtual_price,
         #                                        else the pool suffers a loss.
         if self.future_A_gamma_time < block.timestamp:
-            # this usually reverts when withdrawing a very small amount of LP tokens
-            assert virtual_price > old_virtual_price # dev: virtual price decreased
+            assert virtual_price > old_virtual_price  # dev: virtual price decreased
 
     self.xcp_profit = xcp_profit
 
