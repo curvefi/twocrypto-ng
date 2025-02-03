@@ -230,10 +230,8 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
         # TODO check these two conditions
         max_withdraw = 0.3 if depositor_ratio > 0.25 else 1
 
-        min_withdraw = 0.1 if depositor_balance >= 1e13 else 0.01
-
         # we draw a percentage of the depositor balance to withdraw
-        percentage = data.draw(floats(min_value=min_withdraw, max_value=max_withdraw))
+        percentage = data.draw(floats(min_value=0.01, max_value=max_withdraw))
 
         note(
             "removing {:.2e} lp tokens ".format(amount_withdrawn := percentage * depositor_balance)
