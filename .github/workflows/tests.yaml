@@ -26,7 +26,7 @@ jobs:
           enable-cache: true  # Enables built-in caching for uv
 
       - name: Cache Compiler Installations
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
             ~/.vvm
