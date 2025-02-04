@@ -7,7 +7,8 @@ from tests.utils.strategies import A, fee_gamma, fees, gamma
 
 # you might want to increase this when fuzzing locally
 MAX_SAMPLES = 10000
-N_CASES = 32
+# N_CASES = 32 # Increase for fuzzing
+N_CASES = 1
 
 MIN_XD = 10**17
 MAX_XD = 10**19

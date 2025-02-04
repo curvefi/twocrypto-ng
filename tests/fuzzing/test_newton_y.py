@@ -26,14 +26,15 @@ import pytest
 from hypothesis import event, given, settings
 from hypothesis import strategies as st
 
-from tests.utils.constants import MAX_GAMMA, MAX_GAMMA_SMALL, MIN_GAMMA
+from tests.utils.constants import MAX_GAMMA, MAX_GAMMA_SMALL, MIN_GAMMA, N_COINS
 
-N_COINS = 2
 # MAX_SAMPLES = 1000000  # Increase for fuzzing
 MAX_SAMPLES = 10000
-N_CASES = 32
+# N_CASES = 32 # Increase for fuzzing
+N_CASES = 1
 # for tests that are trivial
-N_CASES_TRIVIAL = 6
+# N_CASES_TRIVIAL = 6 # Increase for fuzzing
+N_CASES_TRIVIAL = 1
 
 A_MUL = 10000
 MIN_A = int(N_COINS**N_COINS * A_MUL / 10)

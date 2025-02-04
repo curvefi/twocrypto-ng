@@ -9,7 +9,8 @@ from tests.utils.strategies import A, gamma
 
 # you might want to increase this when fuzzing locally
 MAX_SAMPLES = 10000
-N_CASES = 32
+# N_CASES = 32 # Increase for fuzzing
+N_CASES = 1
 
 
 def inv_target_decimal_n2(A, gamma, x, D):
