@@ -309,8 +309,8 @@ def _calc_withdraw_one_coin(
 ) -> (uint256, uint256):
 
     token_supply: uint256 = staticcall Curve(swap).totalSupply()
-    assert token_amount <= token_supply  # dev: token amount more than supply
-    assert i < N_COINS  # dev: coin out of range
+    assert token_amount <= token_supply, "token amount more than supply"
+    assert i < N_COINS, "coin out of range"
 
     math: Math = staticcall Curve(swap).MATH()
 
