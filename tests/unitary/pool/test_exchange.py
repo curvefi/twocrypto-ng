@@ -9,7 +9,6 @@ SETTINGS = {"max_examples": 100, "deadline": None}
 
 
 def test_exchange_reverts(user, views_contract, swap_with_deposit):
-
     with boa.reverts():
         views_contract.get_dy(0, 2, 10**6, swap_with_deposit)
 
@@ -40,7 +39,6 @@ def test_exchange_all(
     i,
     j,
 ):
-
     if i == j:
         return
 
@@ -86,7 +84,6 @@ def test_exchange_received_success(
     i,
     j,
 ):
-
     if i == j:
         return
 
@@ -102,9 +99,7 @@ def test_exchange_received_success(
 
     with boa.env.prank(user):
         coins[i].transfer(swap_with_deposit, amount)
-        out = swap_with_deposit.exchange_received(
-            i, j, amount, int(0.999 * calculated), user
-        )
+        out = swap_with_deposit.exchange_received(i, j, amount, int(0.999 * calculated), user)
 
     measured_i -= coins[i].balanceOf(user)
     measured_j = coins[j].balanceOf(user) - measured_j
@@ -135,7 +130,6 @@ def test_exchange_received_revert_on_no_transfer(
     i,
     j,
 ):
-
     if i == j:
         return
 
@@ -145,6 +139,4 @@ def test_exchange_received_revert_on_no_transfer(
     calculated = views_contract.get_dy(i, j, amount, swap_with_deposit)
 
     with boa.env.prank(user), boa.reverts(dev="user didn't give us coins"):
-        swap_with_deposit.exchange_received(
-            i, j, amount, int(0.999 * calculated), user
-        )
+        swap_with_deposit.exchange_received(i, j, amount, int(0.999 * calculated), user)

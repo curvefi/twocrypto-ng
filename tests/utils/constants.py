@@ -4,6 +4,7 @@ Constants often used for testing.
 These cannot be used as fixtures because they are often
 used as bounds for fuzzing (outside of the test functions).
 """
+
 # TODO use values from actual contracts once this:
 # https://github.com/vyperlang/titanoboa/issues/196
 # is implmented.
@@ -21,3 +22,5 @@ UNIX_DAY = 86400
 
 MIN_FEE = 5 * 10**5
 MAX_FEE = 10 * 10**9
+
+MIN_RAMP_TIME = 86400

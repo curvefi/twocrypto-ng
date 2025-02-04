@@ -27,10 +27,7 @@ def get_y_n2_dec(ANN, gamma, x, D, i):
 
     a = Decimal(16) * x[m] ** 3 / D**3
     b = 4 * A * gamma**2 * x[m] - (4 * (3 + 2 * gamma) * x[m] ** 2) / D
-    c = (
-        D * (3 + 4 * gamma + (1 - 4 * A) * gamma**2) * x[m]
-        + 4 * A * gamma**2 * x[m] ** 2
-    )
+    c = D * (3 + 4 * gamma + (1 - 4 * A) * gamma**2) * x[m] + 4 * A * gamma**2 * x[m] ** 2
     d = -(Decimal(1) / 4) * D**3 * (1 + gamma) ** 2
 
     delta0 = b**2 - 3 * a * c
@@ -104,22 +101,18 @@ def newton_D(A, gamma, x, D0):
         _g1k0 = abs(gamma + 10**18 - K0)
 
         # D / (A * N**N) * _g1k0**2 / gamma**2
-        mul1 = (
-            10**18 * D // gamma * _g1k0 // gamma * _g1k0 * A_MULTIPLIER // A
-        )
+        mul1 = 10**18 * D // gamma * _g1k0 // gamma * _g1k0 * A_MULTIPLIER // A
 
         # 2*N*K0 / _g1k0
         mul2 = (2 * 10**18) * N * K0 // _g1k0
 
-        neg_fprime = (
-            (S + S * mul2 // 10**18) + mul1 * N // K0 - mul2 * D // 10**18
-        )
+        neg_fprime = (S + S * mul2 // 10**18) + mul1 * N // K0 - mul2 * D // 10**18
         assert neg_fprime > 0  # Python only: -f' > 0
 
         # D -= f / fprime
-        D = (D * neg_fprime + D * S - D**2) // neg_fprime - D * (
-            mul1 // neg_fprime
-        ) // 10**18 * (10**18 - K0) // K0
+        D = (D * neg_fprime + D * S - D**2) // neg_fprime - D * (mul1 // neg_fprime) // 10**18 * (
+            10**18 - K0
+        ) // K0
 
         if D < 0:
             D = -D // 2
@@ -154,9 +147,7 @@ def newton_y(A, gamma, x, D, i):
         _g1k0 = abs(gamma + 10**18 - K0)
 
         # D / (A * N**N) * _g1k0**2 / gamma**2
-        mul1 = (
-            10**18 * D // gamma * _g1k0 // gamma * _g1k0 * A_MULTIPLIER // A
-        )
+        mul1 = 10**18 * D // gamma * _g1k0 // gamma * _g1k0 * A_MULTIPLIER // A
 
         # 2*K0 / _g1k0
         mul2 = 10**18 + (2 * 10**18) * K0 // _g1k0
@@ -166,9 +157,7 @@ def newton_y(A, gamma, x, D, i):
         assert fprime > 0  # Python only: f' > 0
 
         # y -= f / f_prime;  y = (y * fprime - f) / fprime
-        y = (
-            yfprime + 10**18 * D - 10**18 * S
-        ) // fprime + mul1 // fprime * (10**18 - K0) // K0
+        y = (yfprime + 10**18 * D - 10**18 * S) // fprime + mul1 // fprime * (10**18 - K0) // K0
 
         if j > 100:  # Just logging when doesn't converge
             print(j, y, D, x)
@@ -234,9 +223,7 @@ class Curve:
             - (K0 * K0 // 10**36 * (2 * gamma + 3 * 10**18) // 10**18)
         )
         NNAG2 = A * gamma**2 // A_MULTIPLIER
-        numerator = (
-            xp[0] * (gK0 + NNAG2 * xp[1] // D * K0 // 10**36) // xp[1]
-        )
+        numerator = xp[0] * (gK0 + NNAG2 * xp[1] // D * K0 // 10**36) // xp[1]
         denominator = gK0 + NNAG2 * xp[0] // D * K0 // 10**36
 
         return numerator * 10**18 // denominator
@@ -264,9 +251,7 @@ class Trader:
         self.xcp_profit_real = 10**18
         self.xcp = self.get_xcp()
         self.adjustment_step = int(10**18 * adjustment_step)
-        self.fee_gamma = (
-            fee_gamma or gamma
-        )  # why can gamma be used as fee_gamma?
+        self.fee_gamma = fee_gamma or gamma  # why can gamma be used as fee_gamma?
         self.ma_time = ma_time
 
     def fee(self):
@@ -344,16 +329,11 @@ class Trader:
             alpha = self._ma_multiplier(t)
             last_price = min(price_vector[1], 2 * self.curve.p[1])
             self.price_oracle[1] = (
-                int(
-                    last_price * (10**18 - alpha)
-                    + self.price_oracle[1] * alpha
-                )
-                // 10**18
+                int(last_price * (10**18 - alpha) + self.price_oracle[1] * alpha) // 10**18
             )
             self.t = t
 
     def tweak_price(self, t):
-
         self.ma_recorder(t, self.last_price)
         self.last_price[1] = self.curve.get_p() * self.curve.p[1] // 10**18
 
@@ -370,9 +350,7 @@ class Trader:
             # Already close to the target price
             return norm
 
-        price_scale_adjustment = (
-            adjustment_step * (self.price_oracle[1] - self.curve.p[1]) // norm
-        )
+        price_scale_adjustment = adjustment_step * (self.price_oracle[1] - self.curve.p[1]) // norm
         p_new = [10**18, self.curve.p[1] + price_scale_adjustment]
 
         old_p = self.curve.p[:]

@@ -16,14 +16,11 @@ def test_cbrt_expected_output(cbrt_1e18_base, math_optimized):
         assert cbrt_1e18_base(val) == correct_cbrts[ix]
 
 
-@given(
-    val=strategy("uint256", min_value=0, max_value=MAX_CBRT_PRECISE_VAL - 1)
-)
+@given(val=strategy("uint256", min_value=0, max_value=MAX_CBRT_PRECISE_VAL - 1))
 @settings(**SETTINGS)
 @example(0)
 @example(1)
 def test_cbrt_exact(math_optimized, cbrt_1e18_base, val):
-
     cbrt_python = cbrt_1e18_base(val)
     cbrt_vyper = math_optimized.internal._cbrt(val)
 
@@ -34,14 +31,11 @@ def test_cbrt_exact(math_optimized, cbrt_1e18_base, val):
         pytest.warn(f"cbrt_python != cbrt_vyper for val = {val}")
 
 
-@given(
-    val=strategy("uint256", min_value=MAX_CBRT_PRECISE_VAL, max_value=MAX_VAL)
-)
+@given(val=strategy("uint256", min_value=MAX_CBRT_PRECISE_VAL, max_value=MAX_VAL))
 @settings(**SETTINGS)
 @example(MAX_VAL)
 @example(MAX_CBRT_PRECISE_VAL)
 def test_cbrt_precision_loss_gte_limit(cbrt_1e18_base, math_optimized, val):
-
     cbrt_vyper = math_optimized.internal._cbrt(val)
     cbrt_python = cbrt_1e18_base(val)
     assert cbrt_vyper == pytest.approx(cbrt_python)

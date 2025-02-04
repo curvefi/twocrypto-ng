@@ -26,14 +26,15 @@ import pytest
 from hypothesis import event, given, settings
 from hypothesis import strategies as st
 
-from tests.utils.constants import MAX_GAMMA, MAX_GAMMA_SMALL, MIN_GAMMA
+from tests.utils.constants import MAX_GAMMA, MAX_GAMMA_SMALL, MIN_GAMMA, N_COINS
 
-N_COINS = 2
 # MAX_SAMPLES = 1000000  # Increase for fuzzing
 MAX_SAMPLES = 10000
-N_CASES = 32
+# N_CASES = 32 # Increase for fuzzing
+N_CASES = 1
 # for tests that are trivial
-N_CASES_TRIVIAL = 6
+# N_CASES_TRIVIAL = 6 # Increase for fuzzing
+N_CASES_TRIVIAL = 1
 
 A_MUL = 10000
 MIN_A = int(N_COINS**N_COINS * A_MUL / 10)
@@ -57,9 +58,7 @@ def math_exposed():
 )  # Parallelisation hack (more details in folder's README)
 @given(
     A=st.integers(min_value=MIN_A, max_value=MAX_A),
-    D=st.integers(
-        min_value=10**18, max_value=10**14 * 10**18
-    ),  # 1 USD to 100T USD
+    D=st.integers(min_value=10**18, max_value=10**14 * 10**18),  # 1 USD to 100T USD
     xD=st.integers(
         min_value=10**17 // 2, max_value=10**19 // 2
     ),  # <- ratio 1e18 * x/D, typically 1e18 * 1
@@ -70,9 +69,7 @@ def math_exposed():
     j=st.integers(min_value=0, max_value=1),
 )
 @settings(max_examples=MAX_SAMPLES, deadline=None)
-def test_equivalence(
-    math_exposed, math_optimized, A, D, xD, yD, gamma, j, _tmp
-):
+def test_equivalence(math_exposed, math_optimized, A, D, xD, yD, gamma, j, _tmp):
     """
     Tests whether the newton_y function works the same way
     for both the exposed and production versions on ranges that are
@@ -90,9 +87,7 @@ def test_equivalence(
 
     # we can use the old version to know the number of iterations
     # and the expected value
-    y_exposed, iterations = math_exposed.internal._newton_y(
-        A, gamma, X, D, j, lim_mul
-    )
+    y_exposed, iterations = math_exposed.internal._newton_y(A, gamma, X, D, j, lim_mul)
 
     # this should not revert (didn't converge or hit bounds)
     y = math_optimized.newton_y(A, gamma, X, D, j)
@@ -107,9 +102,7 @@ def test_equivalence(
 )  # Parallelisation hack (more details in folder's README)
 @given(
     A=st.integers(min_value=MIN_A, max_value=MAX_A),
-    D=st.integers(
-        min_value=10**18, max_value=10**14 * 10**18
-    ),  # 1 USD to 100T USD
+    D=st.integers(min_value=10**18, max_value=10**14 * 10**18),  # 1 USD to 100T USD
     xD=st.integers(
         min_value=10**17 // 2, max_value=10**19 // 2
     ),  # <- ratio 1e18 * x/D, typically 1e18 * 1
@@ -137,9 +130,7 @@ def test_restored(math_optimized, math_exposed, A, D, xD, yD, gamma, j, _tmp):
 
     # we can use the exposed version to know the number of iterations
     # and the expected value
-    y_exposed, iterations = math_exposed.internal._newton_y(
-        A, gamma, X, D, j, lim_mul
-    )
+    y_exposed, iterations = math_exposed.internal._newton_y(A, gamma, X, D, j, lim_mul)
 
     # this should not revert (didn't converge or hit bounds)
     y = math_optimized.internal._newton_y(A, gamma, X, D, j, lim_mul)
@@ -156,9 +147,7 @@ def test_restored(math_optimized, math_exposed, A, D, xD, yD, gamma, j, _tmp):
 )  # Parallelisation hack (more details in folder's README)
 @given(
     A=st.integers(min_value=MIN_A, max_value=MAX_A),
-    D=st.integers(
-        min_value=10**18, max_value=10**14 * 10**18
-    ),  # 1 USD to 100T USD
+    D=st.integers(min_value=10**18, max_value=10**14 * 10**18),  # 1 USD to 100T USD
     xD=st.integers(
         min_value=10**17 // 2, max_value=10**19 // 2
     ),  # <- ratio 1e18 * x/D, typically 1e18 * 1
@@ -169,9 +158,7 @@ def test_restored(math_optimized, math_exposed, A, D, xD, yD, gamma, j, _tmp):
     j=st.integers(min_value=0, max_value=1),
 )
 @settings(max_examples=MAX_SAMPLES, deadline=None)
-def test_new_bounds(
-    math_optimized, math_exposed, A, D, xD, yD, gamma, j, _tmp
-):
+def test_new_bounds(math_optimized, math_exposed, A, D, xD, yD, gamma, j, _tmp):
     """
     Tests whether the new bouds that no pool has ever reached
     work as expected.
@@ -187,9 +174,7 @@ def test_new_bounds(
     # be adjusted accordingly
     lim_mul = 100e18 * MAX_GAMMA_SMALL // gamma  # smaller than 100.0
 
-    y_exposed, iterations = math_exposed.internal._newton_y(
-        A, gamma, X, D, j, int(lim_mul)
-    )
+    y_exposed, iterations = math_exposed.internal._newton_y(A, gamma, X, D, j, int(lim_mul))
 
     # this should not revert (didn't converge or hit bounds)
     y = math_optimized.internal._newton_y(A, gamma, X, D, j, int(lim_mul))

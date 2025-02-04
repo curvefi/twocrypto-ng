@@ -14,7 +14,6 @@ from vyper.utils import SizeLimits
 )
 @settings(max_examples=10000, deadline=None)
 def test_log2(math_optimized, x):
-
     if x == 0:
         assert math_optimized.internal._snekmate_log_2(x, False) == 0
         return
@@ -24,5 +23,6 @@ def test_log2(math_optimized, x):
 
     try:
         assert log2_ideal == log2_implementation
-    except:  # noqa: E722; there will be off-by-one cases
+    except:  # noqa: E722
+        # there will be off-by-one cases
         assert abs(log2_ideal - log2_implementation) == 1

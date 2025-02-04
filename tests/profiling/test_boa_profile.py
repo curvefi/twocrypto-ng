@@ -17,24 +17,18 @@ def _choose_indices():
 
 @pytest.mark.gas_profile
 def test_profile_amms(pools, tokens):
-
     user = boa.env.generate_address()
 
     for pool in pools:
-
         for coin in tokens:
             mint_for_testing(coin, user, 10**50)
             coin.approve(pool, 2**256 - 1, sender=user)
 
         with boa.env.prank(user):
-
             for k in range(NUM_RUNS):
-
                 # proportional deposit:
                 balances = [pool.balances(i) for i in range(N_COINS)]
-                amount_first_coin = random.uniform(0, 0.05) * 10 ** (
-                    18 + random.randint(1, 3)
-                )
+                amount_first_coin = random.uniform(0, 0.05) * 10 ** (18 + random.randint(1, 3))
                 amounts = [
                     int(amount_first_coin),
                     int(amount_first_coin * 1e18 // pool.price_scale()),

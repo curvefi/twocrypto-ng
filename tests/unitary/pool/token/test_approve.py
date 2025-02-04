@@ -10,7 +10,6 @@ def test_initial_approval_is_zero(swap, alice, users, idx):
 
 
 def test_approve(swap, alice, bob):
-
     with boa.env.prank(alice):
         swap.approve(bob, 10**19)
 
@@ -18,7 +17,6 @@ def test_approve(swap, alice, bob):
 
 
 def test_modify_approve_zero_nonzero(swap, alice, bob):
-
     with boa.env.prank(alice):
         swap.approve(bob, 10**19)
         swap.approve(bob, 0)
@@ -28,7 +26,6 @@ def test_modify_approve_zero_nonzero(swap, alice, bob):
 
 
 def test_revoke_approve(swap, alice, bob):
-
     with boa.env.prank(alice):
         swap.approve(bob, 10**19)
         swap.approve(bob, 0)
@@ -37,7 +34,6 @@ def test_revoke_approve(swap, alice, bob):
 
 
 def test_approve_self(swap, alice):
-
     with boa.env.prank(alice):
         swap.approve(alice, 10**19)
 
@@ -57,17 +53,16 @@ def test_returns_true(swap, alice, bob):
 
 
 def test_approval_event_fires(swap, alice, bob):
-
     with boa.env.prank(alice):
         swap.approve(bob, 10**19)
 
     logs = swap.get_logs()
 
     assert len(logs) == 1
-    assert logs[0].event_type.name == "Approval"
-    assert logs[0].topics[0].lower() == alice.lower()
-    assert logs[0].topics[1].lower() == bob.lower()
-    assert logs[0].args[0] == 10**19
+    assert type(logs[0]).__name__ == "Approval"
+    assert logs[0].owner.lower() == alice.lower()
+    assert logs[0].spender.lower() == bob.lower()
+    assert logs[0].value == 10**19
 
 
 def test_infinite_approval(swap, alice, bob):

@@ -128,12 +128,8 @@ class OnlyBalancedLiquidityStateful(UpOnlyLiquidityStateful):
         )
         note(
             "Removing {:.2e} from the pool ".format(amount)
-            + "that is {:.1%} of address balance".format(
-                amount / depositor_balance
-            )
-            + " and {:.1%} of pool liquidity".format(
-                amount / self.pool.totalSupply()
-            )
+            + "that is {:.1%} of address balance".format(amount / depositor_balance)
+            + " and {:.1%} of pool liquidity".format(amount / self.pool.totalSupply())
         )
 
         self.remove_liquidity(amount, depositor)
@@ -163,9 +159,7 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
         amount = data.draw(
             integers(
                 min_value=int(1e18),
-                max_value=max(
-                    self.coins[0].balanceOf(user) * jump_limit, int(1e18)
-                ),
+                max_value=max(self.coins[0].balanceOf(user) * jump_limit, int(1e18)),
             ),
             label="amount",
         )
@@ -239,17 +233,11 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
         min_withdraw = 0.1 if depositor_balance >= 1e13 else 0.01
 
         # we draw a percentage of the depositor balance to withdraw
-        percentage = data.draw(
-            floats(min_value=min_withdraw, max_value=max_withdraw)
-        )
+        percentage = data.draw(floats(min_value=min_withdraw, max_value=max_withdraw))
 
         note(
-            "removing {:.2e} lp tokens ".format(
-                amount_withdrawn := percentage * depositor_balance
-            )
-            + "which is {:.4%} of pool liquidity ".format(
-                amount_withdrawn / lp_supply
-            )
+            "removing {:.2e} lp tokens ".format(amount_withdrawn := percentage * depositor_balance)
+            + "which is {:.4%} of pool liquidity ".format(amount_withdrawn / lp_supply)
             + "(only coin {}) ".format(coin_idx)
             + "and {:.1%} of address balance".format(percentage)
         )
@@ -280,9 +268,7 @@ class RampingStateful(ImbalancedLiquidityStateful):
 
     # create the steps for the ramp
     # [0.2, 0.3 ... 0.9, 1, 2, 3 ... 10]
-    change_steps = [x / 10 if x < 10 else x for x in range(2, 11)] + list(
-        range(2, 11)
-    )
+    change_steps = [x / 10 if x < 10 else x for x in range(2, 11)] + list(range(2, 11))
 
     # we can only ramp A and gamma at most 10x
     # lower/higher than their starting value
@@ -307,9 +293,7 @@ class RampingStateful(ImbalancedLiquidityStateful):
         """
         note("[RAMPING]")
         new_A = self.pool.A() * A_change
-        new_A = int(
-            max(MIN_A, min(MAX_A, new_A))
-        )  # clamp new_A to stay in [MIN_A, MAX_A]
+        new_A = int(max(MIN_A, min(MAX_A, new_A)))  # clamp new_A to stay in [MIN_A, MAX_A]
 
         new_gamma = self.pool.gamma() * gamma_change
         new_gamma = int(
@@ -326,9 +310,7 @@ class RampingStateful(ImbalancedLiquidityStateful):
             sender=self.admin,
         )
 
-        note(
-            "ramping A and gamma to {:.2e} and {:.2e}".format(new_A, new_gamma)
-        )
+        note("ramping A and gamma to {:.2e} and {:.2e}".format(new_A, new_gamma))
 
     def up_only_profit(self):
         # we disable this invariant because ramping can lead to losses
