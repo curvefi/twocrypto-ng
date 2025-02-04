@@ -147,7 +147,7 @@ def _newton_y(ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: 
     y: uint256 = D**2 // (x_j * N_COINS**2)
     K0_i: uint256 = (10**18 * N_COINS) * x_j // D
 
-    assert (K0_i >= unsafe_div(10**36, lim_mul)) and (K0_i <= lim_mul)  # dev: unsafe values x[i]
+    assert (K0_i >= unsafe_div(10**36, lim_mul)) and (K0_i <= lim_mul), "unsafe values x[i]"
 
     convergence_limit: uint256 = max(max(x_j // 10**14, D // 10**14), 100)
 
@@ -206,16 +206,16 @@ def _newton_y(ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: 
 def newton_y(ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: uint256) -> uint256:
 
     # Safety checks
-    assert ANN > MIN_A - 1 and ANN < MAX_A + 1  # dev: unsafe values A
-    assert gamma > MIN_GAMMA - 1 and gamma < MAX_GAMMA + 1  # dev: unsafe values gamma
-    assert D > 10**17 - 1 and D < 10**15 * 10**18 + 1 # dev: unsafe values D
+    assert ANN > MIN_A - 1 and ANN < MAX_A + 1, "unsafe values A"
+    assert gamma > MIN_GAMMA - 1 and gamma < MAX_GAMMA + 1, "unsafe values gamma"
+    assert D > 10**17 - 1 and D < 10**15 * 10**18 + 1, "unsafe values D"
     lim_mul: uint256 = 100 * 10**18  # 100.0
     if gamma > MAX_GAMMA_SMALL:
         lim_mul = unsafe_div(unsafe_mul(lim_mul, MAX_GAMMA_SMALL), gamma)  # smaller than 100.0
 
     y: uint256 = self._newton_y(ANN, gamma, x, D, i, lim_mul)
     frac: uint256 = y * 10**18 // D
-    assert (frac >= unsafe_div(10**36 // N_COINS, lim_mul)) and (frac <= unsafe_div(lim_mul, N_COINS))  # dev: unsafe value for y
+    assert (frac >= unsafe_div(10**36 // N_COINS, lim_mul)) and (frac <= unsafe_div(lim_mul, N_COINS)), "unsafe value for y"
 
     return y
 
@@ -231,9 +231,9 @@ def get_y(
 ) -> uint256[2]:
 
     # Safety checks
-    assert _ANN > MIN_A - 1 and _ANN < MAX_A + 1  # dev: unsafe values A
-    assert _gamma > MIN_GAMMA - 1 and _gamma < MAX_GAMMA + 1  # dev: unsafe values gamma
-    assert _D > 10**17 - 1 and _D < 10**15 * 10**18 + 1 # dev: unsafe values D
+    assert _ANN > MIN_A - 1 and _ANN < MAX_A + 1, "unsafe values A"
+    assert _gamma > MIN_GAMMA - 1 and _gamma < MAX_GAMMA + 1, "unsafe values gamma"
+    assert _D > 10**17 - 1 and _D < 10**15 * 10**18 + 1, "unsafe values D"
     lim_mul: uint256 = 100 * 10**18  # 100.0
     if _gamma > MAX_GAMMA_SMALL:
         lim_mul = unsafe_div(unsafe_mul(lim_mul, MAX_GAMMA_SMALL), _gamma)  # smaller than 100.0
@@ -250,7 +250,7 @@ def get_y(
 
     # K0_i: int256 = (10**18 * N_COINS) * x_j / D
     K0_i: int256 = unsafe_div(10**18 * convert(N_COINS, int256) * x_j, D)
-    assert (K0_i >= unsafe_div(10**36, lim_mul_signed)) and (K0_i <= lim_mul_signed)  # dev: unsafe values x[i]
+    assert (K0_i >= unsafe_div(10**36, lim_mul_signed)) and (K0_i <= lim_mul_signed), "unsafe values x[i]"
 
     ann_gamma2: int256 = ANN * gamma2
 
@@ -362,7 +362,7 @@ def get_y(
     y_out: uint256[2] = [convert(unsafe_div(unsafe_div(unsafe_mul(unsafe_div(D**2, x_j), root), 4), 10**18), uint256), convert(root, uint256)]
 
     frac: uint256 = unsafe_div(y_out[0] * 10**18, _D)
-    assert (frac >= unsafe_div(10**36 // N_COINS, lim_mul)) and (frac <= unsafe_div(lim_mul, N_COINS))  # dev: unsafe value for y
+    assert (frac >= unsafe_div(10**36 // N_COINS, lim_mul)) and (frac <= unsafe_div(lim_mul, N_COINS)), "unsafe value for y"
 
     return y_out
 
@@ -377,16 +377,16 @@ def newton_D(ANN: uint256, gamma: uint256, x_unsorted: uint256[N_COINS], K0_prev
     """
 
     # Safety checks
-    assert ANN > MIN_A - 1 and ANN < MAX_A + 1  # dev: unsafe values A
-    assert gamma > MIN_GAMMA - 1 and gamma < MAX_GAMMA + 1  # dev: unsafe values gamma
+    assert ANN > MIN_A - 1 and ANN < MAX_A + 1, "unsafe values A"
+    assert gamma > MIN_GAMMA - 1 and gamma < MAX_GAMMA + 1, "unsafe values gamma"
 
     # Initial value of invariant D is that for constant-product invariant
     x: uint256[N_COINS] = x_unsorted
     if x[0] < x[1]:
         x = [x_unsorted[1], x_unsorted[0]]
 
-    assert x[0] > 10**9 - 1 and x[0] < 10**15 * 10**18 + 1  # dev: unsafe values x[0]
-    assert unsafe_div(x[1] * 10**18, x[0]) > 10**14 - 1  # dev: unsafe values x[i] (input)
+    assert x[0] > 10**9 - 1 and x[0] < 10**15 * 10**18 + 1, "unsafe values x[0]"
+    assert unsafe_div(x[1] * 10**18, x[0]) > 10**14 - 1, "unsafe values x[i] (input)"
 
     S: uint256 = unsafe_add(x[0], x[1])  # can unsafe add here because we checked x[0] bounds
 
@@ -404,7 +404,7 @@ def newton_D(ANN: uint256, gamma: uint256, x_unsorted: uint256[N_COINS], K0_prev
 
     for i: uint256 in range(255):
         D_prev: uint256 = D
-        assert D > 0
+        assert D > 0, "D==0"
         # Unsafe division by D and D_prev is now safe
 
         # K0: uint256 = 10**18
@@ -450,7 +450,7 @@ def newton_D(ANN: uint256, gamma: uint256, x_unsorted: uint256[N_COINS], K0_prev
 
             for _x: uint256 in x:
                 frac: uint256 = _x * 10**18 // D
-                assert (frac > 10**16 // N_COINS - 1) and (frac < 10**20 // N_COINS + 1)  # dev: unsafe values x[i]
+                assert (frac > 10**16 // N_COINS - 1) and (frac < 10**20 // N_COINS + 1), "unsafe values x[i]"
             return D
 
     raise "Did not converge"
@@ -469,7 +469,7 @@ def get_p(
     @param _A_gamma Amplification coefficient and gamma.
     """
 
-    assert _D > 10**17 - 1 and _D < 10**15 * 10**18 + 1  # dev: unsafe D values
+    assert _D > 10**17 - 1 and _D < 10**15 * 10**18 + 1, "unsafe D values"
 
     # K0 = P * N**N / D**N.
     # K0 is dimensionless and has 10**36 precision:
