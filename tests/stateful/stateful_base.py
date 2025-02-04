@@ -253,11 +253,9 @@ class StatefulBase(RuleBasedStateMachine):
 
             # we make sure that the revert was caused by the pool
             # being too imbalanced
-            if e.stack_trace.last_frame.dev_reason.reason_str not in (
-                "unsafe value for y",
-                "unsafe values x[i]",
-            ):
-                raise ValueError(f"Reverted for the wrong reason: {e}")
+            error = str(e.stack_trace[0])
+            if not any(msg in error for msg in ("unsafe value for y", "unsafe values x[i]")):
+                raise ValueError(f"Reverted for the wrong reason: {error}")
 
             # we use the log10 of the equilibrium to obtain an easy interval
             # to work with. If the pool is balanced the equilibrium is 1 and

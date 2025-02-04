@@ -70,5 +70,5 @@ def test_commit_rebalancing_params(swap, factory_admin, params):
 
 
 def test_revert_unauthorised_commit(swap, user, params):
-    with boa.env.prank(user), boa.reverts(dev="only owner"):
+    with boa.env.prank(user), boa.reverts("only owner"):
         _apply_new_params(swap, params)
