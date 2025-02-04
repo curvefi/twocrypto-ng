@@ -1,7 +1,7 @@
 import boa
 import pytest
 
-from tests.unitary.pool.token.test_permit import ZERO_ADDRESS
+ZERO_ADDRESS = boa.eval("empty(address)")
 
 
 @pytest.fixture(scope="module")
