@@ -42,10 +42,10 @@ def test_get_y_revert(math_contract):
     D = 224824250915890636214130540882688
     i = 0
 
-    with boa.reverts(dev="unsafe values A"):
+    with boa.reverts("unsafe values A"):
         math_contract.newton_y(a, gamma, x, D, i)
 
-    with boa.reverts(dev="unsafe values A"):
+    with boa.reverts("unsafe values A"):
         math_contract.get_y(a, gamma, x, D, i)
 
 

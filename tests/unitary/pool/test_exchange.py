@@ -138,5 +138,5 @@ def test_exchange_received_revert_on_no_transfer(
 
     calculated = views_contract.get_dy(i, j, amount, swap_with_deposit)
 
-    with boa.env.prank(user), boa.reverts(dev="user didn't give us coins"):
+    with boa.env.prank(user), boa.reverts("user didn't give us coins"):
         swap_with_deposit.exchange_received(i, j, amount, int(0.999 * calculated), user)

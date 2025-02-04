@@ -98,7 +98,7 @@ def test_revert_deploy_without_implementations(
     deployer,
 ):
     with boa.env.prank(deployer):
-        with boa.reverts("Pool implementation not set"):
+        with boa.reverts("pool implementation not set"):
             empty_factory.deploy_pool(
                 "Test",  # _name: String[64]
                 "Test",  # _symbol: String[32]
