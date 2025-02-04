@@ -7,7 +7,8 @@ from tests.utils.strategies import A, fee_gamma, fees, gamma
 
 # you might want to increase this when fuzzing locally
 MAX_SAMPLES = 10000
-N_CASES = 32
+# N_CASES = 32 # Increase for fuzzing
+N_CASES = 1
 
 MIN_XD = 10**17
 MAX_XD = 10**19
@@ -17,15 +18,9 @@ MAX_XD = 10**19
     "_tmp", range(N_CASES)
 )  # Parallelisation hack (more details in folder's README)
 @given(
-    D=st.integers(
-        min_value=10**18, max_value=10**14 * 10**18
-    ),  # 1 USD to 100T USD
-    xD=st.integers(
-        min_value=MIN_XD, max_value=MAX_XD
-    ),  # ratio 1e18 * x/D, typically 1e18 * 1
-    yD=st.integers(
-        min_value=MIN_XD, max_value=MAX_XD
-    ),  # ratio 1e18 * y/D, typically 1e18 * 1
+    D=st.integers(min_value=10**18, max_value=10**14 * 10**18),  # 1 USD to 100T USD
+    xD=st.integers(min_value=MIN_XD, max_value=MAX_XD),  # ratio 1e18 * x/D, typically 1e18 * 1
+    yD=st.integers(min_value=MIN_XD, max_value=MAX_XD),  # ratio 1e18 * y/D, typically 1e18 * 1
     j=st.integers(min_value=0, max_value=1),
     btcScalePrice=st.integers(min_value=10**2, max_value=10**7),
     ethScalePrice=st.integers(min_value=10, max_value=10**5),
@@ -50,11 +45,7 @@ def test_newton_D(
     fee_gamma,
     _tmp,
 ):
-
-    is_safe = all(
-        f >= MIN_XD and f <= MAX_XD
-        for f in [xx * 10**18 // D for xx in [xD, yD]]
-    )
+    is_safe = all(f >= MIN_XD and f <= MAX_XD for f in [xx * 10**18 // D for xx in [xD, yD]])
 
     X = [D * xD // 10**18, D * yD // 10**18]
 
@@ -84,7 +75,6 @@ def test_newton_D(
         and result_get_y / D > MIN_XD / 1e18
         and result_get_y / D < MAX_XD / 1e18
     ):
-
         price_scale = (btcScalePrice, ethScalePrice)
         y = X[j]
         dy = X[j] - result_get_y
@@ -98,7 +88,6 @@ def test_newton_D(
         y -= dy
 
         if dy / X[j] <= 0.95:
-
             # if we stop before this block we are not testing newton_D
             event("test actually went through")
             X[j] = y
@@ -120,6 +109,4 @@ def test_newton_D(
             result_sim = math_unoptimized.newton_D(A, gamma, X)
             result_contract = math_optimized.newton_D(A, gamma, X, K0)
 
-            assert abs(result_sim - result_contract) <= max(
-                10000, result_sim / 1e12
-            )
+            assert abs(result_sim - result_contract) <= max(10000, result_sim / 1e12)

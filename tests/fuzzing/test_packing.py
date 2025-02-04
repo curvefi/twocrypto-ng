@@ -15,7 +15,6 @@ def test_pack_unpack_three_integers(swap, factory, val):
 @given(val=strategy("uint256[2]", max_value=2**128 - 1))
 @settings(max_examples=10000, deadline=None)
 def test_pack_unpack_2_integers(swap, val):
-
     packed = swap.internal._pack_2(val[0], val[1])
     unpacked = swap.internal._unpack_2(packed)  # swap unpacks
 

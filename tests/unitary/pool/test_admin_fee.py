@@ -8,9 +8,7 @@ from tests.utils.tokens import mint_for_testing
 
 @given(ratio=st.floats(min_value=0.0001, max_value=0.1))
 @settings(max_examples=10, deadline=None)
-def test_admin_fee_after_deposit(
-    swap, coins, fee_receiver, user, user_b, ratio
-):
+def test_admin_fee_after_deposit(swap, coins, fee_receiver, user, user_b, ratio):
     quantities = [10**42 // p for p in INITIAL_PRICES]
 
     for coin, q in zip(coins, quantities):
@@ -37,9 +35,6 @@ def test_admin_fee_after_deposit(
     with boa.env.prank(user):
         swap.add_liquidity(split_quantities, 0)
 
-    assert (
-        coins[0].balanceOf(fee_receiver) + coins[1].balanceOf(fee_receiver)
-        == 0
-    )
+    assert coins[0].balanceOf(fee_receiver) + coins[1].balanceOf(fee_receiver) == 0
 
     return swap

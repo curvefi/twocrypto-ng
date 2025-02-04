@@ -16,7 +16,6 @@ from vyper.utils import SizeLimits
 )
 @settings(max_examples=10000, deadline=None)
 def test_exp(math_optimized, x):
-
     if x >= 135305999368893231589:
         with boa.reverts("Math: wad_exp overflow"):
             math_optimized.wad_exp(x)
@@ -25,7 +24,6 @@ def test_exp(math_optimized, x):
         assert math_optimized.wad_exp(x) == 0
 
     else:
-
         exp_ideal = int(math.exp(x / 10**18) * 10**18)
         exp_implementation = math_optimized.wad_exp(x)
         assert exp_ideal == pytest.approx(exp_implementation)

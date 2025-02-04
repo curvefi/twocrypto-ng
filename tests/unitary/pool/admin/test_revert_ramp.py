@@ -4,13 +4,11 @@ from tests.utils.constants import UNIX_DAY
 
 
 def test_revert_unauthorised_ramp(swap, user):
-
     with boa.env.prank(user), boa.reverts(dev="only owner"):
         swap.ramp_A_gamma(1, 1, 1)
 
 
 def test_revert_ramp_while_ramping(swap, factory_admin):
-
     # sanity check: ramping is not active
     assert swap.initial_A_gamma_time() == 0
 
@@ -24,7 +22,6 @@ def test_revert_ramp_while_ramping(swap, factory_admin):
 
 
 def test_revert_fast_ramps(swap, factory_admin):
-
     A_gamma = [swap.A(), swap.gamma()]
     future_time = boa.env.evm.patch.timestamp + 10
     with boa.env.prank(factory_admin), boa.reverts(dev="insufficient time"):
@@ -32,7 +29,6 @@ def test_revert_fast_ramps(swap, factory_admin):
 
 
 def test_revert_unauthorised_stop_ramp(swap, factory_admin, user):
-
     # sanity check: ramping is not active
     assert swap.initial_A_gamma_time() == 0
 
@@ -46,7 +42,6 @@ def test_revert_unauthorised_stop_ramp(swap, factory_admin, user):
 
 
 def test_revert_ramp_too_far(swap, factory_admin):
-
     # sanity check: ramping is not active
     assert swap.initial_A_gamma_time() == 0
 
@@ -61,9 +56,7 @@ def test_revert_ramp_too_far(swap, factory_admin):
         future_A = A // 11  # can at most decrease by 10x
         swap.ramp_A_gamma(future_A, gamma, future_time)
 
-    with boa.env.prank(factory_admin), boa.reverts(
-        dev="gamma change too high"
-    ):
+    with boa.env.prank(factory_admin), boa.reverts(dev="gamma change too high"):
         future_gamma = gamma * 11  # can at most increase by 10x
         swap.ramp_A_gamma(A, future_gamma, future_time)
     with boa.env.prank(factory_admin), boa.reverts(dev="gamma change too low"):

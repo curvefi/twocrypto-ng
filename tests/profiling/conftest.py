@@ -35,12 +35,9 @@ params = {
 
 
 def _deposit_initial_liquidity(pool, tokens):
-
     # deposit:
     user = boa.env.generate_address()
-    quantities = [
-        10**6 * 10**36 // p for p in [10**18, params["price"]]
-    ]  # $2M worth
+    quantities = [10**6 * 10**36 // p for p in [10**18, params["price"]]]  # $2M worth
 
     for coin, quantity in zip(tokens, quantities):
         # mint coins for user:
@@ -68,13 +65,11 @@ def tokens():
 
 @pytest.fixture(scope="module")
 def factory_no_initial_guess():
-
     _deployer = boa.env.generate_address()
     _fee_receiver = boa.env.generate_address()
     _owner = boa.env.generate_address()
 
     with boa.env.prank(_deployer):
-
         amm_implementation = amm_deployer.deploy_as_blueprint()
         math_contract = math_deployer.deploy()
         view_contract = view_deployer.deploy()
@@ -94,7 +89,6 @@ def factory_no_initial_guess():
 
 @pytest.fixture(scope="module")
 def factory_initial_guess():
-
     _deployer = boa.env.generate_address()
     _fee_receiver = boa.env.generate_address()
     _owner = boa.env.generate_address()
@@ -121,7 +115,6 @@ def factory_initial_guess():
 
 @pytest.fixture(scope="module")
 def pool(factory, tokens):
-
     with boa.env.prank(boa.env.generate_address()):
         _pool = factory.deploy_pool(
             "test_A",
@@ -145,7 +138,6 @@ def pool(factory, tokens):
 
 @pytest.fixture(scope="module")
 def pool_initial_guess(factory_initial_guess, tokens):
-
     with boa.env.prank(boa.env.generate_address()):
         _pool = factory_initial_guess.deploy_pool(
             "test_B",
