@@ -58,8 +58,8 @@ def _deposit_initial_liquidity(pool, tokens):
 @pytest.fixture(scope="module")
 def tokens():
     return [
-        boa.load("contracts/mocks/ERC20Mock.vy", "tkn_a", "tkn_a", 18),
-        boa.load("contracts/mocks/ERC20Mock.vy", "tkn_b", "tkn_b", 18),
+        boa.load("tests/mocks/MockERC20.vy", "tkn_a", "tkn_a", 18),
+        boa.load("tests/mocks/MockERC20.vy", "tkn_b", "tkn_b", 18),
     ]
 
 
