@@ -43,13 +43,13 @@ def get_y(
     """
     # x in the input is converted to the same price/precision
 
-    assert i != j       # dev: same coin
-    assert j >= 0       # dev: j below zero
-    assert j < N_COINS # dev: j above N_COINS
+    assert i != j, "same coin"
+    assert j >= 0, "j below zero"
+    assert j < N_COINS, "j above N_COINS"
 
     # should be unreachable, but good for safety
-    assert i >= 0
-    assert i < N_COINS
+    assert i >= 0, "i below zero"
+    assert i < N_COINS, "i above N_COINS"
 
     amp: uint256 = _amp
     D: uint256 = _D
@@ -89,7 +89,7 @@ def get_y(
         else:
             if y_prev - y <= 1:
                 return y
-    raise
+    raise "didn't converge"
 
 @pure
 @internal
@@ -142,7 +142,7 @@ def get_D(
                 return D
     # convergence typically occurs in 4 rounds or less, this should be unreachable!
     # if it does happen the pool is borked and LPs can withdraw via `remove_liquidity`
-    raise
+    raise "didn't converge"
 
 @external
 @pure
