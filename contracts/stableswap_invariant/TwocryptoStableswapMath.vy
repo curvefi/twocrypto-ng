@@ -170,5 +170,5 @@ def get_p(
         p.append(10**18 * (xp0_A + unsafe_div(Dr * xp[0], xp[i])) // (xp0_A + Dr))
 
     # TODO naive implementaion, should build uint256 directly
-    p_: uint256[N_COINS] = [p[0], p[1]]
+    p_: uint256[N_COINS] = [p[0], 0]
     return p_
