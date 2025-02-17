@@ -720,7 +720,7 @@ def _exchange(
 
     # STABLESWAP math function accepts initial scaled balances so we remove the extra amount
     # TODO this is a dirty hack to preserve the get_y impl from stableswap-ng
-    initial_xpi: uint256 = xp[i] - (dx_received * self.cached_price_scale // PRECISION)
+    initial_xpi: uint256 = xp[i] - dx_received 
     initial_xp: uint256[N_COINS] = [
         initial_xpi,
         xp[j]
