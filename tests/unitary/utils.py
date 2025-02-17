@@ -31,18 +31,22 @@ class GodModePool:
             amounts = [0, dx]
         self.__premint_amounts(amounts)
 
-        self.instance.exchange(i, 1 - i, dx, 0, sender=god)
+        dy = self.instance.exchange(i, 1 - i, dx, 0, sender=god)
 
         if update_ema:
             self.__update_ema()
+
+        return dy
 
     def add_liquidity(self, amounts, update_ema=False):
         self.__premint_amounts(amounts)
 
-        self.instance.add_liquidity(amounts, 0, sender=god)
+        lp_tokens_received = self.instance.add_liquidity(amounts, 0, boa.env.eoa, sender=god)
 
         if update_ema:
             self.__update_ema()
+
+        return lp_tokens_received
 
     def __premint_amounts(self, amounts):
         for c, amount in zip(self.coins, amounts):
