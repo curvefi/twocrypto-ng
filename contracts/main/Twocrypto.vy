@@ -902,21 +902,24 @@ def tweak_price(
     virtual_price: uint256 = 10**18
 
     if old_virtual_price > 0:
-
         xcp: uint256 = isqrt(xp[0] * xp[1])
-        virtual_price = 10**18 * xcp // total_supply
 
+        # We increase the virtual price by 1 to avoid off by one rounding
+        # errors. While this can lead to a small profit overestimation,
+        # given virtual_price has 18 decimals, this is negligible.
+        virtual_price = 10**18 * xcp // total_supply + 1
+
+        # Safe to do unsafe_div as old_virtual_price > 0.
         xcp_profit = unsafe_div(
             old_xcp_profit * virtual_price,
             old_virtual_price
-        )  # <---------------- Safu to do unsafe_div as old_virtual_price > 0.
+        )
 
         #       If A and gamma are not undergoing ramps (t < block.timestamp),
         #         ensure new virtual_price is not less than old virtual_price,
         #                                        else the pool suffers a loss.
         if self.future_A_gamma_time < block.timestamp:
-            # this usually reverts when withdrawing a very small amount of LP tokens
-            assert virtual_price > old_virtual_price # dev: virtual price decreased
+            assert virtual_price > old_virtual_price  # dev: virtual price decreased
 
     self.xcp_profit = xcp_profit
 
