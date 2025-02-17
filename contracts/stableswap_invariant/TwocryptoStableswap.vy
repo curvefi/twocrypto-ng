@@ -171,10 +171,15 @@ admin_lp_virtual_balance: uint256
 MIN_RAMP_TIME: constant(uint256) = 86400
 MIN_ADMIN_FEE_CLAIM_INTERVAL: constant(uint256) = 86400
 
-A_MULTIPLIER: constant(uint256) = 10000
-MIN_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER // 10
-MAX_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER * 1000
+# STABLESWAP changing A multiplier
+A_MULTIPLIER: constant(uint256) = 100
+
+# STABLESWAP changing A limits
+MIN_A: constant(uint256) = 1 # TODO unsafe
+MAX_A: constant(uint256) = 10 ** 6
 MAX_A_CHANGE: constant(uint256) = 10
+
+# STABLESWAP TODO remove because unused
 MIN_GAMMA: constant(uint256) = 10**10
 MAX_GAMMA: constant(uint256) = 199 * 10**15 # 1.99 * 10**17
 
@@ -720,7 +725,7 @@ def _exchange(
 
     # STABLESWAP math function accepts initial scaled balances so we remove the extra amount
     # TODO this is a dirty hack to preserve the get_y impl from stableswap-ng
-    initial_xpi: uint256 = xp[i] - dx_received 
+    initial_xpi: uint256 = xp[i] - dx_received
     initial_xp: uint256[N_COINS] = [
         initial_xpi,
         xp[j]
@@ -928,7 +933,6 @@ def tweak_price(
                 old_virtual_price > 10**18 and
                 2 * old_virtual_price - 10**18 > xcp_profit
             ):
-
                 self.D = D
                 self.virtual_price = old_virtual_price
                 self.cached_price_scale = p_new
