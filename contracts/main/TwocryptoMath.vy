@@ -8,6 +8,8 @@
     DAO or Swiss Stake GmbH are allowed to call this contract.
 """
 
+from snekmate.utils import math
+
 N_COINS: constant(uint256) = 2
 A_MULTIPLIER: constant(uint256) = 10000
 
@@ -509,66 +511,4 @@ def get_p(
 @external
 @pure
 def wad_exp(x: int256) -> int256:
-    """
-    @dev Calculates the natural exponential function of a signed integer with
-         a precision of 1e18.
-    @notice Note that this function consumes about 810 gas units. The implementation
-            is inspired by Remco Bloemen's implementation under the MIT license here:
-            https://xn--2-umb.com/22/exp-ln.
-    @param x The 32-byte variable.
-    @return int256 The 32-byte calculation result.
-    """
-    value: int256 = x
-
-    # If the result is `< 0.5`, we return zero. This happens when we have the following:
-    # "x <= floor(log(0.5e18) * 1e18) ~ -42e18".
-    if (x <= -42_139_678_854_452_767_551):
-        return empty(int256)
-
-    # When the result is "> (2 ** 255 - 1) / 1e18" we cannot represent it as a signed integer.
-    # This happens when "x >= floor(log((2 ** 255 - 1) / 1e18) * 1e18) ~ 135".
-    assert x < 135_305_999_368_893_231_589, "Math: wad_exp overflow"
-
-    # `x` is now in the range "(-42, 136) * 1e18". Convert to "(-42, 136) * 2 ** 96" for higher
-    # intermediate precision and a binary base. This base conversion is a multiplication with
-    # "1e18 / 2 ** 96 = 5 ** 18 / 2 ** 78".
-    value = unsafe_div(x << 78, 5 ** 18)
-
-    # Reduce the range of `x` to "(-½ ln 2, ½ ln 2) * 2 ** 96" by factoring out powers of two
-    # so that "exp(x) = exp(x') * 2 ** k", where `k` is a signer integer. Solving this gives
-    # "k = round(x / log(2))" and "x' = x - k * log(2)". Thus, `k` is in the range "[-61, 195]".
-    k: int256 = unsafe_add(unsafe_div(value << 96, 54_916_777_467_707_473_351_141_471_128), 2 ** 95) >> 96
-    value = unsafe_sub(value, unsafe_mul(k, 54_916_777_467_707_473_351_141_471_128))
-
-    # Evaluate using a "(6, 7)"-term rational approximation. Since `p` is monic,
-    # we will multiply by a scaling factor later.
-    y: int256 = unsafe_add(unsafe_mul(unsafe_add(value, 1_346_386_616_545_796_478_920_950_773_328), value) >> 96, 57_155_421_227_552_351_082_224_309_758_442)
-    p: int256 = unsafe_add(unsafe_mul(unsafe_add(unsafe_mul(unsafe_sub(unsafe_add(y, value), 94_201_549_194_550_492_254_356_042_504_812), y) >> 96,\
-                           28_719_021_644_029_726_153_956_944_680_412_240), value), 4_385_272_521_454_847_904_659_076_985_693_276 << 96)
-
-    # We leave `p` in the "2 ** 192" base so that we do not have to scale it up
-    # again for the division.
-    q: int256 = unsafe_add(unsafe_mul(unsafe_sub(value, 2_855_989_394_907_223_263_936_484_059_900), value) >> 96, 50_020_603_652_535_783_019_961_831_881_945)
-    q = unsafe_sub(unsafe_mul(q, value) >> 96, 533_845_033_583_426_703_283_633_433_725_380)
-    q = unsafe_add(unsafe_mul(q, value) >> 96, 3_604_857_256_930_695_427_073_651_918_091_429)
-    q = unsafe_sub(unsafe_mul(q, value) >> 96, 14_423_608_567_350_463_180_887_372_962_807_573)
-    q = unsafe_add(unsafe_mul(q, value) >> 96, 26_449_188_498_355_588_339_934_803_723_976_023)
-
-    # The polynomial `q` has no zeros in the range because all its roots are complex.
-    # No scaling is required, as `p` is already "2 ** 96" too large. Also,
-    # `r` is in the range "(0.09, 0.25) * 2**96" after the division.
-    r: int256 = unsafe_div(p, q)
-
-    # To finalise the calculation, we have to multiply `r` by:
-    #   - the scale factor "s = ~6.031367120",
-    #   - the factor "2 ** k" from the range reduction, and
-    #   - the factor "1e18 / 2 ** 96" for the base conversion.
-    # We do this all at once, with an intermediate result in "2**213" base,
-    # so that the final right shift always gives a positive value.
-
-    # Note that to circumvent Vyper's safecast feature for the potentially
-    # negative parameter value `r`, we first convert `r` to `bytes32` and
-    # subsequently to `uint256`. Remember that the EVM default behaviour is
-    # to use two's complement representation to handle signed integers.
-    return convert(unsafe_mul(convert(convert(r, bytes32), uint256), 3_822_833_074_963_236_453_042_738_258_902_158_003_155_416_615_667) >>\
-           convert(unsafe_sub(195, k), uint256), int256)
+    return math._wad_exp(x)
