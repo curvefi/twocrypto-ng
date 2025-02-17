@@ -92,7 +92,7 @@ def get_y(
     raise "didn't converge"
 
 @pure
-@internal
+@external
 def get_D(
     _xp: uint256[N_COINS],
     _amp: uint256
