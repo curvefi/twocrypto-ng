@@ -61,17 +61,15 @@ def stable_pool(
         "SIMULATION",
         tokens,
         0,
-        params["A"],
-        params["gamma"],
+        200,
+        params["gamma"],  # this is ignored
         params["mid_fee"],
         params["out_fee"],
         params["fee_gamma"],
         params["allowed_extra_profit"],
         params["adjustment_step"],
         params["ma_time"],
-        params["initial_prices"][
-            1
-        ],  # TODO careful started on diff prices even tho stableswap invariant is used
+        10**18,  # initial price
     )
 
     pool = s_amm_deployer.at(pool)
@@ -80,6 +78,12 @@ def stable_pool(
 
 
 def test_simple(stable_pool):
-    amounts = [10**18, 10**18]
+    amounts = [100 * 10**18, 100 * 10**18]
 
-    stable_pool.add_liquidity(amounts)
+    addy = boa.env.generate_address()
+
+    with boa.env.prank(addy):
+        for _ in range(10):
+            lp_amount = stable_pool.add_liquidity(amounts, update_ema=True)
+            stable_pool.exchange(0, 10**18, update_ema=True)
+            stable_pool.remove_liquidity(lp_amount, [0, 0])
