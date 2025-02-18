@@ -433,25 +433,18 @@ def add_liquidity(
     @return uint256 Amount of LP tokens received by the `receiver
     """
 
-    A_gamma: uint256[2] = self._A_gamma()
-    xp: uint256[N_COINS] = self.balances
-    amountsp: uint256[N_COINS] = empty(uint256[N_COINS])
-    d_token: uint256 = 0
-    d_token_fee: uint256 = 0
-    old_D: uint256 = 0
 
     assert amounts[0] + amounts[1] > 0, "no coins to add"
 
     # --------------------- Get prices, balances -----------------------------
 
-    price_scale: uint256 = self.cached_price_scale
-
-    # -------------------------------------- Update balances and calculate xp.
-    xp_old: uint256[N_COINS] = xp
-    amounts_received: uint256[N_COINS] = empty(uint256[N_COINS])
+    old_balances: uint256[N_COINS] = self.balances
 
     ########################## TRANSFER IN <-------
 
+    amounts_received: uint256[N_COINS] = empty(uint256[N_COINS])
+    # This variable will contain the old balances + the amounts received.
+    balances: uint256[N_COINS] = self.balances
     for i: uint256 in range(N_COINS):
         if amounts[i] > 0:
             # Updates self.balances here:
@@ -461,35 +454,33 @@ def add_liquidity(
                 msg.sender,
                 False,  # <--------------------- Disable optimistic transfers.
             )
-            xp[i] = xp[i] + amounts_received[i]
+            balances[i] += amounts_received[i]
 
-    xp = [
-        xp[0] * PRECISIONS[0],
-        unsafe_div(xp[1] * price_scale * PRECISIONS[1], PRECISION)
-    ]
-    xp_old = [
-        xp_old[0] * PRECISIONS[0],
-        unsafe_div(xp_old[1] * price_scale * PRECISIONS[1], PRECISION)
-    ]
+    price_scale: uint256 = self.cached_price_scale
+    xp: uint256[N_COINS] = self._xp(balances, price_scale)
+    old_xp: uint256[N_COINS] = self._xp(old_balances, price_scale)
 
+    # amountsp (amounts * p) contains the scaled `amounts_received` of each coin.
+    amountsp: uint256[N_COINS] = empty(uint256[N_COINS])
     for i: uint256 in range(N_COINS):
         if amounts_received[i] > 0:
-            amountsp[i] = xp[i] - xp_old[i]
-
+            amountsp[i] = xp[i] - old_xp[i]
     # -------------------- Calculate LP tokens to mint -----------------------
 
+    A_gamma: uint256[2] = self._A_gamma()
+
+    old_D: uint256 = 0
     if self._is_ramping():
         # Recalculate D if A and/or gamma are ramping because the shape of
         # the bonding curve is changing.
-        old_D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp_old, 0)
-
+        old_D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], old_xp, 0)
     else:
-
         old_D = self.D
 
     D: uint256 = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
 
     token_supply: uint256 = self.totalSupply
+    d_token: uint256 = 0
     if old_D > 0:
         d_token = token_supply * D // old_D - token_supply
     else:
@@ -497,6 +488,7 @@ def add_liquidity(
 
     assert d_token > 0, "nothing minted"
 
+    d_token_fee: uint256 = 0
     if old_D > 0:
 
         d_token_fee = (
