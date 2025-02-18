@@ -708,17 +708,14 @@ def _exchange(
     assert dx_received > 0, "zero dx"
 
     A_gamma: uint256[2] = self._A_gamma()
-    xp: uint256[N_COINS] = self.balances
+    balances: uint256[N_COINS] = self.balances
     dy: uint256 = 0
 
-    y: uint256 = xp[j]
-    x0: uint256 = xp[i] - dx_received  # old xp[i]
+    y: uint256 = balances[j]
+    x0: uint256 = balances[i] - dx_received  # old xp[i]
 
     price_scale: uint256 = self.cached_price_scale
-    xp = [
-        xp[0] * PRECISIONS[0],
-        unsafe_div(xp[1] * price_scale * PRECISIONS[1], PRECISION)
-    ]
+    xp: uint256[N_COINS] = self._xp(balances, price_scale)
 
     # ----------- Update invariant if A, gamma are undergoing ramps ---------
 
