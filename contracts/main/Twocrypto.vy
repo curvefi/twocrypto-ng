@@ -1089,11 +1089,10 @@ def _claim_admin_fees():
 
 @internal
 @view
-def xp(
+def _xp(
     balances: uint256[N_COINS],
     price_scale: uint256,
 ) -> uint256[N_COINS]:
-
     return [
         balances[0] * PRECISIONS[0],
         unsafe_div(balances[1] * PRECISIONS[1] * price_scale, PRECISION)
@@ -1523,7 +1522,7 @@ def fee() -> uint256:
          removed.
     @return uint256 fee bps.
     """
-    return self._fee(self.xp(self.balances, self.cached_price_scale))
+    return self._fee(self._xp(self.balances, self.cached_price_scale))
 
 
 @view
