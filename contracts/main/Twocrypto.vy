@@ -510,9 +510,9 @@ def add_liquidity(
 
     # -------------------- Calculate LP tokens to mint -----------------------
 
-    if self.future_A_gamma_time > block.timestamp:  # <--- A_gamma is ramping.
-
-        # ----- Recalculate the invariant if A or gamma are undergoing a ramp.
+    if self._is_ramping():
+        # Recalculate D if A and/or gamma are ramping because the shape of
+        # the bonding curve is changing.
         old_D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp_old, 0)
 
     else:
@@ -669,8 +669,7 @@ def remove_liquidity_one_coin(
         A_gamma,
         token_amount,
         i,
-        (self.future_A_gamma_time > block.timestamp),  # <------- During ramps
-    )  #                                                  we need to update D.
+    )
 
     assert dy >= min_amount, "slippage"
 
@@ -915,11 +914,15 @@ def tweak_price(
             old_virtual_price
         )
 
-        #       If A and gamma are not undergoing ramps (t < block.timestamp),
-        #         ensure new virtual_price is not less than old virtual_price,
-        #                                        else the pool suffers a loss.
-        if self.future_A_gamma_time < block.timestamp:
-            assert virtual_price > old_virtual_price, "virtual price decreased"
+        # Here we only allow for two possible scenarios:
+        # (1) If A and gamma are not being ramped, we only allow the virtual price to
+        # to increase. This is not an absolute condition, the virtual price can
+        # decrease if the pool rebalances and the profits are high enough. However
+        # this check ensures that just before the rebalancing, the virtual price
+        # is higher than the previous one, that is, the pool has been accruing fees.
+        # (2) If A and gamma are being ramped, we allow the virtual price to decrease,
+        # as changing the shape of the bonding curve causes losses in the pool.
+        assert self._is_ramping() or virtual_price > old_virtual_price, "virtual price decreased"
 
     self.xcp_profit = xcp_profit
 
@@ -1017,7 +1020,7 @@ def _claim_admin_fees():
     last_claim_time: uint256 = self.last_admin_fee_claim_timestamp
     if (
         unsafe_sub(block.timestamp, last_claim_time) < MIN_ADMIN_FEE_CLAIM_INTERVAL or
-        self.future_A_gamma_time > block.timestamp
+        self._is_ramping()
     ):
         return
 
@@ -1132,6 +1135,14 @@ def xp(
         unsafe_div(balances[1] * PRECISIONS[1] * price_scale, PRECISION)
     ]
 
+@internal
+@view
+def _is_ramping() -> bool:
+    """
+    @notice Checks if A and gamma are ramping.
+    @return bool True if A and/or gamma are ramping, False otherwise.
+    """
+    return self.future_A_gamma_time > block.timestamp
 
 @view
 @internal
@@ -1219,7 +1230,6 @@ def _calc_withdraw_one_coin(
     A_gamma: uint256[2],
     token_amount: uint256,
     i: uint256,
-    update_D: bool,
 ) -> (uint256, uint256, uint256[N_COINS], uint256):
 
     token_supply: uint256 = self.totalSupply
@@ -1227,7 +1237,6 @@ def _calc_withdraw_one_coin(
     assert i < N_COINS, "coin out of range"
 
     xx: uint256[N_COINS] = self.balances
-    D0: uint256 = 0
 
     # -------------------------- Calculate D0 and xp -------------------------
 
@@ -1239,12 +1248,12 @@ def _calc_withdraw_one_coin(
     if i == 0:
         price_scale_i = PRECISION * PRECISIONS[0]
 
-    if update_D:  # <-------------- D is updated if pool is undergoing a ramp.
-        D0 = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
-    else:
-        D0 = self.D
+    D: uint256 = 0
 
-    D: uint256 = D0
+    if self._is_ramping():
+        D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
+    else:
+        D = self.D
 
     # -------------------------------- Fee Calc ------------------------------
 
@@ -1632,7 +1641,6 @@ def calc_withdraw_one_coin(token_amount: uint256, i: uint256) -> uint256:
         self._A_gamma(),
         token_amount,
         i,
-        (self.future_A_gamma_time > block.timestamp)
     )[0]
 
 
@@ -1778,7 +1786,7 @@ def ramp_A_gamma(
     @param future_time The timestamp at which the ramping will end.
     """
     assert msg.sender == staticcall factory.admin(), "only owner"
-    assert block.timestamp > self.future_A_gamma_time, "ramp undergoing"
+    assert not self._is_ramping(), "ramp undergoing"
     assert future_time > block.timestamp + MIN_RAMP_TIME - 1, "ramp time<min"
 
     A_gamma: uint256[2] = self._A_gamma()
