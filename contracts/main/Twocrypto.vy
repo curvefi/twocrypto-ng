@@ -189,13 +189,9 @@ version: public(constant(String[8])) = "v2.1.0"
 balanceOf: public(HashMap[address, uint256])
 allowance: public(HashMap[address, HashMap[address, uint256]])
 totalSupply: public(uint256)
-nonces: public(HashMap[address, uint256])
 
 EIP712_TYPEHASH: constant(bytes32) = keccak256(
     "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract,bytes32 salt)"
-)
-EIP2612_TYPEHASH: constant(bytes32) = keccak256(
-    "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
 )
 VERSION_HASH: constant(bytes32) = keccak256(version)
 NAME_HASH: immutable(bytes32)
@@ -1368,54 +1364,6 @@ def approve(_spender: address, _value: uint256) -> bool:
     @return bool Success
     """
     self._approve(msg.sender, _spender, _value)
-    return True
-
-
-@external
-def permit(
-    _owner: address,
-    _spender: address,
-    _value: uint256,
-    _deadline: uint256,
-    _v: uint8,
-    _r: bytes32,
-    _s: bytes32,
-) -> bool:
-    """
-    @notice Permit `_spender` to spend up to `_value` amount of `_owner`'s
-            tokens via a signature.
-    @dev In the event of a chain fork, replay attacks are prevented as
-         domain separator is recalculated. However, this is only if the
-         resulting chains update their chainId.
-    @param _owner The account which generated the signature and is granting an
-                  allowance.
-    @param _spender The account which will be granted an allowance.
-    @param _value The approval amount.
-    @param _deadline The deadline by which the signature must be submitted.
-    @param _v The last byte of the ECDSA signature.
-    @param _r The first 32 bytes of the ECDSA signature.
-    @param _s The second 32 bytes of the ECDSA signature.
-    @return bool Success.
-    """
-    assert _owner != empty(address), "invalid owner"
-    assert block.timestamp <= _deadline, "permit expired"
-
-    nonce: uint256 = self.nonces[_owner]
-    digest: bytes32 = keccak256(
-        concat(
-            b"\x19\x01",
-            self._domain_separator(),
-            keccak256(
-                abi_encode(
-                    EIP2612_TYPEHASH, _owner, _spender, _value, nonce, _deadline
-                )
-            ),
-        )
-    )
-    assert ecrecover(digest, _v, _r, _s) == _owner, "invalid signature"
-
-    self.nonces[_owner] = unsafe_add(nonce, 1)  # <-- Unsafe add is safe here.
-    self._approve(_owner, _spender, _value)
     return True
 
 
