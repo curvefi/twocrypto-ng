@@ -531,26 +531,22 @@ def add_liquidity(
 @external
 @nonreentrant
 def remove_liquidity(
-    _amount: uint256,
+    amount: uint256,
     min_amounts: uint256[N_COINS],
     receiver: address = msg.sender,
 ) -> uint256[N_COINS]:
     """
     @notice This withdrawal method is very safe, does no complex math since
             tokens are withdrawn in balanced proportions. No fees are charged.
-    @param _amount Amount of LP tokens to burn
+    @param amount Amount of LP tokens to burn
     @param min_amounts Minimum amounts of tokens to withdraw
     @param receiver Address to send the withdrawn tokens to
     @return uint256[3] Amount of pool tokens received by the `receiver`
     """
-    amount: uint256 = _amount
-    balances: uint256[N_COINS] = self.balances
-    withdraw_amounts: uint256[N_COINS] = empty(uint256[N_COINS])
 
     # -------------------------------------------------------- Burn LP tokens.
 
-    total_supply: uint256 = self.totalSupply  # <------ Get totalSupply before
-    self.burnFrom(msg.sender, _amount)  # ---- reducing it with self.burnFrom.
+    self.burnFrom(msg.sender, amount)  # ---- reducing it with self.burnFrom.
 
     # There are two cases for withdrawing tokens from the pool.
     #   Case 1. Withdrawal does not empty the pool.
@@ -561,26 +557,31 @@ def remove_liquidity(
     #           In this situation, all tokens are withdrawn and the invariant
     #           is reset.
 
+    # We make a copy of _amount because vyper doesn't allow reassigning to
+    # function arguments. 
+    withdraw_amounts: uint256[N_COINS] = empty(uint256[N_COINS])
+    # We cache the total supply to avoid multiple SLOADs.
+    total_supply: uint256 = self.totalSupply  
     if amount == total_supply:  # <----------------------------------- Case 2.
 
         for i: uint256 in range(N_COINS):
 
-            withdraw_amounts[i] = balances[i]
+            withdraw_amounts[i] = self.balances[i]
 
     else:  # <-------------------------------------------------------- Case 1.
-
-        amount -= 1  # <---- To prevent rounding errors, favor LPs a tiny bit.
+        # To prevent rounding errors, favor LPs a tiny bit.
+        adjusted_amount: uint256 = amount - 1  
 
         for i: uint256 in range(N_COINS):
-
-            withdraw_amounts[i] = balances[i] * amount // total_supply
+            withdraw_amounts[i] = self.balances[i] * adjusted_amount // total_supply
             assert withdraw_amounts[i] >= min_amounts[i], "slippage"
 
     D: uint256 = self.D
-    self.D = D - unsafe_div(D * amount, total_supply)  # <----------- Reduce D
-    #      proportional to the amount of tokens leaving. Since withdrawals are
-    #       balanced, this is a simple subtraction. If amount == total_supply,
-    #                                                             D will be 0.
+    # Reduce D proportionally to the amount of tokens leaving. Since withdrawals
+    # are balanced, this is a simple subtraction. If amount == total_supply,
+    # D will be 0.
+    # TODO what guarantees here total_supply > 0? 
+    self.D = D - unsafe_div(D * amount, total_supply)  
 
     # ---------------------------------- Transfers ---------------------------
 
@@ -589,7 +590,7 @@ def remove_liquidity(
         # before external calls:
         self._transfer_out(i, withdraw_amounts[i], receiver)
 
-    log RemoveLiquidity(msg.sender, withdraw_amounts, total_supply - _amount)
+    log RemoveLiquidity(msg.sender, withdraw_amounts, total_supply - amount)
 
     return withdraw_amounts
 
