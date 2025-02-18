@@ -620,11 +620,8 @@ def remove_liquidity_one_coin(
 
     dy: uint256 = 0
     D: uint256 = 0
-    p: uint256 = 0
     xp: uint256[N_COINS] = empty(uint256[N_COINS])
     approx_fee: uint256 = 0
-
-    # ------------------------------------------------------------------------
 
     dy, D, xp, approx_fee = self._calc_withdraw_one_coin(
         A_gamma,
@@ -639,8 +636,8 @@ def remove_liquidity_one_coin(
     # Burn user's tokens:
     self.burnFrom(msg.sender, token_amount)
 
-    packed_price_scale: uint256 = self.tweak_price(A_gamma, xp, D)
-    #        Safe to use D from _calc_withdraw_one_coin here ---^
+    price_scale: uint256 = self.tweak_price(A_gamma, xp, D)
+    # Safe to use D from _calc_withdraw_one_coin here ---^
 
     # ------------------------- Transfers ------------------------------------
 
@@ -649,7 +646,7 @@ def remove_liquidity_one_coin(
     self._transfer_out(i, dy, receiver)
 
     log RemoveLiquidityOne(
-        msg.sender, token_amount, i, dy, approx_fee, packed_price_scale
+        msg.sender, token_amount, i, dy, approx_fee, price_scale
     )
 
     return dy
