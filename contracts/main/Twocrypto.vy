@@ -232,11 +232,11 @@ def __init__(
     # --------------- Validate A and gamma parameters here and not in factory.
     gamma_A: uint256[2] = self._unpack_2(packed_gamma_A)  # gamma is at idx 0.
 
-    assert gamma_A[0] > MIN_GAMMA-1
-    assert gamma_A[0] < MAX_GAMMA+1
+    assert gamma_A[0] > MIN_GAMMA-1, "gamma<MIN"
+    assert gamma_A[0] < MAX_GAMMA+1, "gamma>MAX"
 
-    assert gamma_A[1] > MIN_A-1
-    assert gamma_A[1] < MAX_A+1
+    assert gamma_A[1] > MIN_A-1, "A<MIN"
+    assert gamma_A[1] < MAX_A+1, "A>MAX"
 
     self.initial_A_gamma = packed_gamma_A
     self.future_A_gamma = packed_gamma_A
@@ -310,7 +310,7 @@ def _transfer_in(
         # If we checked for received_amounts == dx, an extra transfer without a
         # call to exchange_received will break the method.
         dx: uint256 = coin_balance - self.balances[_coin_idx]
-        assert dx >= _dx  # dev: user didn't give us coins
+        assert dx >= _dx, "user didn't give us coins"
 
         # Adjust balances
         self.balances[_coin_idx] += dx
@@ -325,7 +325,7 @@ def _transfer_in(
         self,
         _dx,
         default_return_value=True
-    )
+    ), "transferFrom failed"
 
     dx: uint256 = staticcall IERC20(coins[_coin_idx]).balanceOf(self) - coin_balance
     self.balances[_coin_idx] += dx
@@ -351,7 +351,7 @@ def _transfer_out(_coin_idx: uint256, _amount: uint256, receiver: address):
         receiver,
         _amount,
         default_return_value=True
-    )
+    ), "transfer failed"
 
 
 # -------------------------- AMM Main Functions ------------------------------
@@ -472,7 +472,7 @@ def add_liquidity(
     d_token_fee: uint256 = 0
     old_D: uint256 = 0
 
-    assert amounts[0] + amounts[1] > 0  # dev: no coins to add
+    assert amounts[0] + amounts[1] > 0, "no coins to add"
 
     # --------------------- Get prices, balances -----------------------------
 
@@ -527,7 +527,7 @@ def add_liquidity(
     else:
         d_token = self.get_xcp(D, price_scale)  # <----- Making initial virtual price equal to 1.
 
-    assert d_token > 0  # dev: nothing minted
+    assert d_token > 0, "nothing minted"
 
     if old_D > 0:
 
@@ -553,7 +553,7 @@ def add_liquidity(
 
         self.mint(receiver, d_token)
 
-    assert d_token >= min_mint_amount, "Slippage"
+    assert d_token >= min_mint_amount, "slippage"
 
     # ---------------------------------------------- Log and claim admin fees.
 
@@ -614,7 +614,7 @@ def remove_liquidity(
         for i: uint256 in range(N_COINS):
 
             withdraw_amounts[i] = balances[i] * amount // total_supply
-            assert withdraw_amounts[i] >= min_amounts[i]
+            assert withdraw_amounts[i] >= min_amounts[i], "slippage"
 
     D: uint256 = self.D
     self.D = D - unsafe_div(D * amount, total_supply)  # <----------- Reduce D
@@ -672,7 +672,7 @@ def remove_liquidity_one_coin(
         (self.future_A_gamma_time > block.timestamp),  # <------- During ramps
     )  #                                                  we need to update D.
 
-    assert dy >= min_amount, "Slippage"
+    assert dy >= min_amount, "slippage"
 
     # ---------------------------- State Updates -----------------------------
 
@@ -747,8 +747,8 @@ def _exchange(
     min_dy: uint256,
 ) -> uint256[3]:
 
-    assert i != j  # dev: coin index out of range
-    assert dx_received > 0  # dev: do not exchange 0 coins
+    assert i != j, "same coin"
+    assert dx_received > 0, "zero dx"
 
     A_gamma: uint256[2] = self._A_gamma()
     xp: uint256[N_COINS] = self.balances
@@ -792,7 +792,7 @@ def _exchange(
 
     fee: uint256 = unsafe_div(self._fee(xp) * dy, 10**10)
     dy -= fee  # <--------------------- Subtract fee from the outgoing amount.
-    assert dy >= min_dy, "Slippage"
+    assert dy >= min_dy, "slippage"
     y -= dy
 
     y *= PRECISIONS[j]
@@ -919,7 +919,7 @@ def tweak_price(
         #         ensure new virtual_price is not less than old virtual_price,
         #                                        else the pool suffers a loss.
         if self.future_A_gamma_time < block.timestamp:
-            assert virtual_price > old_virtual_price  # dev: virtual price decreased
+            assert virtual_price > old_virtual_price, "virtual price decreased"
 
     self.xcp_profit = xcp_profit
 
@@ -1223,8 +1223,8 @@ def _calc_withdraw_one_coin(
 ) -> (uint256, uint256, uint256[N_COINS], uint256):
 
     token_supply: uint256 = self.totalSupply
-    assert token_amount <= token_supply  # dev: token amount more than supply
-    assert i < N_COINS  # dev: coin out of range
+    assert token_amount <= token_supply, "token amount more than supply"
+    assert i < N_COINS, "coin out of range"
 
     xx: uint256[N_COINS] = self.balances
     D0: uint256 = 0
@@ -1295,7 +1295,7 @@ def _approve(_owner: address, _spender: address, _value: uint256):
 
 @internal
 def _transfer(_from: address, _to: address, _value: uint256):
-    assert _to not in [self, empty(address)]
+    assert _to not in [self, empty(address)], "invalid receiver"
 
     self.balanceOf[_from] -= _value
     self.balanceOf[_to] += _value
@@ -1389,8 +1389,8 @@ def permit(
     @param _s The second 32 bytes of the ECDSA signature.
     @return bool Success.
     """
-    assert _owner != empty(address)  # dev: invalid owner
-    assert block.timestamp <= _deadline  # dev: permit expired
+    assert _owner != empty(address), "invalid owner"
+    assert block.timestamp <= _deadline, "permit expired"
 
     nonce: uint256 = self.nonces[_owner]
     digest: bytes32 = keccak256(
@@ -1404,7 +1404,7 @@ def permit(
             ),
         )
     )
-    assert ecrecover(digest, _v, _r, _s) == _owner  # dev: invalid signature
+    assert ecrecover(digest, _v, _r, _s) == _owner, "invalid signature"
 
     self.nonces[_owner] = unsafe_add(nonce, 1)  # <-- Unsafe add is safe here.
     self._approve(_owner, _spender, _value)
@@ -1777,26 +1777,26 @@ def ramp_A_gamma(
     @param future_gamma The future gamma value.
     @param future_time The timestamp at which the ramping will end.
     """
-    assert msg.sender == staticcall factory.admin()  # dev: only owner
-    assert block.timestamp > self.future_A_gamma_time # dev: ramp undergoing
-    assert future_time > block.timestamp + MIN_RAMP_TIME - 1  # dev: insufficient time
+    assert msg.sender == staticcall factory.admin(), "only owner"
+    assert block.timestamp > self.future_A_gamma_time, "ramp undergoing"
+    assert future_time > block.timestamp + MIN_RAMP_TIME - 1, "ramp time<min"
 
     A_gamma: uint256[2] = self._A_gamma()
     initial_A_gamma: uint256 = A_gamma[0] << 128
     initial_A_gamma = initial_A_gamma | A_gamma[1]
 
-    assert future_A > MIN_A - 1
-    assert future_A < MAX_A + 1
-    assert future_gamma > MIN_GAMMA - 1
-    assert future_gamma < MAX_GAMMA + 1
+    assert future_A > MIN_A - 1, "A<min"
+    assert future_A < MAX_A + 1, "A>max"
+    assert future_gamma > MIN_GAMMA - 1, "gamma<min"
+    assert future_gamma < MAX_GAMMA + 1, "gamme>max"
 
     ratio: uint256 = 10**18 * future_A // A_gamma[0]
-    assert ratio < 10**18 * MAX_A_CHANGE + 1 # dev: A change too high
-    assert ratio > 10**18 // MAX_A_CHANGE - 1 # dev: A change too low
+    assert ratio < 10**18 * MAX_A_CHANGE + 1, "A change too high"
+    assert ratio > 10**18 // MAX_A_CHANGE - 1, "A change too low"
 
     ratio = 10**18 * future_gamma // A_gamma[1]
-    assert ratio < 10**18 * MAX_A_CHANGE + 1 # dev: gamma change too high
-    assert ratio > 10**18 // MAX_A_CHANGE - 1 # dev: gamma change too low
+    assert ratio < 10**18 * MAX_A_CHANGE + 1, "gamma change too high"
+    assert ratio > 10**18 // MAX_A_CHANGE - 1, "gamma change too low"
 
     self.initial_A_gamma = initial_A_gamma
     self.initial_A_gamma_time = block.timestamp
@@ -1822,7 +1822,7 @@ def stop_ramp_A_gamma():
     @notice Stop Ramping A and gamma parameters immediately.
     @dev Only accessible by factory admin.
     """
-    assert msg.sender == staticcall factory.admin()  # dev: only owner
+    assert msg.sender == staticcall factory.admin(), "only owner"
 
     A_gamma: uint256[2] = self._A_gamma()
     current_A_gamma: uint256 = A_gamma[0] << 128
@@ -1857,7 +1857,7 @@ def apply_new_parameters(
     @param _new_adjustment_step The new adjustment step.
     @param _new_ma_time The new ma time. ma_time is time_in_seconds/ln(2).
     """
-    assert msg.sender == staticcall factory.admin()  # dev: only owner
+    assert msg.sender == staticcall factory.admin(), "only owner"
 
     # ----------------------------- Set fee params ---------------------------
 
@@ -1868,16 +1868,16 @@ def apply_new_parameters(
     current_fee_params: uint256[3] = self._unpack_3(self.packed_fee_params)
 
     if new_out_fee < MAX_FEE + 1:
-        assert new_out_fee > MIN_FEE - 1  # dev: fee is out of range
+        assert new_out_fee > MIN_FEE - 1, "fee is out of range"
     else:
         new_out_fee = current_fee_params[1]
 
     if new_mid_fee > MAX_FEE:
         new_mid_fee = current_fee_params[0]
-    assert new_mid_fee <= new_out_fee  # dev: mid-fee is too high
+    assert new_mid_fee <= new_out_fee, "mid-fee is too high"
 
     if new_fee_gamma < 10**18:
-        assert new_fee_gamma > 0  # dev: fee_gamma out of range [1 .. 10**18]
+        assert new_fee_gamma > 0, "fee_gamma out of range [1 .. 10**18]"
     else:
         new_fee_gamma = current_fee_params[2]
 
@@ -1898,7 +1898,7 @@ def apply_new_parameters(
         new_adjustment_step = current_rebalancing_params[1]
 
     if new_ma_time < 872542:  # <----- Calculated as: 7 * 24 * 60 * 60 / ln(2)
-        assert new_ma_time > 86  # dev: MA time should be longer than 60/ln(2)
+        assert new_ma_time > 86, "MA time should be longer than 60/ln(2)"
     else:
         new_ma_time = current_rebalancing_params[2]
 
