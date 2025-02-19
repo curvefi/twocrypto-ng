@@ -433,25 +433,18 @@ def add_liquidity(
     @return uint256 Amount of LP tokens received by the `receiver
     """
 
-    A_gamma: uint256[2] = self._A_gamma()
-    xp: uint256[N_COINS] = self.balances
-    amountsp: uint256[N_COINS] = empty(uint256[N_COINS])
-    d_token: uint256 = 0
-    d_token_fee: uint256 = 0
-    old_D: uint256 = 0
 
     assert amounts[0] + amounts[1] > 0, "no coins to add"
 
     # --------------------- Get prices, balances -----------------------------
 
-    price_scale: uint256 = self.cached_price_scale
-
-    # -------------------------------------- Update balances and calculate xp.
-    xp_old: uint256[N_COINS] = xp
-    amounts_received: uint256[N_COINS] = empty(uint256[N_COINS])
+    old_balances: uint256[N_COINS] = self.balances
 
     ########################## TRANSFER IN <-------
 
+    amounts_received: uint256[N_COINS] = empty(uint256[N_COINS])
+    # This variable will contain the old balances + the amounts received.
+    balances: uint256[N_COINS] = self.balances
     for i: uint256 in range(N_COINS):
         if amounts[i] > 0:
             # Updates self.balances here:
@@ -461,35 +454,33 @@ def add_liquidity(
                 msg.sender,
                 False,  # <--------------------- Disable optimistic transfers.
             )
-            xp[i] = xp[i] + amounts_received[i]
+            balances[i] += amounts_received[i]
 
-    xp = [
-        xp[0] * PRECISIONS[0],
-        unsafe_div(xp[1] * price_scale * PRECISIONS[1], PRECISION)
-    ]
-    xp_old = [
-        xp_old[0] * PRECISIONS[0],
-        unsafe_div(xp_old[1] * price_scale * PRECISIONS[1], PRECISION)
-    ]
+    price_scale: uint256 = self.cached_price_scale
+    xp: uint256[N_COINS] = self._xp(balances, price_scale)
+    old_xp: uint256[N_COINS] = self._xp(old_balances, price_scale)
 
+    # amountsp (amounts * p) contains the scaled `amounts_received` of each coin.
+    amountsp: uint256[N_COINS] = empty(uint256[N_COINS])
     for i: uint256 in range(N_COINS):
         if amounts_received[i] > 0:
-            amountsp[i] = xp[i] - xp_old[i]
-
+            amountsp[i] = xp[i] - old_xp[i]
     # -------------------- Calculate LP tokens to mint -----------------------
 
+    A_gamma: uint256[2] = self._A_gamma()
+
+    old_D: uint256 = 0
     if self._is_ramping():
         # Recalculate D if A and/or gamma are ramping because the shape of
         # the bonding curve is changing.
-        old_D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp_old, 0)
-
+        old_D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], old_xp, 0)
     else:
-
         old_D = self.D
 
     D: uint256 = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
 
     token_supply: uint256 = self.totalSupply
+    d_token: uint256 = 0
     if old_D > 0:
         d_token = token_supply * D // old_D - token_supply
     else:
@@ -497,6 +488,7 @@ def add_liquidity(
 
     assert d_token > 0, "nothing minted"
 
+    d_token_fee: uint256 = 0
     if old_D > 0:
 
         d_token_fee = (
@@ -539,26 +531,22 @@ def add_liquidity(
 @external
 @nonreentrant
 def remove_liquidity(
-    _amount: uint256,
+    amount: uint256,
     min_amounts: uint256[N_COINS],
     receiver: address = msg.sender,
 ) -> uint256[N_COINS]:
     """
     @notice This withdrawal method is very safe, does no complex math since
             tokens are withdrawn in balanced proportions. No fees are charged.
-    @param _amount Amount of LP tokens to burn
+    @param amount Amount of LP tokens to burn
     @param min_amounts Minimum amounts of tokens to withdraw
     @param receiver Address to send the withdrawn tokens to
     @return uint256[3] Amount of pool tokens received by the `receiver`
     """
-    amount: uint256 = _amount
-    balances: uint256[N_COINS] = self.balances
-    withdraw_amounts: uint256[N_COINS] = empty(uint256[N_COINS])
 
     # -------------------------------------------------------- Burn LP tokens.
 
-    total_supply: uint256 = self.totalSupply  # <------ Get totalSupply before
-    self.burnFrom(msg.sender, _amount)  # ---- reducing it with self.burnFrom.
+    self.burnFrom(msg.sender, amount)  # ---- reducing it with self.burnFrom.
 
     # There are two cases for withdrawing tokens from the pool.
     #   Case 1. Withdrawal does not empty the pool.
@@ -569,26 +557,31 @@ def remove_liquidity(
     #           In this situation, all tokens are withdrawn and the invariant
     #           is reset.
 
+    # We make a copy of _amount because vyper doesn't allow reassigning to
+    # function arguments.
+    withdraw_amounts: uint256[N_COINS] = empty(uint256[N_COINS])
+    # We cache the total supply to avoid multiple SLOADs.
+    total_supply: uint256 = self.totalSupply
     if amount == total_supply:  # <----------------------------------- Case 2.
 
         for i: uint256 in range(N_COINS):
 
-            withdraw_amounts[i] = balances[i]
+            withdraw_amounts[i] = self.balances[i]
 
     else:  # <-------------------------------------------------------- Case 1.
-
-        amount -= 1  # <---- To prevent rounding errors, favor LPs a tiny bit.
+        # To prevent rounding errors, favor LPs a tiny bit.
+        adjusted_amount: uint256 = amount - 1
 
         for i: uint256 in range(N_COINS):
-
-            withdraw_amounts[i] = balances[i] * amount // total_supply
+            withdraw_amounts[i] = self.balances[i] * adjusted_amount // total_supply
             assert withdraw_amounts[i] >= min_amounts[i], "slippage"
 
     D: uint256 = self.D
-    self.D = D - unsafe_div(D * amount, total_supply)  # <----------- Reduce D
-    #      proportional to the amount of tokens leaving. Since withdrawals are
-    #       balanced, this is a simple subtraction. If amount == total_supply,
-    #                                                             D will be 0.
+    # Reduce D proportionally to the amount of tokens leaving. Since withdrawals
+    # are balanced, this is a simple subtraction. If amount == total_supply,
+    # D will be 0.
+    # TODO what guarantees here total_supply > 0?
+    self.D = D - unsafe_div(D * amount, total_supply)
 
     # ---------------------------------- Transfers ---------------------------
 
@@ -597,7 +590,7 @@ def remove_liquidity(
         # before external calls:
         self._transfer_out(i, withdraw_amounts[i], receiver)
 
-    log RemoveLiquidity(msg.sender, withdraw_amounts, total_supply - _amount)
+    log RemoveLiquidity(msg.sender, withdraw_amounts, total_supply - amount)
 
     return withdraw_amounts
 
@@ -627,11 +620,8 @@ def remove_liquidity_one_coin(
 
     dy: uint256 = 0
     D: uint256 = 0
-    p: uint256 = 0
     xp: uint256[N_COINS] = empty(uint256[N_COINS])
     approx_fee: uint256 = 0
-
-    # ------------------------------------------------------------------------
 
     dy, D, xp, approx_fee = self._calc_withdraw_one_coin(
         A_gamma,
@@ -646,8 +636,8 @@ def remove_liquidity_one_coin(
     # Burn user's tokens:
     self.burnFrom(msg.sender, token_amount)
 
-    packed_price_scale: uint256 = self.tweak_price(A_gamma, xp, D, 0)
-    #        Safe to use D from _calc_withdraw_one_coin here ---^
+    price_scale: uint256 = self.tweak_price(A_gamma, xp, D, 0)
+    # Safe to use D from _calc_withdraw_one_coin here ---^
 
     # ------------------------- Transfers ------------------------------------
 
@@ -656,7 +646,7 @@ def remove_liquidity_one_coin(
     self._transfer_out(i, dy, receiver)
 
     log RemoveLiquidityOne(
-        msg.sender, token_amount, i, dy, approx_fee, packed_price_scale
+        msg.sender, token_amount, i, dy, approx_fee, price_scale
     )
 
     return dy
@@ -718,17 +708,14 @@ def _exchange(
     assert dx_received > 0, "zero dx"
 
     A_gamma: uint256[2] = self._A_gamma()
-    xp: uint256[N_COINS] = self.balances
+    balances: uint256[N_COINS] = self.balances
     dy: uint256 = 0
 
-    y: uint256 = xp[j]
-    x0: uint256 = xp[i] - dx_received  # old xp[i]
+    y: uint256 = balances[j]
+    x0: uint256 = balances[i] - dx_received  # old xp[i]
 
     price_scale: uint256 = self.cached_price_scale
-    xp = [
-        xp[0] * PRECISIONS[0],
-        unsafe_div(xp[1] * price_scale * PRECISIONS[1], PRECISION)
-    ]
+    xp: uint256[N_COINS] = self._xp(balances, price_scale)
 
     # ----------- Update invariant if A, gamma are undergoing ramps ---------
 
@@ -1092,11 +1079,10 @@ def _claim_admin_fees():
 
 @internal
 @view
-def xp(
+def _xp(
     balances: uint256[N_COINS],
     price_scale: uint256,
 ) -> uint256[N_COINS]:
-
     return [
         balances[0] * PRECISIONS[0],
         unsafe_div(balances[1] * PRECISIONS[1] * price_scale, PRECISION)
@@ -1203,17 +1189,12 @@ def _calc_withdraw_one_coin(
     assert token_amount <= token_supply, "token amount more than supply"
     assert i < N_COINS, "coin out of range"
 
-    xx: uint256[N_COINS] = self.balances
 
     # -------------------------- Calculate D0 and xp -------------------------
 
-    price_scale_i: uint256 = self.cached_price_scale * PRECISIONS[1]
-    xp: uint256[N_COINS] = [
-        xx[0] * PRECISIONS[0],
-        unsafe_div(xx[1] * price_scale_i, PRECISION)
-    ]
-    if i == 0:
-        price_scale_i = PRECISION * PRECISIONS[0]
+    price_scale: uint256 = self.cached_price_scale
+    balances: uint256[N_COINS] = self.balances
+    xp: uint256[N_COINS] = self._xp(balances, price_scale)
 
     D: uint256 = 0
 
@@ -1247,12 +1228,16 @@ def _calc_withdraw_one_coin(
 
     # --------- Calculate `approx_fee` (assuming balanced state) in ith token.
     # -------------------------------- We only need this for fee in the event.
-    approx_fee: uint256 = N_COINS * D_fee * xx[i] // D  # <------------------<---------- TODO: Check math.
+    approx_fee: uint256 = N_COINS * D_fee * balances[i] // D  # <------------------<---------- TODO: Check math.
 
     # ------------------------------------------------------------------------
     D -= (dD - D_fee)  # <----------------------------------- Charge fee on D.
     # --------------------------------- Calculate `y_out`` with `(D - D_fee)`.
     y: uint256 = (staticcall MATH.get_y(A_gamma[0], A_gamma[1], xp, D, i))[0]
+
+    price_scale_i: uint256 = price_scale * PRECISIONS[1]
+    if i == 0:
+        price_scale_i = PRECISION * PRECISIONS[0]
     dy: uint256 = (xp[i] - y) * PRECISION // price_scale_i
     xp[i] = y
 
@@ -1526,7 +1511,7 @@ def fee() -> uint256:
          removed.
     @return uint256 fee bps.
     """
-    return self._fee(self.xp(self.balances, self.cached_price_scale))
+    return self._fee(self._xp(self.balances, self.cached_price_scale))
 
 
 @view
