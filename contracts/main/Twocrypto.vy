@@ -859,8 +859,8 @@ def tweak_price(
     # see the whitepaper for more details.
     xp: uint256[N_COINS] = [
         unsafe_div(D, N_COINS),
-        D * PRECISION // (N_COINS * price_scale) 
-    ] 
+        D * PRECISION // (N_COINS * price_scale)
+    ]
 
     xcp_profit: uint256 = 10**18
     virtual_price: uint256 = 10**18
@@ -910,11 +910,11 @@ def tweak_price(
             rebalancing_params[1], unsafe_div(norm, 5)
         )  #           ^------------------------------------- adjustment_step.
 
-        # We only adjust prices if the vector distance between price_oracle 
+        # We only adjust prices if the vector distance between price_oracle
         # and price_scale is large enough. This check ensures that no rebalancing
-        # occurs if the distance is low i.e. the pool prices are pegged to the 
+        # occurs if the distance is low i.e. the pool prices are pegged to the
         # oracle prices.
-        if norm > adjustment_step:  
+        if norm > adjustment_step:
             # Calculate new price scale.
             p_new: uint256 = unsafe_div(
                 price_scale * unsafe_sub(norm, adjustment_step) +
@@ -941,7 +941,7 @@ def tweak_price(
             # unsafe_div because we did safediv before (if vp>1e18)
             new_virtual_price: uint256 = unsafe_div(
                 10**18 * isqrt(xp[0] * xp[1]), total_supply
-            )  
+            )
 
             # If we've got enough profit we rebalance the liquidity in the
             # pool by moving the price_scale closer to the oracle price.
