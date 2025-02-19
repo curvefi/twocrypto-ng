@@ -101,9 +101,8 @@ price = integers(min_value=int(1e10), max_value=int(1e26))
 # towards 18 in case of failure (instead of 2)
 token = sampled_from([18, 6, 2]).map(
     # token = just(18).map(
-    lambda x: boa.load("contracts/mocks/ERC20Mock.vy", "USD", "USD", x)
+    lambda x: boa.load("tests/mocks/MockERC20.vy", x)
 )
-weth = just(boa.load("contracts/mocks/WETH.vy"))
 
 
 # ---------------- pool ----------------
