@@ -508,7 +508,7 @@ def add_liquidity(
         self.mint(receiver, d_token)
         self.admin_lp_virtual_balance += unsafe_div(ADMIN_FEE * d_token_fee, 10**10)
 
-        price_scale = self.tweak_price(A_gamma, xp, D, 0)
+        price_scale = self.tweak_price(A_gamma, xp, D)
 
     else:
 
@@ -646,7 +646,7 @@ def remove_liquidity_one_coin(
     # Burn user's tokens:
     self.burnFrom(msg.sender, token_amount)
 
-    packed_price_scale: uint256 = self.tweak_price(A_gamma, xp, D, 0)
+    packed_price_scale: uint256 = self.tweak_price(A_gamma, xp, D)
     #        Safe to use D from _calc_withdraw_one_coin here ---^
 
     # ------------------------- Transfers ------------------------------------
@@ -769,7 +769,11 @@ def _exchange(
 
     # ------ Tweak price_scale with good initial guess for newton_D ----------
 
-    price_scale = self.tweak_price(A_gamma, xp, 0, y_out[1])
+    # Technically a swap wouldn't require to recompute D, however since we're taking
+    # fees, we need to update D to reflect the new balances.
+    D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, y_out[1])
+
+    price_scale = self.tweak_price(A_gamma, xp, D)
 
     return [dy, fee, price_scale]
 
@@ -778,8 +782,7 @@ def _exchange(
 def tweak_price(
     A_gamma: uint256[2],
     _xp: uint256[N_COINS],
-    new_D: uint256,
-    K0_prev: uint256 = 0,
+    D: uint256,
 ) -> uint256:
     """
     @notice Updates price_oracle, last_price and conditionally adjusts
@@ -790,7 +793,6 @@ def tweak_price(
     @param A_gamma Array of A and gamma parameters.
     @param _xp Array of current balances.
     @param new_D New D value.
-    @param K0_prev Initial guess for `newton_D`.
     """
 
     # ---------------------------- Read storage ------------------------------
@@ -800,10 +802,6 @@ def tweak_price(
     price_scale: uint256 = self.cached_price_scale
     rebalancing_params: uint256[3] = self._unpack_3(self.packed_rebalancing_params)
     # Contains: allowed_extra_profit, adjustment_step, ma_time. -----^
-
-    total_supply: uint256 = self.totalSupply
-    old_xcp_profit: uint256 = self.xcp_profit
-    old_virtual_price: uint256 = self.virtual_price
 
     # ------------------ Update Price Oracle if needed -----------------------
 
@@ -845,29 +843,31 @@ def tweak_price(
     # to be done to the price_scale.
     # ------------------------------------------------------------------------
 
-    # ------------------ If new_D is set to 0, calculate it ------------------
-
-    D_unadjusted: uint256 = new_D
-    if new_D == 0:  #  <--------------------------- _exchange sets new_D to 0.
-        D_unadjusted = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], _xp, K0_prev)
-
-    # ----------------------- Calculate last_prices --------------------------
-
+    # Here we update the spot price, please notice that this value is unsafe
+    # and can be manipulated.
     self.last_prices = unsafe_div(
-        staticcall MATH.get_p(_xp, D_unadjusted, A_gamma) * price_scale,
+        staticcall MATH.get_p(_xp, D, A_gamma) * price_scale,
         10**18
     )
 
     # ---------- Update profit numbers without price adjustment first --------
 
+    # Here we compute xp in a different way compared to `self._xp`:
+    # We assume that pool is balanced (which is not necessarily the case),
+    # and we proceed to compute D // (N_COINS * price_scale) where the price
+    # scale for xp[0] is 1. This is necessary to compute xcp and xcp_profit,
+    # see the whitepaper for more details.
     xp: uint256[N_COINS] = [
-        unsafe_div(D_unadjusted, N_COINS),
-        D_unadjusted * PRECISION // (N_COINS * price_scale)  # <------ safediv.
-    ]  #                                                     with price_scale.
+        unsafe_div(D, N_COINS),
+        D * PRECISION // (N_COINS * price_scale) 
+    ] 
 
     xcp_profit: uint256 = 10**18
     virtual_price: uint256 = 10**18
 
+    # `totalSupply` will not change during this function call.
+    total_supply: uint256 = self.totalSupply
+    old_virtual_price: uint256 = self.virtual_price
     if old_virtual_price > 0:
         xcp: uint256 = isqrt(xp[0] * xp[1])
 
@@ -877,6 +877,7 @@ def tweak_price(
         virtual_price = 10**18 * xcp // total_supply + 1
 
         # Safe to do unsafe_div as old_virtual_price > 0.
+        old_xcp_profit: uint256 = self.xcp_profit
         xcp_profit = unsafe_div(
             old_xcp_profit * virtual_price,
             old_virtual_price
@@ -897,10 +898,7 @@ def tweak_price(
     if virtual_price ** 2 > xcp_profit * (10**18 + 2 * rebalancing_params[0]):
         #                          allowed_extra_profit --------^
 
-        # ------------------- Get adjustment step ----------------------------
-
-        #                Calculate the vector distance between price_scale and
-        #                                                        price_oracle.
+        # Calculate the vector distance between price_scale and price_oracle.
         norm: uint256 = unsafe_div(
             unsafe_mul(price_oracle, 10**18), price_scale
         )
@@ -912,14 +910,12 @@ def tweak_price(
             rebalancing_params[1], unsafe_div(norm, 5)
         )  #           ^------------------------------------- adjustment_step.
 
-        if norm > adjustment_step:  # <---------- We only adjust prices if the
-            #          vector distance between price_oracle and price_scale is
-            #             large enough. This check ensures that no rebalancing
-            #           occurs if the distance is low i.e. the pool prices are
-            #                                     pegged to the oracle prices.
-
-            # ------------------------------------- Calculate new price scale.
-
+        # We only adjust prices if the vector distance between price_oracle 
+        # and price_scale is large enough. This check ensures that no rebalancing
+        # occurs if the distance is low i.e. the pool prices are pegged to the 
+        # oracle prices.
+        if norm > adjustment_step:  
+            # Calculate new price scale.
             p_new: uint256 = unsafe_div(
                 price_scale * unsafe_sub(norm, adjustment_step) +
                 adjustment_step * price_oracle,
@@ -934,34 +930,35 @@ def tweak_price(
             ]
 
             # ------------------------------------------ Update D with new xp.
-            D: uint256 = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
+            new_D: uint256 = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
 
             # ------------------------------------- Convert xp to real prices.
             xp = [
-                unsafe_div(D, N_COINS),
-                D * PRECISION // (N_COINS * p_new)
+                unsafe_div(new_D, N_COINS),
+                new_D * PRECISION // (N_COINS * p_new)
             ]
 
-            # ---------- Calculate new virtual_price using new xp and D. Reuse
-            #              `old_virtual_price` (but it has new virtual_price).
-            old_virtual_price = unsafe_div(
+            # unsafe_div because we did safediv before (if vp>1e18)
+            new_virtual_price: uint256 = unsafe_div(
                 10**18 * isqrt(xp[0] * xp[1]), total_supply
-            )  # <----- unsafe_div because we did safediv before (if vp>1e18)
+            )  
 
-            # ---------------------------- Proceed if we've got enough profit.
+            # If we've got enough profit we rebalance the liquidity in the
+            # pool by moving the price_scale closer to the oracle price.
             if (
-                old_virtual_price > 10**18 and
-                old_virtual_price ** 2 > xcp_profit * 10**18
+                new_virtual_price > 10**18 and
+                new_virtual_price ** 2 > xcp_profit * 10**18
             ):
 
-                self.D = D
-                self.virtual_price = old_virtual_price
+                self.D = new_D
+                self.virtual_price = new_virtual_price
                 self.cached_price_scale = p_new
 
                 return p_new
 
-    # --------- price_scale was not adjusted. Update the profit counter and D.
-    self.D = D_unadjusted
+    # If we end up here price_scale was not adjusted. So we update the state
+    # with the virtual price and D we calculated before attempting a rebalance.
+    self.D = D
     self.virtual_price = virtual_price
 
     return price_scale
