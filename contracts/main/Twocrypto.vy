@@ -558,10 +558,10 @@ def remove_liquidity(
     #           is reset.
 
     # We make a copy of _amount because vyper doesn't allow reassigning to
-    # function arguments. 
+    # function arguments.
     withdraw_amounts: uint256[N_COINS] = empty(uint256[N_COINS])
     # We cache the total supply to avoid multiple SLOADs.
-    total_supply: uint256 = self.totalSupply  
+    total_supply: uint256 = self.totalSupply
     if amount == total_supply:  # <----------------------------------- Case 2.
 
         for i: uint256 in range(N_COINS):
@@ -570,7 +570,7 @@ def remove_liquidity(
 
     else:  # <-------------------------------------------------------- Case 1.
         # To prevent rounding errors, favor LPs a tiny bit.
-        adjusted_amount: uint256 = amount - 1  
+        adjusted_amount: uint256 = amount - 1
 
         for i: uint256 in range(N_COINS):
             withdraw_amounts[i] = self.balances[i] * adjusted_amount // total_supply
@@ -580,8 +580,8 @@ def remove_liquidity(
     # Reduce D proportionally to the amount of tokens leaving. Since withdrawals
     # are balanced, this is a simple subtraction. If amount == total_supply,
     # D will be 0.
-    # TODO what guarantees here total_supply > 0? 
-    self.D = D - unsafe_div(D * amount, total_supply)  
+    # TODO what guarantees here total_supply > 0?
+    self.D = D - unsafe_div(D * amount, total_supply)
 
     # ---------------------------------- Transfers ---------------------------
 
