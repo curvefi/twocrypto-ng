@@ -1114,27 +1114,24 @@ def _is_ramping() -> bool:
 @view
 @internal
 def _A_gamma() -> uint256[2]:
-    t1: uint256 = self.future_A_gamma_time
+    future_A_gamma: uint256[2] = self._unpack_2(self.future_A_gamma)
 
-    A_gamma_1: uint256 = self.future_A_gamma
-    gamma1: uint256 = A_gamma_1 & 2**128 - 1
-    A1: uint256 = A_gamma_1 >> 128
-
-    if block.timestamp < t1:
-
-        # --------------- Handle ramping up and down of A --------------------
-
-        A_gamma_0: uint256 = self.initial_A_gamma
+    if self._is_ramping():
+        # Lineary interpolate A and/or gamma.
         t0: uint256 = self.initial_A_gamma_time
 
-        t1 -= t0
-        t0 = block.timestamp - t0
-        t2: uint256 = t1 - t0
+        duration: uint256 = self.future_A_gamma_time - t0
 
-        A1 = ((A_gamma_0 >> 128) * t2 + A1 * t0) // t1
-        gamma1 = ((A_gamma_0 & 2**128 - 1) * t2 + gamma1 * t0) // t1
+        elapsed: uint256 = block.timestamp - t0
+        remaining: uint256 = duration - elapsed
 
-    return [A1, gamma1]
+        initial_A_gamma: uint256[N_COINS] = self._unpack_2(self.initial_A_gamma)
+
+        return [(initial_A_gamma[0] * remaining + future_A_gamma[0] * elapsed) // duration,
+                (initial_A_gamma[1] * remaining + future_A_gamma[1] * elapsed) // duration]
+
+    # If not ramping, that means we are using the current A and gamma.
+    return future_A_gamma
 
 
 @internal
