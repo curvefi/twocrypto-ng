@@ -1186,17 +1186,12 @@ def _calc_withdraw_one_coin(
     assert token_amount <= token_supply, "token amount more than supply"
     assert i < N_COINS, "coin out of range"
 
-    xx: uint256[N_COINS] = self.balances
 
     # -------------------------- Calculate D0 and xp -------------------------
 
-    price_scale_i: uint256 = self.cached_price_scale * PRECISIONS[1]
-    xp: uint256[N_COINS] = [
-        xx[0] * PRECISIONS[0],
-        unsafe_div(xx[1] * price_scale_i, PRECISION)
-    ]
-    if i == 0:
-        price_scale_i = PRECISION * PRECISIONS[0]
+    price_scale: uint256 = self.cached_price_scale
+    balances: uint256[N_COINS] = self.balances
+    xp: uint256[N_COINS] = self._xp(balances, price_scale)
 
     D: uint256 = 0
 
@@ -1230,12 +1225,16 @@ def _calc_withdraw_one_coin(
 
     # --------- Calculate `approx_fee` (assuming balanced state) in ith token.
     # -------------------------------- We only need this for fee in the event.
-    approx_fee: uint256 = N_COINS * D_fee * xx[i] // D  # <------------------<---------- TODO: Check math.
+    approx_fee: uint256 = N_COINS * D_fee * balances[i] // D  # <------------------<---------- TODO: Check math.
 
     # ------------------------------------------------------------------------
     D -= (dD - D_fee)  # <----------------------------------- Charge fee on D.
     # --------------------------------- Calculate `y_out`` with `(D - D_fee)`.
     y: uint256 = (staticcall MATH.get_y(A_gamma[0], A_gamma[1], xp, D, i))[0]
+
+    price_scale_i: uint256 = price_scale * PRECISIONS[1]
+    if i == 0:
+        price_scale_i = PRECISION * PRECISIONS[0]
     dy: uint256 = (xp[i] - y) * PRECISION // price_scale_i
     xp[i] = y
 
