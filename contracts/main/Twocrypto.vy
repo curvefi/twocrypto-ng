@@ -190,16 +190,6 @@ balanceOf: public(HashMap[address, uint256])
 allowance: public(HashMap[address, HashMap[address, uint256]])
 totalSupply: public(uint256)
 
-EIP712_TYPEHASH: constant(bytes32) = keccak256(
-    "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract,bytes32 salt)"
-)
-VERSION_HASH: constant(bytes32) = keccak256(version)
-NAME_HASH: immutable(bytes32)
-CACHED_CHAIN_ID: immutable(uint256)
-salt: public(immutable(bytes32))
-CACHED_DOMAIN_SEPARATOR: immutable(bytes32)
-
-
 # ----------------------- Contract -------------------------------------------
 
 @deploy
@@ -250,24 +240,6 @@ def __init__(
     self.last_prices = initial_price
     self.last_timestamp = block.timestamp
     self.xcp_profit_a = 10**18
-
-    #         Cache DOMAIN_SEPARATOR. If chain.id is not CACHED_CHAIN_ID, then
-    #     DOMAIN_SEPARATOR will be re-calculated each time `permit` is called.
-    #                   Otherwise, it will always use CACHED_DOMAIN_SEPARATOR.
-    #                       see: `_domain_separator()` for its implementation.
-    NAME_HASH = keccak256(name)
-    salt = _salt
-    CACHED_CHAIN_ID = chain.id
-    CACHED_DOMAIN_SEPARATOR = keccak256(
-        abi_encode(
-            EIP712_TYPEHASH,
-            NAME_HASH,
-            VERSION_HASH,
-            chain.id,
-            self,
-            salt,
-        )
-    )
 
     log Transfer(empty(address), self, 0)  # <------- Fire empty transfer from
     #                                       0x0 to self for indexers to catch.
@@ -1307,23 +1279,6 @@ def _transfer(_from: address, _to: address, _value: uint256):
     log Transfer(_from, _to, _value)
 
 
-@view
-@internal
-def _domain_separator() -> bytes32:
-    if chain.id != CACHED_CHAIN_ID:
-        return keccak256(
-            abi_encode(
-                EIP712_TYPEHASH,
-                NAME_HASH,
-                VERSION_HASH,
-                chain.id,
-                self,
-                salt,
-            )
-        )
-    return CACHED_DOMAIN_SEPARATOR
-
-
 @external
 def transferFrom(_from: address, _to: address, _value: uint256) -> bool:
     """
@@ -1706,16 +1661,6 @@ def fee_calc(xp: uint256[N_COINS]) -> uint256:  # <----- For by view contract.
     @return uint256 Fee value.
     """
     return self._fee(xp)
-
-
-@view
-@external
-def DOMAIN_SEPARATOR() -> bytes32:
-    """
-    @notice EIP712 domain separator.
-    @return bytes32 Domain Separator set for the current chain.
-    """
-    return self._domain_separator()
 
 
 # ------------------------- AMM Admin Functions ------------------------------
