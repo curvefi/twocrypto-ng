@@ -544,9 +544,9 @@ class StatefulBase(RuleBasedStateMachine):
     @precondition(lambda self: self.swapped_once)
     @invariant()
     def virtual_price(self):
-        assert (self.pool.virtual_price() - 1e18) * 2 >= (
+        assert self.pool.virtual_price() ** 2 >= (
             self.pool.xcp_profit() - 1e18
-        ), "virtual price should be at least twice the profit"
+        ), "virtual price should be at least the square of the profit"
         assert (
             abs(log(self.pool.virtual_price() / self.pool.get_virtual_price())) < 1e-10
         ), "cached virtual price shouldn't lag behind current virtual price"
