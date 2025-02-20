@@ -369,7 +369,7 @@ class StatefulBase(RuleBasedStateMachine):
         # 2. the function reverted because the virtual price
         # decreased (try block + boa.reverts)
         try:
-            with boa.reverts(dev="virtual price decreased"):
+            with boa.reverts("virtual price decreased"):
                 self.pool.remove_liquidity_one_coin(
                     lp_tokens_to_withdraw,
                     coin_idx,
