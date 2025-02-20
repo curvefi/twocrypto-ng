@@ -546,7 +546,10 @@ def remove_liquidity(
 
     # -------------------------------------------------------- Burn LP tokens.
 
-    self.burnFrom(msg.sender, amount)  # ---- reducing it with self.burnFrom.
+    # We cache the total supply to avoid multiple SLOADs. It is important to do
+    # this before the burnFrom call, as the burnFrom call will reduce the supply.
+    total_supply: uint256 = self.totalSupply
+    self.burnFrom(msg.sender, amount)
 
     # There are two cases for withdrawing tokens from the pool.
     #   Case 1. Withdrawal does not empty the pool.
@@ -557,11 +560,9 @@ def remove_liquidity(
     #           In this situation, all tokens are withdrawn and the invariant
     #           is reset.
 
-    # We make a copy of _amount because vyper doesn't allow reassigning to
-    # function arguments.
     withdraw_amounts: uint256[N_COINS] = empty(uint256[N_COINS])
-    # We cache the total supply to avoid multiple SLOADs.
-    total_supply: uint256 = self.totalSupply
+
+    adjusted_amount: uint256 = amount
     if amount == total_supply:  # <----------------------------------- Case 2.
 
         for i: uint256 in range(N_COINS):
@@ -570,7 +571,7 @@ def remove_liquidity(
 
     else:  # <-------------------------------------------------------- Case 1.
         # To prevent rounding errors, favor LPs a tiny bit.
-        adjusted_amount: uint256 = amount - 1
+        adjusted_amount -= 1
 
         for i: uint256 in range(N_COINS):
             withdraw_amounts[i] = self.balances[i] * adjusted_amount // total_supply
@@ -580,8 +581,7 @@ def remove_liquidity(
     # Reduce D proportionally to the amount of tokens leaving. Since withdrawals
     # are balanced, this is a simple subtraction. If amount == total_supply,
     # D will be 0.
-    # TODO what guarantees here total_supply > 0?
-    self.D = D - unsafe_div(D * amount, total_supply)
+    self.D = D - unsafe_div(D * adjusted_amount, total_supply)
 
     # ---------------------------------- Transfers ---------------------------
 
@@ -590,6 +590,8 @@ def remove_liquidity(
         # before external calls:
         self._transfer_out(i, withdraw_amounts[i], receiver)
 
+    # We intentionally use the unadjusted `amount` here as the amount of lp
+    # tokens burnt is `amount`, regardless of the rounding error.
     log RemoveLiquidity(msg.sender, withdraw_amounts, total_supply - amount)
 
     return withdraw_amounts
