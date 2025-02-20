@@ -40,7 +40,7 @@ def get_p(
 
 
 def _get_dydx_vyper(swap, price_calc):
-    xp = swap.internal.xp(
+    xp = swap.internal._xp(
         swap._storage.balances.get(),
         swap.price_scale(),
     )
