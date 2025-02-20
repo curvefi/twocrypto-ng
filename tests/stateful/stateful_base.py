@@ -369,7 +369,7 @@ class StatefulBase(RuleBasedStateMachine):
         # 2. the function reverted because the virtual price
         # decreased (try block + boa.reverts)
         try:
-            with boa.reverts("virtual price decreased"):
+            with boa.reverts("unsafe value for y"):
                 self.pool.remove_liquidity_one_coin(
                     lp_tokens_to_withdraw,
                     coin_idx,
@@ -386,7 +386,7 @@ class StatefulBase(RuleBasedStateMachine):
             ), "virtual price decreased but but the amount was too high"
             event(
                 "unsuccessful removal of liquidity because of "
-                "loss (this should not happen too often)"
+                "unsafe y (this should not happen too often)"
             )
             return
         except ValueError as e:
