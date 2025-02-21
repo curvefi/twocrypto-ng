@@ -466,8 +466,12 @@ def _absorb_donation():
     # TODO this should be customizable to fit different tokens decimals and prices
     DONATION_ABSORB_AMOUNT_PER_SECOND: uint256 = 10**15
 
-    # Update donations clock
     elapsed: uint256 = block.timestamp - self.last_donation_absorb_timestamp
+    # Early return if absorption is attempted multiple times in the same block (or
+    # multiple blocks where block timestamp is the same).
+    if elapsed == 0:
+        return
+    # Update donations clock
     self.last_donation_absorb_timestamp = block.timestamp
 
     # Absorb donations linearly, releasing a constant amount per second.
