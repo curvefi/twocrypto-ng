@@ -422,17 +422,28 @@ def exchange_received(
 @external
 def donate(amounts: uint256[N_COINS]):
     assert amounts[0] + amounts[1] > 0, "no coins to donate"
+
     donation_balances: uint256[N_COINS] = self.donation_balances
+
+    # Update the donation clock if there are no donations to be absorbed.
+    # This makes sure that the donation starts being absorbed from the
+    # block timestamp and not from the end of the last donation.
+    if donation_balances[0] + donation_balances[1] == 0:
+        self.last_donation_absorb_timestamp = block.timestamp
 
     for i: uint256 in range(N_COINS):
         if amounts[i] > 0:
-            donation_balances[i] += self._transfer_in(
-                i,
-                amounts[i],
+            coin_balance: uint256 = staticcall IERC20(coins[i]).balanceOf(self)
+
+            assert extcall IERC20(coins[i]).transferFrom(
                 msg.sender,
-                False,  # Disable optimistic transfers.
-            )
-    self.donation_balances = donation_balances
+                self,
+                amounts[i],
+                default_return_value=True
+            ), "transferFrom failed"
+
+            dx: uint256 = staticcall IERC20(coins[i]).balanceOf(self) - coin_balance
+            self.donation_balances[i] += dx
 
 @internal
 def _absorb_donation():
