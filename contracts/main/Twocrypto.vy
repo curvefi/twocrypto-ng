@@ -145,6 +145,8 @@ future_A_gamma_time: public(uint256)  # <------ Time when ramping is finished.
 #                                                            and not set to 0.
 
 balances: public(uint256[N_COINS])
+donation_balances: public(uint256[N_COINS])
+last_donation_absorb_timestamp: uint256
 D: public(uint256)
 xcp_profit: public(uint256)
 xcp_profit_a: public(uint256)  # <--- Full profit at last claim of admin fees.
@@ -417,6 +419,66 @@ def exchange_received(
 
     return out[0]
 
+@external
+def donate(amounts: uint256[N_COINS]):
+    assert amounts[0] + amounts[1] > 0, "no coins to donate"
+    donation_balances: uint256[N_COINS] = self.donation_balances
+
+    for i: uint256 in range(N_COINS):
+        if amounts[i] > 0:
+            donation_balances[i] += self._transfer_in(
+                i,
+                amounts[i],
+                msg.sender,
+                False,  # Disable optimistic transfers.
+            )
+    self.donation_balances = donation_balances
+
+@internal
+def _absorb_donation():
+    # Note that it is very important to call this function at the beginning of any
+    # `balance` changing function BEFORE any other `balance` changes are made. This is
+    # because `tweak_price` will check by how much the virtual price has increased
+    # to compute `xcp_profit` which a donation should not affect.
+
+    # TODO this should be customizable to fit different tokens decimals and prices
+    DONATION_ABSORB_AMOUNT_PER_SECOND: uint256 = 10**15
+
+    # Update donations clock
+    elapsed: uint256 = block.timestamp - self.last_donation_absorb_timestamp
+    self.last_donation_absorb_timestamp = block.timestamp
+
+    balances: uint256[N_COINS] = self.balances
+    donation_balances: uint256[N_COINS] = self.donation_balances
+
+    # Absorb donations linearly, releasing a constant amount per second.
+    for i: uint256 in range(N_COINS):
+        if donation_balances[i] > 0:
+            released_donation: uint256 = DONATION_ABSORB_AMOUNT_PER_SECOND * elapsed
+
+            # Clamp release amount to available donation balance.
+            released_donation = min(released_donation, donation_balances[i])
+
+            # Increase the pool's balance by the released donation.
+            balances[i] += released_donation
+            donation_balances[i] -= released_donation
+
+    self.donation_balances = donation_balances
+    self.balances = balances
+
+    # Recalculate D based on updated balances.
+    A_gamma: uint256[2] = self._A_gamma()
+    price_scale: uint256 = self.cached_price_scale
+    xp: uint256[N_COINS] = self._xp(balances, price_scale)
+    D: uint256 = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
+    self.D = D
+
+    xp = [
+        unsafe_div(D, N_COINS),
+        D * PRECISION // (N_COINS * price_scale)
+    ]
+    self.virtual_price = 10**18 * isqrt(xp[0] * xp[1]) // self.totalSupply
+
 
 @external
 @nonreentrant
@@ -432,9 +494,9 @@ def add_liquidity(
     @param receiver Address to send the LP tokens to. Default is msg.sender
     @return uint256 Amount of LP tokens received by the `receiver
     """
-
-
     assert amounts[0] + amounts[1] > 0, "no coins to add"
+
+    self._absorb_donation()
 
     # --------------------- Get prices, balances -----------------------------
 
@@ -543,6 +605,7 @@ def remove_liquidity(
     @param receiver Address to send the withdrawn tokens to
     @return uint256[3] Amount of pool tokens received by the `receiver`
     """
+    self._absorb_donation()
 
     # -------------------------------------------------------- Burn LP tokens.
 
@@ -616,6 +679,7 @@ def remove_liquidity_one_coin(
     @return Amount of tokens at index i received by the `receiver`
     """
 
+    self._absorb_donation()
     self._claim_admin_fees()  # <--------- Auto-claim admin fees occasionally.
 
     A_gamma: uint256[2] = self._A_gamma()
@@ -705,6 +769,7 @@ def _exchange(
     dx_received: uint256,
     min_dy: uint256,
 ) -> uint256[3]:
+    self._absorb_donation()
 
     assert i != j, "same coin"
     assert dx_received > 0, "zero dx"
