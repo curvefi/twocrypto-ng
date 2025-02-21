@@ -423,6 +423,11 @@ def exchange_received(
 def donate(amounts: uint256[N_COINS]):
     assert amounts[0] + amounts[1] > 0, "no coins to donate"
 
+    # We forbid donating when the pool is empty as we consider this
+    # undefined behavior.
+    balances: uint256[N_COINS] = self.balances
+    assert balances[0] + balances[1] > 0, "no coins in the pool"
+
     donation_balances: uint256[N_COINS] = self.donation_balances
 
     # Update the donation clock if there are no donations to be absorbed.
