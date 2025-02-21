@@ -14,7 +14,7 @@ from hypothesis.strategies import integers
 
 from contracts.main import TwocryptoFactory as factory
 from contracts.mocks import ERC20Mock as ERC20
-from tests.utils.constants import UNIX_DAY
+from tests.utils.constants import N_COINS, UNIX_DAY
 from tests.utils.strategies import address, pool_from_preset
 from tests.utils.tokens import mint_for_testing
 
@@ -58,6 +58,7 @@ class StatefulBase(RuleBasedStateMachine):
 
         # these balances should follow the pool balances
         self.balances = [0, 0]
+        self.donation_balances = [0, 0]
 
         # cache the decimals of the coins
         self.decimals = [c.decimals() for c in self.coins]
@@ -444,6 +445,16 @@ class StatefulBase(RuleBasedStateMachine):
         # update test-tracked xcp profit
         self.xcp_profit = self.pool.xcp_profit()
 
+    def donate(self, amounts):
+        donor = boa.env.generate_address()
+
+        for coin, amount in zip(self.coins, amounts):
+            mint_for_testing(coin, donor, amount)
+            coin.approve(self.pool, amount, sender=donor)
+
+        self.pool.donate(amounts, sender=donor)
+        self.donation_balances = [x + y for x, y in zip(self.donation_balances, amounts)]
+
     @rule(time_increase=integers(min_value=1, max_value=UNIX_DAY * 7))
     def time_forward(self, time_increase):
         """Make the time moves forward by `sleep_time` seconds.
@@ -501,7 +512,7 @@ class StatefulBase(RuleBasedStateMachine):
                         assert c.balanceOf(self.pool) < b, (
                             "one withdrawal didn't reduce the liquidity" "of the pool"
                         )
-            for c in self.coins:
+            for i in range(N_COINS):
                 # there should not be any liquidity left in the pool
                 assert (
                     # when imbalanced withdrawal occurs the pool protects
@@ -512,20 +523,26 @@ class StatefulBase(RuleBasedStateMachine):
                     or
                     # 1e7 is an arbitrary number that should be small enough
                     # not to worry about the pool actually not being empty.
-                    c.balanceOf(self.pool) <= 1e7
+                    # We have to deduce the donation balances because they
+                    # cannot be withdrawn by the user.
+                    self.balances[i] <= 1e7  # TODO adjust for decimals
                 ), "pool still has signficant liquidity after all withdrawals"
 
     @invariant()
     def balances(self):  # noqa: F811
         balances = [self.pool.balances(i) for i in range(2)]
+        donation_balances = [self.pool.donation_balances(i) for i in range(2)]
         balance_of = [c.balanceOf(self.pool) for c in self.coins]
-        for i in range(2):
+        for i in range(N_COINS):
             assert (
                 self.balances[i] == balances[i]
             ), "test-tracked balances don't match pool-tracked balances"
             assert (
-                self.balances[i] == balance_of[i]
-            ), "test-tracked balances don't match token-tracked balances"
+                self.donation_balances[i] == donation_balances[i]
+            ), "test-tracked donation balances don't match pool-tracked donation balances"
+            assert (
+                self.balances[i] + self.donation_balances[i] == balance_of[i]
+            ), "test-tracked balances + donation_balances don't match token-tracked balances"
 
     @invariant()
     def sanity_check(self):

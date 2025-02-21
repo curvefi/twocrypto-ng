@@ -4,8 +4,26 @@ from hypothesis.stateful import precondition, rule
 from hypothesis.strategies import data, floats, integers, sampled_from
 from stateful_base import StatefulBase
 
-from tests.utils.constants import MAX_A, MAX_GAMMA, MIN_A, MIN_GAMMA, UNIX_DAY
+from tests.utils.constants import MAX_A, MAX_GAMMA, MIN_A, MIN_GAMMA, N_COINS, UNIX_DAY
 from tests.utils.strategies import address
+
+
+class DonationStateful(StatefulBase):
+    @rule(data=data(), user=address)
+    def donate_rule(self, data, user):
+        note("[DONATION]")
+        amounts = [0] * N_COINS
+
+        for i in range(N_COINS):
+            liquidity = self.pool.balances(i)
+
+            amounts[i] = data.draw(
+                integers(min_value=min(1, liquidity // 10_000), max_value=liquidity // 10),
+                label=f"donation amount {i}",
+            )
+
+        self.donate(amounts)
+        note("[SUCCESS]")
 
 
 class OnlySwapStateful(StatefulBase):
@@ -320,6 +338,7 @@ class RampingStateful(ImbalancedLiquidityStateful):
 
 
 TestOnlySwap = OnlySwapStateful.TestCase
+TestDonation = DonationStateful.TestCase
 TestUpOnlyLiquidity = UpOnlyLiquidityStateful.TestCase
 TestOnlyBalancedLiquidity = OnlyBalancedLiquidityStateful.TestCase
 TestImbalancedLiquidity = ImbalancedLiquidityStateful.TestCase
