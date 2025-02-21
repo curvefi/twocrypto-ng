@@ -1,14 +1,16 @@
-# pragma version ~=0.4.0
+# pragma version 0.3.10
+# pragma optimize gas
+# pragma evm-version paris
 """
-@title Twocrypto
+@title CurveTwocryptoOptimized
 @author Curve.Fi
-@license Copyright (c) Curve.Fi, 2025 - all rights reserved
+@license Copyright (c) Curve.Fi, 2023 - all rights reserved
 @notice A Curve AMM pool for 2 unpegged assets (e.g. WETH, USD).
 @dev All prices in the AMM are with respect to the first token in the pool.
 """
 
-from ethereum.ercs import IERC20
-implements: IERC20  # <--------------------- AMM contract is also the LP token.
+from vyper.interfaces import ERC20
+implements: ERC20  # <--------------------- AMM contract is also the LP token.
 
 # --------------------------------- Interfaces -------------------------------
 
@@ -151,7 +153,7 @@ xcp_profit_a: public(uint256)  # <--- Full profit at last claim of admin fees.
 
 virtual_price: public(uint256)  # <------ Cached (fast to read) virtual price.
 #                          The cached `virtual_price` is also used internally.
-donation_virtual_price: public(uint256) 
+vp_donation: public(uint256) # Separate virtual price buffer for donated funds.
 
 # Params that affect how price_scale get adjusted :
 packed_rebalancing_params: public(uint256)  # <---------- Contains rebalancing
@@ -174,7 +176,7 @@ MIN_RAMP_TIME: constant(uint256) = 86400
 MIN_ADMIN_FEE_CLAIM_INTERVAL: constant(uint256) = 86400
 
 A_MULTIPLIER: constant(uint256) = 10000
-MIN_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER // 10
+MIN_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER / 10
 MAX_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER * 1000
 MAX_A_CHANGE: constant(uint256) = 10
 MIN_GAMMA: constant(uint256) = 10**10
@@ -190,10 +192,24 @@ version: public(constant(String[8])) = "v2.1.0"
 balanceOf: public(HashMap[address, uint256])
 allowance: public(HashMap[address, HashMap[address, uint256]])
 totalSupply: public(uint256)
+nonces: public(HashMap[address, uint256])
+
+EIP712_TYPEHASH: constant(bytes32) = keccak256(
+    "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract,bytes32 salt)"
+)
+EIP2612_TYPEHASH: constant(bytes32) = keccak256(
+    "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
+)
+VERSION_HASH: constant(bytes32) = keccak256(version)
+NAME_HASH: immutable(bytes32)
+CACHED_CHAIN_ID: immutable(uint256)
+salt: public(immutable(bytes32))
+CACHED_DOMAIN_SEPARATOR: immutable(bytes32)
+
 
 # ----------------------- Contract -------------------------------------------
 
-@deploy
+@external
 def __init__(
     _name: String[64],
     _symbol: String[32],
@@ -219,11 +235,11 @@ def __init__(
     # --------------- Validate A and gamma parameters here and not in factory.
     gamma_A: uint256[2] = self._unpack_2(packed_gamma_A)  # gamma is at idx 0.
 
-    assert gamma_A[0] > MIN_GAMMA-1, "gamma<MIN"
-    assert gamma_A[0] < MAX_GAMMA+1, "gamma>MAX"
+    assert gamma_A[0] > MIN_GAMMA-1
+    assert gamma_A[0] < MAX_GAMMA+1
 
-    assert gamma_A[1] > MIN_A-1, "A<MIN"
-    assert gamma_A[1] < MAX_A+1, "A>MAX"
+    assert gamma_A[1] > MIN_A-1
+    assert gamma_A[1] < MAX_A+1
 
     self.initial_A_gamma = packed_gamma_A
     self.future_A_gamma = packed_gamma_A
@@ -241,6 +257,24 @@ def __init__(
     self.last_prices = initial_price
     self.last_timestamp = block.timestamp
     self.xcp_profit_a = 10**18
+
+    #         Cache DOMAIN_SEPARATOR. If chain.id is not CACHED_CHAIN_ID, then
+    #     DOMAIN_SEPARATOR will be re-calculated each time `permit` is called.
+    #                   Otherwise, it will always use CACHED_DOMAIN_SEPARATOR.
+    #                       see: `_domain_separator()` for its implementation.
+    NAME_HASH = keccak256(name)
+    salt = _salt
+    CACHED_CHAIN_ID = chain.id
+    CACHED_DOMAIN_SEPARATOR = keccak256(
+        _abi_encode(
+            EIP712_TYPEHASH,
+            NAME_HASH,
+            VERSION_HASH,
+            chain.id,
+            self,
+            salt,
+        )
+    )
 
     log Transfer(empty(address), self, 0)  # <------- Fire empty transfer from
     #                                       0x0 to self for indexers to catch.
@@ -266,7 +300,7 @@ def _transfer_in(
             This is only enabled for exchange_received.
     @return The amount of tokens received.
     """
-    coin_balance: uint256 = staticcall IERC20(coins[_coin_idx]).balanceOf(self)
+    coin_balance: uint256 = ERC20(coins[_coin_idx]).balanceOf(self)
 
     if expect_optimistic_transfer:  # Only enabled in exchange_received:
         # it expects the caller of exchange_received to have sent tokens to
@@ -279,7 +313,7 @@ def _transfer_in(
         # If we checked for received_amounts == dx, an extra transfer without a
         # call to exchange_received will break the method.
         dx: uint256 = coin_balance - self.balances[_coin_idx]
-        assert dx >= _dx, "user didn't give us coins"
+        assert dx >= _dx  # dev: user didn't give us coins
 
         # Adjust balances
         self.balances[_coin_idx] += dx
@@ -289,14 +323,14 @@ def _transfer_in(
     # ----------------------------------------------- ERC20 transferFrom flow.
 
     # EXTERNAL CALL
-    assert extcall IERC20(coins[_coin_idx]).transferFrom(
+    assert ERC20(coins[_coin_idx]).transferFrom(
         sender,
         self,
         _dx,
         default_return_value=True
-    ), "transferFrom failed"
+    )
 
-    dx: uint256 = staticcall IERC20(coins[_coin_idx]).balanceOf(self) - coin_balance
+    dx: uint256 = ERC20(coins[_coin_idx]).balanceOf(self) - coin_balance
     self.balances[_coin_idx] += dx
     return dx
 
@@ -316,18 +350,18 @@ def _transfer_out(_coin_idx: uint256, _amount: uint256, receiver: address):
     self.balances[_coin_idx] -= _amount
 
     # EXTERNAL CALL
-    assert extcall IERC20(coins[_coin_idx]).transfer(
+    assert ERC20(coins[_coin_idx]).transfer(
         receiver,
         _amount,
         default_return_value=True
-    ), "transfer failed"
+    )
 
 
 # -------------------------- AMM Main Functions ------------------------------
 
 
 @external
-@nonreentrant
+@nonreentrant("lock")
 def exchange(
     i: uint256,
     j: uint256,
@@ -371,7 +405,7 @@ def exchange(
 
 
 @external
-@nonreentrant
+@nonreentrant('lock')
 def exchange_received(
     i: uint256,
     j: uint256,
@@ -420,7 +454,7 @@ def exchange_received(
 
 
 @external
-@nonreentrant
+@nonreentrant("lock")
 def add_liquidity(
     amounts: uint256[N_COINS],
     min_mint_amount: uint256,
@@ -434,19 +468,30 @@ def add_liquidity(
     @return uint256 Amount of LP tokens received by the `receiver
     """
 
+    print("Adding liquidity")
+    # print("Amounts[0]:", amounts[0])
+    # print("Amounts[1]:", amounts[1])
 
-    assert amounts[0] + amounts[1] > 0, "no coins to add"
+    A_gamma: uint256[2] = self._A_gamma()
+    xp: uint256[N_COINS] = self.balances
+    amountsp: uint256[N_COINS] = empty(uint256[N_COINS])
+    d_token: uint256 = 0
+    d_token_fee: uint256 = 0
+    old_D: uint256 = 0
+
+    assert amounts[0] + amounts[1] > 0  # dev: no coins to add
 
     # --------------------- Get prices, balances -----------------------------
 
-    old_balances: uint256[N_COINS] = self.balances
+    price_scale: uint256 = self.cached_price_scale
+
+    # -------------------------------------- Update balances and calculate xp.
+    xp_old: uint256[N_COINS] = xp
+    amounts_received: uint256[N_COINS] = empty(uint256[N_COINS])
 
     ########################## TRANSFER IN <-------
 
-    amounts_received: uint256[N_COINS] = empty(uint256[N_COINS])
-    # This variable will contain the old balances + the amounts received.
-    balances: uint256[N_COINS] = self.balances
-    for i: uint256 in range(N_COINS):
+    for i in range(N_COINS):
         if amounts[i] > 0:
             # Updates self.balances here:
             amounts_received[i] = self._transfer_in(
@@ -455,45 +500,46 @@ def add_liquidity(
                 msg.sender,
                 False,  # <--------------------- Disable optimistic transfers.
             )
-            balances[i] += amounts_received[i]
+            xp[i] = xp[i] + amounts_received[i]
 
-    price_scale: uint256 = self.cached_price_scale
-    xp: uint256[N_COINS] = self._xp(balances, price_scale)
-    old_xp: uint256[N_COINS] = self._xp(old_balances, price_scale)
+    xp = [
+        xp[0] * PRECISIONS[0],
+        unsafe_div(xp[1] * price_scale * PRECISIONS[1], PRECISION)
+    ]
+    xp_old = [
+        xp_old[0] * PRECISIONS[0],
+        unsafe_div(xp_old[1] * price_scale * PRECISIONS[1], PRECISION)
+    ]
 
-    # amountsp (amounts * p) contains the scaled `amounts_received` of each coin.
-    amountsp: uint256[N_COINS] = empty(uint256[N_COINS])
-    for i: uint256 in range(N_COINS):
+    for i in range(N_COINS):
         if amounts_received[i] > 0:
-            amountsp[i] = xp[i] - old_xp[i]
+            amountsp[i] = xp[i] - xp_old[i]
+
     # -------------------- Calculate LP tokens to mint -----------------------
 
-    A_gamma: uint256[2] = self._A_gamma()
+    if self.future_A_gamma_time > block.timestamp:  # <--- A_gamma is ramping.
 
-    old_D: uint256 = 0
-    if self._is_ramping():
-        # Recalculate D if A and/or gamma are ramping because the shape of
-        # the bonding curve is changing.
-        old_D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], old_xp, 0)
+        # ----- Recalculate the invariant if A or gamma are undergoing a ramp.
+        old_D = MATH.newton_D(A_gamma[0], A_gamma[1], xp_old, 0)
+
     else:
+
         old_D = self.D
 
-    D: uint256 = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
+    D: uint256 = MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
 
     token_supply: uint256 = self.totalSupply
-    d_token: uint256 = 0
     if old_D > 0:
-        d_token = token_supply * D // old_D - token_supply
+        d_token = token_supply * D / old_D - token_supply
     else:
         d_token = self.get_xcp(D, price_scale)  # <----- Making initial virtual price equal to 1.
 
-    assert d_token > 0, "nothing minted"
+    assert d_token > 0  # dev: nothing minted
 
-    d_token_fee: uint256 = 0
     if old_D > 0:
 
         d_token_fee = (
-            self._calc_token_fee(amountsp, xp) * d_token // 10**10 + 1
+            self._calc_token_fee(amountsp, xp) * d_token / 10**10 + 1
         )
 
         d_token -= d_token_fee
@@ -501,7 +547,7 @@ def add_liquidity(
         self.mint(receiver, d_token)
         self.admin_lp_virtual_balance += unsafe_div(ADMIN_FEE * d_token_fee, 10**10)
 
-        price_scale = self.tweak_price(A_gamma, xp, D)
+        price_scale = self.tweak_price(A_gamma, xp, D, 0)
 
     else:
 
@@ -514,7 +560,7 @@ def add_liquidity(
 
         self.mint(receiver, d_token)
 
-    assert d_token >= min_mint_amount, "slippage"
+    assert d_token >= min_mint_amount, "Slippage"
 
     # ---------------------------------------------- Log and claim admin fees.
 
@@ -530,27 +576,28 @@ def add_liquidity(
 
 
 @external
-@nonreentrant
+@nonreentrant("lock")
 def remove_liquidity(
-    amount: uint256,
+    _amount: uint256,
     min_amounts: uint256[N_COINS],
     receiver: address = msg.sender,
 ) -> uint256[N_COINS]:
     """
     @notice This withdrawal method is very safe, does no complex math since
             tokens are withdrawn in balanced proportions. No fees are charged.
-    @param amount Amount of LP tokens to burn
+    @param _amount Amount of LP tokens to burn
     @param min_amounts Minimum amounts of tokens to withdraw
     @param receiver Address to send the withdrawn tokens to
     @return uint256[3] Amount of pool tokens received by the `receiver`
     """
+    amount: uint256 = _amount
+    balances: uint256[N_COINS] = self.balances
+    withdraw_amounts: uint256[N_COINS] = empty(uint256[N_COINS])
 
     # -------------------------------------------------------- Burn LP tokens.
 
-    # We cache the total supply to avoid multiple SLOADs. It is important to do
-    # this before the burnFrom call, as the burnFrom call will reduce the supply.
-    total_supply: uint256 = self.totalSupply
-    self.burnFrom(msg.sender, amount)
+    total_supply: uint256 = self.totalSupply  # <------ Get totalSupply before
+    self.burnFrom(msg.sender, _amount)  # ---- reducing it with self.burnFrom.
 
     # There are two cases for withdrawing tokens from the pool.
     #   Case 1. Withdrawal does not empty the pool.
@@ -561,45 +608,41 @@ def remove_liquidity(
     #           In this situation, all tokens are withdrawn and the invariant
     #           is reset.
 
-    withdraw_amounts: uint256[N_COINS] = empty(uint256[N_COINS])
-
-    adjusted_amount: uint256 = amount
     if amount == total_supply:  # <----------------------------------- Case 2.
 
-        for i: uint256 in range(N_COINS):
+        for i in range(N_COINS):
 
-            withdraw_amounts[i] = self.balances[i]
+            withdraw_amounts[i] = balances[i]
 
     else:  # <-------------------------------------------------------- Case 1.
-        # To prevent rounding errors, favor LPs a tiny bit.
-        adjusted_amount -= 1
 
-        for i: uint256 in range(N_COINS):
-            withdraw_amounts[i] = self.balances[i] * adjusted_amount // total_supply
-            assert withdraw_amounts[i] >= min_amounts[i], "slippage"
+        amount -= 1  # <---- To prevent rounding errors, favor LPs a tiny bit.
+
+        for i in range(N_COINS):
+
+            withdraw_amounts[i] = balances[i] * amount / total_supply
+            assert withdraw_amounts[i] >= min_amounts[i]
 
     D: uint256 = self.D
-    # Reduce D proportionally to the amount of tokens leaving. Since withdrawals
-    # are balanced, this is a simple subtraction. If amount == total_supply,
-    # D will be 0.
-    self.D = D - unsafe_div(D * adjusted_amount, total_supply)
+    self.D = D - unsafe_div(D * amount, total_supply)  # <----------- Reduce D
+    #      proportional to the amount of tokens leaving. Since withdrawals are
+    #       balanced, this is a simple subtraction. If amount == total_supply,
+    #                                                             D will be 0.
 
     # ---------------------------------- Transfers ---------------------------
 
-    for i: uint256 in range(N_COINS):
+    for i in range(N_COINS):
         # _transfer_out updates self.balances here. Update to state occurs
         # before external calls:
         self._transfer_out(i, withdraw_amounts[i], receiver)
 
-    # We intentionally use the unadjusted `amount` here as the amount of lp
-    # tokens burnt is `amount`, regardless of the rounding error.
-    log RemoveLiquidity(msg.sender, withdraw_amounts, total_supply - amount)
+    log RemoveLiquidity(msg.sender, withdraw_amounts, total_supply - _amount)
 
     return withdraw_amounts
 
 
 @external
-@nonreentrant
+@nonreentrant("lock")
 def remove_liquidity_one_coin(
     token_amount: uint256,
     i: uint256,
@@ -623,24 +666,28 @@ def remove_liquidity_one_coin(
 
     dy: uint256 = 0
     D: uint256 = 0
+    p: uint256 = 0
     xp: uint256[N_COINS] = empty(uint256[N_COINS])
     approx_fee: uint256 = 0
+
+    # ------------------------------------------------------------------------
 
     dy, D, xp, approx_fee = self._calc_withdraw_one_coin(
         A_gamma,
         token_amount,
         i,
-    )
+        (self.future_A_gamma_time > block.timestamp),  # <------- During ramps
+    )  #                                                  we need to update D.
 
-    assert dy >= min_amount, "slippage"
+    assert dy >= min_amount, "Slippage"
 
     # ---------------------------- State Updates -----------------------------
 
     # Burn user's tokens:
     self.burnFrom(msg.sender, token_amount)
 
-    price_scale: uint256 = self.tweak_price(A_gamma, xp, D)
-    # Safe to use D from _calc_withdraw_one_coin here ---^
+    packed_price_scale: uint256 = self.tweak_price(A_gamma, xp, D, 0)
+    #        Safe to use D from _calc_withdraw_one_coin here ---^
 
     # ------------------------- Transfers ------------------------------------
 
@@ -649,7 +696,7 @@ def remove_liquidity_one_coin(
     self._transfer_out(i, dy, receiver)
 
     log RemoveLiquidityOne(
-        msg.sender, token_amount, i, dy, approx_fee, price_scale
+        msg.sender, token_amount, i, dy, approx_fee, packed_price_scale
     )
 
     return dy
@@ -707,18 +754,21 @@ def _exchange(
     min_dy: uint256,
 ) -> uint256[3]:
 
-    assert i != j, "same coin"
-    assert dx_received > 0, "zero dx"
+    assert i != j  # dev: coin index out of range
+    assert dx_received > 0  # dev: do not exchange 0 coins
 
     A_gamma: uint256[2] = self._A_gamma()
-    balances: uint256[N_COINS] = self.balances
+    xp: uint256[N_COINS] = self.balances
     dy: uint256 = 0
 
-    y: uint256 = balances[j]
-    x0: uint256 = balances[i] - dx_received  # old xp[i]
+    y: uint256 = xp[j]
+    x0: uint256 = xp[i] - dx_received  # old xp[i]
 
     price_scale: uint256 = self.cached_price_scale
-    xp: uint256[N_COINS] = self._xp(balances, price_scale)
+    xp = [
+        xp[0] * PRECISIONS[0],
+        unsafe_div(xp[1] * price_scale * PRECISIONS[1], PRECISION)
+    ]
 
     # ----------- Update invariant if A, gamma are undergoing ramps ---------
 
@@ -732,24 +782,24 @@ def _exchange(
 
         x1: uint256 = xp[i]  # <------------------ Back up old value in xp ...
         xp[i] = x0                                                         # |
-        self.D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)              # |
+        self.D = MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)              # |
         xp[i] = x1  # <-------------------------------------- ... and restore.
 
     # ----------------------- Calculate dy and fees --------------------------
 
     D: uint256 = self.D
-    y_out: uint256[2] = staticcall MATH.get_y(A_gamma[0], A_gamma[1], xp, D, j)
+    y_out: uint256[2] = MATH.get_y(A_gamma[0], A_gamma[1], xp, D, j)
     dy = xp[j] - y_out[0]
     xp[j] -= dy
     dy -= 1
 
     if j > 0:
-        dy = dy * PRECISION // price_scale
-    dy //= PRECISIONS[j]
+        dy = dy * PRECISION / price_scale
+    dy /= PRECISIONS[j]
 
     fee: uint256 = unsafe_div(self._fee(xp) * dy, 10**10)
     dy -= fee  # <--------------------- Subtract fee from the outgoing amount.
-    assert dy >= min_dy, "slippage"
+    assert dy >= min_dy, "Slippage"
     y -= dy
 
     y *= PRECISIONS[j]
@@ -759,20 +809,69 @@ def _exchange(
 
     # ------ Tweak price_scale with good initial guess for newton_D ----------
 
-    # Technically a swap wouldn't require to recompute D, however since we're taking
-    # fees, we need to update D to reflect the new balances.
-    D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, y_out[1])
-
-    price_scale = self.tweak_price(A_gamma, xp, D)
+    price_scale = self.tweak_price(A_gamma, xp, 0, y_out[1])
 
     return [dy, fee, price_scale]
 
+@external
+@nonreentrant("lock")
+def donate(amounts: uint256[N_COINS]):
+    print("Donation")
+    # print("Amounts[0]:", amounts[0])
+    # print("Amounts[1]:", amounts[1])
+    A_gamma: uint256[2] = self._A_gamma()
+    balances: uint256[N_COINS] = self.balances
+    assert amounts[0] + amounts[1] > 0  # dev: no coins to add
+    price_scale: uint256 = self.cached_price_scale
+    ########################## TRANSFER IN <-------
+    for i in range(N_COINS):
+        if amounts[i] > 0:
+            # Updates self.balances here:
+            balances[i] += self._transfer_in(
+                i,
+                amounts[i],
+                msg.sender,
+                False,  # <--------------------- Disable optimistic transfers.
+            )
+    self.balances = balances
+
+    xp: uint256[N_COINS] = self._xp(balances, self.cached_price_scale)
+    D: uint256 = MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
+
+    self.tweak_price(A_gamma, xp, D, 0, True)
+
+@view
+@internal
+def _virtual_price_ideal(D: uint256, price_scale: uint256, total_supply: uint256) -> uint256:
+    xp_ideal: uint256[N_COINS] = [
+        unsafe_div(D, N_COINS),
+        D * PRECISION / (N_COINS * price_scale)
+    ]
+
+    xcp: uint256 = isqrt(xp_ideal[0] * xp_ideal[1])
+
+    return 10**18 * xcp / total_supply
+
+@view
+@internal
+def _xp(balances: uint256[N_COINS], price_scale: uint256) -> uint256[N_COINS]:
+    return [
+        balances[0] * PRECISIONS[0],
+        unsafe_div(balances[1] * price_scale * PRECISIONS[1], PRECISION)
+    ]
+
+@view
+@internal
+def _virtual_price(xp: uint256[N_COINS], total_supply: uint256) -> uint256:
+    xcp: uint256 = isqrt(xp[0] * xp[1])
+    return 10**18 * xcp / total_supply
 
 @internal
 def tweak_price(
     A_gamma: uint256[2],
     _xp: uint256[N_COINS],
-    D: uint256,
+    new_D: uint256,
+    K0_prev: uint256 = 0,
     donation: bool = False
 ) -> uint256:
     """
@@ -784,15 +883,22 @@ def tweak_price(
     @param A_gamma Array of A and gamma parameters.
     @param _xp Array of current balances.
     @param new_D New D value.
+    @param K0_prev Initial guess for `newton_D`.
     """
 
     # ---------------------------- Read storage ------------------------------
+
+    if not donation:
+        print("tweak price normal mode")
+    else:
+        print("tweak price donation mode")
 
     price_oracle: uint256 = self.cached_price_oracle
     last_prices: uint256 = self.last_prices
     price_scale: uint256 = self.cached_price_scale
     rebalancing_params: uint256[3] = self._unpack_3(self.packed_rebalancing_params)
     # Contains: allowed_extra_profit, adjustment_step, ma_time. -----^
+
 
     # ------------------ Update Price Oracle if needed -----------------------
 
@@ -806,7 +912,7 @@ def tweak_price(
 
         # ------------------ Calculate moving average params -----------------
 
-        alpha = staticcall MATH.wad_exp(
+        alpha = MATH.wad_exp(
             -convert(
                 unsafe_div(
                     unsafe_sub(block.timestamp, last_timestamp) * 10**18,
@@ -834,68 +940,62 @@ def tweak_price(
     # to be done to the price_scale.
     # ------------------------------------------------------------------------
 
-    # Here we update the spot price, please notice that this value is unsafe
-    # and can be manipulated.
+    # ------------------ If new_D is set to 0, calculate it ------------------
+
+    D_unadjusted: uint256 = new_D
+    if new_D == 0:  #  <--------------------------- _exchange sets new_D to 0.
+        D_unadjusted = MATH.newton_D(A_gamma[0], A_gamma[1], _xp, K0_prev)
+
+    # ----------------------- Calculate last_prices --------------------------
+
     self.last_prices = unsafe_div(
-        staticcall MATH.get_p(_xp, D, A_gamma) * price_scale,
+        MATH.get_p(_xp, D_unadjusted, A_gamma) * price_scale,
         10**18
     )
 
     # ---------- Update profit numbers without price adjustment first --------
 
-    # Here we compute xp in a different way compared to `self._xp`:
-    # We assume that pool is balanced (which is not necessarily the case),
-    # and we proceed to compute D // (N_COINS * price_scale) where the price
-    # scale for xp[0] is 1. This is necessary to compute xcp and xcp_profit,
-    # see the whitepaper for more details.
-    xp: uint256[N_COINS] = [
-        unsafe_div(D, N_COINS),
-        D * PRECISION // (N_COINS * price_scale)
-    ]
-
     xcp_profit: uint256 = 10**18
     virtual_price: uint256 = 10**18
 
-    # `totalSupply` will not change during this function call.
-    total_supply: uint256 = self.totalSupply
+    old_xcp_profit: uint256 = self.xcp_profit
     old_virtual_price: uint256 = self.virtual_price
-    donation_virtual_price: uint256 = self.donation_virtual_price
+    total_supply: uint256 = self.totalSupply
+    vp_donation: uint256 = self.vp_donation
     if old_virtual_price > 0:
-        xcp: uint256 = isqrt(xp[0] * xp[1])
+        virtual_price = self._virtual_price_ideal(D_unadjusted, price_scale, total_supply)
 
-        # We increase the virtual price by 1 to avoid off by one rounding
-        # errors. While this can lead to a small profit overestimation,
-        # given virtual_price has 18 decimals, this is negligible.
-        virtual_price = 10**18 * xcp // total_supply + 1
+        print("old vp", old_virtual_price)
+        print("vp    ", virtual_price)
 
-        if donation:
-            donation_virtual_price += virtual_price - old_virtual_price
-            virtual_price = old_virtual_price
-        else:
-            # Safe to do unsafe_div as old_virtual_price > 0.
+        if not donation:
             xcp_profit = unsafe_div(
-                self.xcp_profit * virtual_price,
+                old_xcp_profit * virtual_price,
                 old_virtual_price
-            )
-            virtual_price -= donation_virtual_price
+            )  # <---------------- Safu to do unsafe_div as old_virtual_price > 0.
+            virtual_price -= vp_donation
+        else:
+            vp_donation += virtual_price - old_virtual_price
+            virtual_price = old_virtual_price
 
-        # If A and gamma are not being ramped, we only allow the virtual price to
-        # to increase.
-        # This is does not imply that the virtual price will have increased at the
-        # end of this function: it can still decrease if the pool rebalances.
-        if not (virtual_price > old_virtual_price) or (virtual_price == old_virtual_price and donation):
-            # If A and gamma are being ramped, we allow the virtual price to decrease,
-            # as changing the shape of the bonding curve causes losses in the pool.
-            assert self._is_ramping(), "virtual price decreased"
+        #       If A and gamma are not undergoing ramps (t < block.timestamp),
+        #         ensure new virtual_price is not less than old virtual_price,
+        #                                        else the pool suffers a loss.
+        if self.future_A_gamma_time < block.timestamp:
+                # this usually reverts when withdrawing a very small amount of LP tokens
+                # TODO relaxed this condition better check if fine.
+                assert donation or virtual_price >= old_virtual_price # dev: virtual price decreased
 
-    # TODO do this only in the non-donation case.
     self.xcp_profit = xcp_profit
 
     # ------------ Rebalance liquidity if there's enough profits to adjust it:
-    if virtual_price ** 2 > xcp_profit * (10**18 + 2 * rebalancing_params[0]):
-        #                          allowed_extra_profit --------^
+    if (virtual_price + vp_donation) * 2 - 10**18 > xcp_profit + 2 * rebalancing_params[0]:
+                #                          allowed_extra_profit --------^
 
-        # Calculate the vector distance between price_scale and price_oracle.
+        # ------------------- Get adjustment step ----------------------------
+
+        #                Calculate the vector distance between price_scale and
+        #                                                        price_oracle.
         norm: uint256 = unsafe_div(
             unsafe_mul(price_oracle, 10**18), price_scale
         )
@@ -907,12 +1007,14 @@ def tweak_price(
             rebalancing_params[1], unsafe_div(norm, 5)
         )  #           ^------------------------------------- adjustment_step.
 
-        # We only adjust prices if the vector distance between price_oracle
-        # and price_scale is large enough. This check ensures that no rebalancing
-        # occurs if the distance is low i.e. the pool prices are pegged to the
-        # oracle prices.
-        if norm > adjustment_step:
-            # Calculate new price scale.
+        if norm > adjustment_step:  # <---------- We only adjust prices if the
+            #          vector distance between price_oracle and price_scale is
+            #             large enough. This check ensures that no rebalancing
+            #           occurs if the distance is low i.e. the pool prices are
+            #                                     pegged to the oracle prices.
+
+            # ------------------------------------- Calculate new price scale.
+
             p_new: uint256 = unsafe_div(
                 price_scale * unsafe_sub(norm, adjustment_step) +
                 adjustment_step * price_oracle,
@@ -921,54 +1023,70 @@ def tweak_price(
 
             # ---------------- Update stale xp (using price_scale) with p_new.
 
-            xp = [
+            adjusted_xp: uint256[N_COINS] = [
                 _xp[0],
                 unsafe_div(_xp[1] * p_new, price_scale)
             ]
 
             # ------------------------------------------ Update D with new xp.
-            new_D: uint256 = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
+            D: uint256 = MATH.newton_D(A_gamma[0], A_gamma[1], adjusted_xp, 0)
 
             # ------------------------------------- Convert xp to real prices.
-            xp = [
-                unsafe_div(new_D, N_COINS),
-                new_D * PRECISION // (N_COINS * p_new)
-            ]
 
-            # unsafe_div because we did safediv before (if vp>1e18)
-            new_virtual_price: uint256 = unsafe_div(
-                10**18 * isqrt(xp[0] * xp[1]), total_supply
-            )
+            # ---------- Calculate new virtual_price using new xp and D.
+            new_virtual_price: uint256 = self._virtual_price_ideal(D, price_scale, total_supply)
+            print("new vp", new_virtual_price)
 
-            # If we've got enough profit we rebalance the liquidity in the
-            # pool by moving the price_scale closer to the oracle price.
+            # ---------------------------- Proceed if we've got enough profit.
+            # TODO should use quadratic formula from mich's branch here
             if (
                 new_virtual_price > 10**18 and
-                new_virtual_price ** 2 > xcp_profit * 10**18
+                2 * (new_virtual_price - vp_donation) - 10**18 > xcp_profit
             ):
-                final_virtual_price: uint256 = 0
-                if virtual_price >= new_virtual_price:
-                    delta_loss: uint256 = virtual_price - new_virtual_price
-                    donation_virtual_price -= delta_loss
-                    final_virtual_price = new_virtual_price - donation_virtual_price
-                else:
-                    delta_gain: uint256 = new_virtual_price - virtual_price
-                    donation_virtual_price += delta_gain
-                    final_virtual_price = new_virtual_price - donation_virtual_price
 
+                self.D = D
 
-                self.D = new_D
-                self.virtual_price = new_virtual_price
+                self.virtual_price = new_virtual_price - vp_donation
+                self.vp_donation = vp_donation
+
                 self.cached_price_scale = p_new
+                return p_new
+            elif (
+                new_virtual_price > 10**18 and # TODO redundant check
+                new_virtual_price > xcp_profit
+            ):
+                print("!!!!!!! using buffer")
+                print("new_virtual_price", new_virtual_price)
+                print("old_virtual_price", new_virtual_price)
+                self.D = D
 
+                if new_virtual_price >= old_virtual_price:
+                    print("vp increased wtf")
+                    self.virtual_price = new_virtual_price
+                    self.cached_price_scale = p_new
+                    return p_new
+
+                spent: uint256 = old_virtual_price - new_virtual_price
+                print("vp decreased")
+                if spent >= vp_donation:
+                    print("donation is not enough to cover WRONG")
+                    self.virtual_price = new_virtual_price - (spent - vp_donation)
+                    self.vp_donation = 0
+                else:
+                    print("")
+                    self.virtual_price = new_virtual_price - vp_donation
+                    self.vp_donation = vp_donation - spent
+
+                self.cached_price_scale = p_new
                 return p_new
 
-    # If we end up here price_scale was not adjusted. So we update the state
-    # with the virtual price and D we calculated before attempting a rebalance.
-    self.D = D
+    # --------- price_scale was not adjusted. Update the profit counter and D.
+    self.D = D_unadjusted
     self.virtual_price = virtual_price
+    self.vp_donation = vp_donation
 
     return price_scale
+
 
 
 @internal
@@ -991,7 +1109,7 @@ def _claim_admin_fees():
     last_claim_time: uint256 = self.last_admin_fee_claim_timestamp
     if (
         unsafe_sub(block.timestamp, last_claim_time) < MIN_ADMIN_FEE_CLAIM_INTERVAL or
-        self._is_ramping()
+        self.future_A_gamma_time > block.timestamp
     ):
         return
 
@@ -1013,7 +1131,7 @@ def _claim_admin_fees():
     D: uint256 = self.D
     vprice: uint256 = self.virtual_price
     price_scale: uint256 = self.cached_price_scale
-    fee_receiver: address = staticcall factory.fee_receiver()
+    fee_receiver: address = factory.fee_receiver()
     balances: uint256[N_COINS] = self.balances
 
     #  Admin fees are calculated as follows.
@@ -1039,8 +1157,8 @@ def _claim_admin_fees():
     if fee_receiver != empty(address) and fees > 0:
 
         # -------------------------------- Calculate admin share to be minted.
-        frac = vprice * 10**18 // (vprice - fees) - 10**18
-        admin_share += current_lp_token_supply * frac // 10**18
+        frac = vprice * 10**18 / (vprice - fees) - 10**18
+        admin_share += current_lp_token_supply * frac / 10**18
 
         # ------ Subtract fees from profits that will be used for rebalancing.
         xcp_profit -= fees * 2
@@ -1050,7 +1168,7 @@ def _claim_admin_fees():
         current_lp_token_supply + admin_share
     )
     vprice = (
-        10**18 * self.get_xcp(D, price_scale) //
+        10**18 * self.get_xcp(D, price_scale) /
         total_supply_including_admin_share
     )
 
@@ -1080,10 +1198,10 @@ def _claim_admin_fees():
     admin_tokens: uint256[N_COINS] = empty(uint256[N_COINS])
     if admin_share > 0:
 
-        for i: uint256 in range(N_COINS):
+        for i in range(N_COINS):
 
             admin_tokens[i] = (
-                balances[i] * admin_share //
+                balances[i] * admin_share /
                 total_supply_including_admin_share
             )
 
@@ -1095,24 +1213,17 @@ def _claim_admin_fees():
 
 
 @internal
-@view
-def _xp(
+@pure
+def xp(
     balances: uint256[N_COINS],
     price_scale: uint256,
 ) -> uint256[N_COINS]:
+
     return [
         balances[0] * PRECISIONS[0],
         unsafe_div(balances[1] * PRECISIONS[1] * price_scale, PRECISION)
     ]
 
-@internal
-@view
-def _is_ramping() -> bool:
-    """
-    @notice Checks if A and gamma are ramping.
-    @return bool True if A and/or gamma are ramping, False otherwise.
-    """
-    return self.future_A_gamma_time > block.timestamp
 
 @view
 @internal
@@ -1134,8 +1245,8 @@ def _A_gamma() -> uint256[2]:
         t0 = block.timestamp - t0
         t2: uint256 = t1 - t0
 
-        A1 = ((A_gamma_0 >> 128) * t2 + A1 * t0) // t1
-        gamma1 = ((A_gamma_0 & 2**128 - 1) * t2 + gamma1 * t0) // t1
+        A1 = ((A_gamma_0 >> 128) * t2 + A1 * t0) / t1
+        gamma1 = ((A_gamma_0 & 2**128 - 1) * t2 + gamma1 * t0) / t1
 
     return [A1, gamma1]
 
@@ -1146,9 +1257,9 @@ def _fee(xp: uint256[N_COINS]) -> uint256:
 
     fee_params: uint256[3] = self._unpack_3(self.packed_fee_params)
     f: uint256 = xp[0] + xp[1]
-    f = fee_params[2] * 10**18 // (
+    f = fee_params[2] * 10**18 / (
         fee_params[2] + 10**18 -
-        (10**18 * N_COINS**N_COINS) * xp[0] // f * xp[1] // f
+        (10**18 * N_COINS**N_COINS) * xp[0] / f * xp[1] / f
     )
 
     return unsafe_div(
@@ -1163,7 +1274,7 @@ def get_xcp(D: uint256, price_scale: uint256) -> uint256:
 
     x: uint256[N_COINS] = [
         unsafe_div(D, N_COINS),
-        D * PRECISION // (price_scale * N_COINS)
+        D * PRECISION / (price_scale * N_COINS)
     ]
 
     return isqrt(x[0] * x[1])  # <------------------- Geometric Mean.
@@ -1179,19 +1290,19 @@ def _calc_token_fee(amounts: uint256[N_COINS], xp: uint256[N_COINS]) -> uint256:
     )
 
     S: uint256 = 0
-    for _x: uint256 in amounts:
+    for _x in amounts:
         S += _x
 
     avg: uint256 = unsafe_div(S, N_COINS)
     Sdiff: uint256 = 0
 
-    for _x: uint256 in amounts:
+    for _x in amounts:
         if _x > avg:
             Sdiff += unsafe_sub(_x, avg)
         else:
             Sdiff += unsafe_sub(avg, _x)
 
-    return fee * Sdiff // S + NOISE_FEE
+    return fee * Sdiff / S + NOISE_FEE
 
 
 @internal
@@ -1200,25 +1311,32 @@ def _calc_withdraw_one_coin(
     A_gamma: uint256[2],
     token_amount: uint256,
     i: uint256,
+    update_D: bool,
 ) -> (uint256, uint256, uint256[N_COINS], uint256):
 
     token_supply: uint256 = self.totalSupply
-    assert token_amount <= token_supply, "token amount more than supply"
-    assert i < N_COINS, "coin out of range"
+    assert token_amount <= token_supply  # dev: token amount more than supply
+    assert i < N_COINS  # dev: coin out of range
 
+    xx: uint256[N_COINS] = self.balances
+    D0: uint256 = 0
 
     # -------------------------- Calculate D0 and xp -------------------------
 
-    price_scale: uint256 = self.cached_price_scale
-    balances: uint256[N_COINS] = self.balances
-    xp: uint256[N_COINS] = self._xp(balances, price_scale)
+    price_scale_i: uint256 = self.cached_price_scale * PRECISIONS[1]
+    xp: uint256[N_COINS] = [
+        xx[0] * PRECISIONS[0],
+        unsafe_div(xx[1] * price_scale_i, PRECISION)
+    ]
+    if i == 0:
+        price_scale_i = PRECISION * PRECISIONS[0]
 
-    D: uint256 = 0
-
-    if self._is_ramping():
-        D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
+    if update_D:  # <-------------- D is updated if pool is undergoing a ramp.
+        D0 = MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
     else:
-        D = self.D
+        D0 = self.D
+
+    D: uint256 = D0
 
     # -------------------------------- Fee Calc ------------------------------
 
@@ -1233,7 +1351,7 @@ def _calc_withdraw_one_coin(
     #   default. This is because the fee calculation will otherwise underflow.
 
     xp_imprecise: uint256[N_COINS] = xp
-    xp_correction: uint256 = xp[i] * N_COINS * token_amount // token_supply
+    xp_correction: uint256 = xp[i] * N_COINS * token_amount / token_supply
     fee: uint256 = self._unpack_3(self.packed_fee_params)[1]  # <- self.out_fee.
 
     if xp_correction < xp_imprecise[i]:
@@ -1241,21 +1359,17 @@ def _calc_withdraw_one_coin(
         fee = self._fee(xp_imprecise)
 
     dD: uint256 = unsafe_div(token_amount * D, token_supply)
-    D_fee: uint256 = fee * dD // (2 * 10**10) + 1  # <------- Actual fee on D.
+    D_fee: uint256 = fee * dD / (2 * 10**10) + 1  # <------- Actual fee on D.
 
     # --------- Calculate `approx_fee` (assuming balanced state) in ith token.
     # -------------------------------- We only need this for fee in the event.
-    approx_fee: uint256 = N_COINS * D_fee * balances[i] // D  # <------------------<---------- TODO: Check math.
+    approx_fee: uint256 = N_COINS * D_fee * xx[i] / D  # <------------------<---------- TODO: Check math.
 
     # ------------------------------------------------------------------------
     D -= (dD - D_fee)  # <----------------------------------- Charge fee on D.
     # --------------------------------- Calculate `y_out`` with `(D - D_fee)`.
-    y: uint256 = (staticcall MATH.get_y(A_gamma[0], A_gamma[1], xp, D, i))[0]
-
-    price_scale_i: uint256 = price_scale * PRECISIONS[1]
-    if i == 0:
-        price_scale_i = PRECISION * PRECISIONS[0]
-    dy: uint256 = (xp[i] - y) * PRECISION // price_scale_i
+    y: uint256 = MATH.get_y(A_gamma[0], A_gamma[1], xp, D, i)[0]
+    dy: uint256 = (xp[i] - y) * PRECISION / price_scale_i
     xp[i] = y
 
     return dy, D, xp, approx_fee
@@ -1273,12 +1387,29 @@ def _approve(_owner: address, _spender: address, _value: uint256):
 
 @internal
 def _transfer(_from: address, _to: address, _value: uint256):
-    assert _to not in [self, empty(address)], "invalid receiver"
+    assert _to not in [self, empty(address)]
 
     self.balanceOf[_from] -= _value
     self.balanceOf[_to] += _value
 
     log Transfer(_from, _to, _value)
+
+
+@view
+@internal
+def _domain_separator() -> bytes32:
+    if chain.id != CACHED_CHAIN_ID:
+        return keccak256(
+            _abi_encode(
+                EIP712_TYPEHASH,
+                NAME_HASH,
+                VERSION_HASH,
+                chain.id,
+                self,
+                salt,
+            )
+        )
+    return CACHED_DOMAIN_SEPARATOR
 
 
 @external
@@ -1321,6 +1452,54 @@ def approve(_spender: address, _value: uint256) -> bool:
     @return bool Success
     """
     self._approve(msg.sender, _spender, _value)
+    return True
+
+
+@external
+def permit(
+    _owner: address,
+    _spender: address,
+    _value: uint256,
+    _deadline: uint256,
+    _v: uint8,
+    _r: bytes32,
+    _s: bytes32,
+) -> bool:
+    """
+    @notice Permit `_spender` to spend up to `_value` amount of `_owner`'s
+            tokens via a signature.
+    @dev In the event of a chain fork, replay attacks are prevented as
+         domain separator is recalculated. However, this is only if the
+         resulting chains update their chainId.
+    @param _owner The account which generated the signature and is granting an
+                  allowance.
+    @param _spender The account which will be granted an allowance.
+    @param _value The approval amount.
+    @param _deadline The deadline by which the signature must be submitted.
+    @param _v The last byte of the ECDSA signature.
+    @param _r The first 32 bytes of the ECDSA signature.
+    @param _s The second 32 bytes of the ECDSA signature.
+    @return bool Success.
+    """
+    assert _owner != empty(address)  # dev: invalid owner
+    assert block.timestamp <= _deadline  # dev: permit expired
+
+    nonce: uint256 = self.nonces[_owner]
+    digest: bytes32 = keccak256(
+        concat(
+            b"\x19\x01",
+            self._domain_separator(),
+            keccak256(
+                _abi_encode(
+                    EIP2612_TYPEHASH, _owner, _spender, _value, nonce, _deadline
+                )
+            ),
+        )
+    )
+    assert ecrecover(digest, _v, _r, _s) == _owner  # dev: invalid signature
+
+    self.nonces[_owner] = unsafe_add(nonce, 1)  # <-- Unsafe add is safe here.
+    self._approve(_owner, _spender, _value)
     return True
 
 
@@ -1380,9 +1559,9 @@ def internal_price_oracle() -> uint256:
 
         last_prices: uint256 = self.last_prices
         ma_time: uint256 = self._unpack_3(self.packed_rebalancing_params)[2]
-        alpha: uint256 = staticcall MATH.wad_exp(
+        alpha: uint256 = MATH.wad_exp(
             -convert(
-                unsafe_sub(block.timestamp, last_prices_timestamp) * 10**18 // ma_time,
+                unsafe_sub(block.timestamp, last_prices_timestamp) * 10**18 / ma_time,
                 int256,
             )
         )
@@ -1391,7 +1570,7 @@ def internal_price_oracle() -> uint256:
         return (
             min(last_prices, 2 * price_scale) * (10**18 - alpha) +
             price_oracle * alpha
-        ) // 10**18
+        ) / 10**18
 
     return price_oracle
 
@@ -1403,7 +1582,7 @@ def fee_receiver() -> address:
     @notice Returns the address of the admin fee receiver.
     @return address Fee receiver.
     """
-    return staticcall factory.fee_receiver()
+    return factory.fee_receiver()
 
 
 @external
@@ -1413,7 +1592,7 @@ def admin() -> address:
     @notice Returns the address of the pool's admin.
     @return address Admin.
     """
-    return staticcall factory.admin()
+    return factory.admin()
 
 
 @external
@@ -1427,8 +1606,8 @@ def calc_token_amount(amounts: uint256[N_COINS], deposit: bool) -> uint256:
     @param deposit True if it is a deposit action, False if withdrawn.
     @return uint256 Amount of LP tokens deposited or withdrawn.
     """
-    view_contract: address = staticcall factory.views_implementation()
-    return staticcall Views(view_contract).calc_token_amount(amounts, deposit, self)
+    view_contract: address = factory.views_implementation()
+    return Views(view_contract).calc_token_amount(amounts, deposit, self)
 
 
 @external
@@ -1442,8 +1621,8 @@ def get_dy(i: uint256, j: uint256, dx: uint256) -> uint256:
     @param dx amount of input coin[i] tokens
     @return uint256 Exact amount of output j tokens for dx amount of i input tokens.
     """
-    view_contract: address = staticcall factory.views_implementation()
-    return staticcall Views(view_contract).get_dy(i, j, dx, self)
+    view_contract: address = factory.views_implementation()
+    return Views(view_contract).get_dy(i, j, dx, self)
 
 
 @external
@@ -1460,25 +1639,25 @@ def get_dx(i: uint256, j: uint256, dy: uint256) -> uint256:
     @param dy amount of input coin[j] tokens received
     @return uint256 Approximate amount of input i tokens to get dy amount of j tokens.
     """
-    view_contract: address = staticcall factory.views_implementation()
-    return staticcall Views(view_contract).get_dx(i, j, dy, self)
+    view_contract: address = factory.views_implementation()
+    return Views(view_contract).get_dx(i, j, dy, self)
 
 
 @external
 @view
-@nonreentrant
+@nonreentrant("lock")
 def lp_price() -> uint256:
     """
     @notice Calculates the current price of the LP token w.r.t coin at the
             0th index
     @return uint256 LP price.
     """
-    return 2 * self.virtual_price * isqrt(self.internal_price_oracle() * 10**18) // 10**18
+    return 2 * self.virtual_price * isqrt(self.internal_price_oracle() * 10**18) / 10**18
 
 
 @external
 @view
-@nonreentrant
+@nonreentrant("lock")
 def get_virtual_price() -> uint256:
     """
     @notice Calculates the current virtual price of the pool LP token.
@@ -1486,12 +1665,12 @@ def get_virtual_price() -> uint256:
          virtual price.
     @return uint256 Virtual Price.
     """
-    return 10**18 * self.get_xcp(self.D, self.cached_price_scale) // self.totalSupply
+    return 10**18 * self.get_xcp(self.D, self.cached_price_scale) / self.totalSupply
 
 
 @external
 @view
-@nonreentrant
+@nonreentrant("lock")
 def price_oracle() -> uint256:
     """
     @notice Returns the oracle price of the coin at index `k` w.r.t the coin
@@ -1506,7 +1685,7 @@ def price_oracle() -> uint256:
 
 @external
 @view
-@nonreentrant
+@nonreentrant("lock")
 def price_scale() -> uint256:
     """
     @notice Returns the price scale of the coin at index `k` w.r.t the coin
@@ -1528,7 +1707,7 @@ def fee() -> uint256:
          removed.
     @return uint256 fee bps.
     """
-    return self._fee(self._xp(self.balances, self.cached_price_scale))
+    return self._fee(self.xp(self.balances, self.cached_price_scale))
 
 
 @view
@@ -1545,6 +1724,7 @@ def calc_withdraw_one_coin(token_amount: uint256, i: uint256) -> uint256:
         self._A_gamma(),
         token_amount,
         i,
+        (self.future_A_gamma_time > block.timestamp)
     )[0]
 
 
@@ -1641,7 +1821,7 @@ def ma_time() -> uint256:
          One can expect off-by-one errors here.
     @return uint256 ma_time value.
     """
-    return self._unpack_3(self.packed_rebalancing_params)[2] * 694 // 1000
+    return self._unpack_3(self.packed_rebalancing_params)[2] * 694 / 1000
 
 
 @view
@@ -1665,6 +1845,16 @@ def fee_calc(xp: uint256[N_COINS]) -> uint256:  # <----- For by view contract.
     return self._fee(xp)
 
 
+@view
+@external
+def DOMAIN_SEPARATOR() -> bytes32:
+    """
+    @notice EIP712 domain separator.
+    @return bytes32 Domain Separator set for the current chain.
+    """
+    return self._domain_separator()
+
+
 # ------------------------- AMM Admin Functions ------------------------------
 
 
@@ -1679,26 +1869,26 @@ def ramp_A_gamma(
     @param future_gamma The future gamma value.
     @param future_time The timestamp at which the ramping will end.
     """
-    assert msg.sender == staticcall factory.admin(), "only owner"
-    assert not self._is_ramping(), "ramp undergoing"
-    assert future_time > block.timestamp + MIN_RAMP_TIME - 1, "ramp time<min"
+    assert msg.sender == factory.admin()  # dev: only owner
+    assert block.timestamp > self.future_A_gamma_time # dev: ramp undergoing
+    assert future_time > block.timestamp + MIN_RAMP_TIME - 1  # dev: insufficient time
 
     A_gamma: uint256[2] = self._A_gamma()
     initial_A_gamma: uint256 = A_gamma[0] << 128
     initial_A_gamma = initial_A_gamma | A_gamma[1]
 
-    assert future_A > MIN_A - 1, "A<min"
-    assert future_A < MAX_A + 1, "A>max"
-    assert future_gamma > MIN_GAMMA - 1, "gamma<min"
-    assert future_gamma < MAX_GAMMA + 1, "gamme>max"
+    assert future_A > MIN_A - 1
+    assert future_A < MAX_A + 1
+    assert future_gamma > MIN_GAMMA - 1
+    assert future_gamma < MAX_GAMMA + 1
 
-    ratio: uint256 = 10**18 * future_A // A_gamma[0]
-    assert ratio < 10**18 * MAX_A_CHANGE + 1, "A change too high"
-    assert ratio > 10**18 // MAX_A_CHANGE - 1, "A change too low"
+    ratio: uint256 = 10**18 * future_A / A_gamma[0]
+    assert ratio < 10**18 * MAX_A_CHANGE + 1 # dev: A change too high
+    assert ratio > 10**18 / MAX_A_CHANGE - 1 # dev: A change too low
 
-    ratio = 10**18 * future_gamma // A_gamma[1]
-    assert ratio < 10**18 * MAX_A_CHANGE + 1, "gamma change too high"
-    assert ratio > 10**18 // MAX_A_CHANGE - 1, "gamma change too low"
+    ratio = 10**18 * future_gamma / A_gamma[1]
+    assert ratio < 10**18 * MAX_A_CHANGE + 1 # dev: gamma change too high
+    assert ratio > 10**18 / MAX_A_CHANGE - 1 # dev: gamma change too low
 
     self.initial_A_gamma = initial_A_gamma
     self.initial_A_gamma_time = block.timestamp
@@ -1724,7 +1914,7 @@ def stop_ramp_A_gamma():
     @notice Stop Ramping A and gamma parameters immediately.
     @dev Only accessible by factory admin.
     """
-    assert msg.sender == staticcall factory.admin(), "only owner"
+    assert msg.sender == factory.admin()  # dev: only owner
 
     A_gamma: uint256[2] = self._A_gamma()
     current_A_gamma: uint256 = A_gamma[0] << 128
@@ -1740,7 +1930,7 @@ def stop_ramp_A_gamma():
 
 
 @external
-@nonreentrant
+@nonreentrant('lock')
 def apply_new_parameters(
     _new_mid_fee: uint256,
     _new_out_fee: uint256,
@@ -1759,7 +1949,7 @@ def apply_new_parameters(
     @param _new_adjustment_step The new adjustment step.
     @param _new_ma_time The new ma time. ma_time is time_in_seconds/ln(2).
     """
-    assert msg.sender == staticcall factory.admin(), "only owner"
+    assert msg.sender == factory.admin()  # dev: only owner
 
     # ----------------------------- Set fee params ---------------------------
 
@@ -1770,16 +1960,16 @@ def apply_new_parameters(
     current_fee_params: uint256[3] = self._unpack_3(self.packed_fee_params)
 
     if new_out_fee < MAX_FEE + 1:
-        assert new_out_fee > MIN_FEE - 1, "fee is out of range"
+        assert new_out_fee > MIN_FEE - 1  # dev: fee is out of range
     else:
         new_out_fee = current_fee_params[1]
 
     if new_mid_fee > MAX_FEE:
         new_mid_fee = current_fee_params[0]
-    assert new_mid_fee <= new_out_fee, "mid-fee is too high"
+    assert new_mid_fee <= new_out_fee  # dev: mid-fee is too high
 
     if new_fee_gamma < 10**18:
-        assert new_fee_gamma > 0, "fee_gamma out of range [1 .. 10**18]"
+        assert new_fee_gamma > 0  # dev: fee_gamma out of range [1 .. 10**18]
     else:
         new_fee_gamma = current_fee_params[2]
 
@@ -1800,7 +1990,7 @@ def apply_new_parameters(
         new_adjustment_step = current_rebalancing_params[1]
 
     if new_ma_time < 872542:  # <----- Calculated as: 7 * 24 * 60 * 60 / ln(2)
-        assert new_ma_time > 86, "MA time should be longer than 60/ln(2)"
+        assert new_ma_time > 86  # dev: MA time should be longer than 60/ln(2)
     else:
         new_ma_time = current_rebalancing_params[2]
 
