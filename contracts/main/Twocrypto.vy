@@ -485,6 +485,10 @@ def _absorb_donation():
     self.donation_balances = donation_balances
     self.balances = balances
 
+    # TODO need to check for ramping
+    # Backup the old D value to compute the lp supply increase.
+    old_D: uint256 = self.D
+
     # Recalculate D based on updated balances.
     A_gamma: uint256[2] = self._A_gamma()
     price_scale: uint256 = self.cached_price_scale
@@ -497,6 +501,14 @@ def _absorb_donation():
         D * PRECISION // (N_COINS * price_scale)
     ]
     self.virtual_price = 10**18 * isqrt(xp[0] * xp[1]) // self.totalSupply
+
+    # We increase the total supply of LP tokens without issuing any new
+    # shares of the pool to prevent LPs from accesssing the donated funds.
+    # This is done both to limit attack vectors and to make sure that
+    # donated funds are only used to rebalance the pool.
+    total_supply: uint256 = self.totalSupply
+    dead_shares: uint256 = total_supply * D // old_D - total_supply
+    self.totalSupply += dead_shares
 
 
 @external
