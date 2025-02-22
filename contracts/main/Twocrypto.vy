@@ -1294,12 +1294,15 @@ def _calc_token_fee(amounts: uint256[N_COINS], xp: uint256[N_COINS]) -> uint256:
 @view
 def _calc_withdraw_one_coin(
     A_gamma: uint256[2],
-    token_amount: uint256,
+    amount: uint256,
     i: uint256,
 ) -> (uint256, uint256, uint256[N_COINS], uint256):
 
-    token_supply: uint256 = self.totalSupply
-    assert token_amount <= token_supply, "token amount more than supply"
+    # TODO do packing for these two
+    total_supply: uint256 = self.totalSupply
+    dead_supply: uint256 = self.dead_supply
+    adjusted_supply: uint256 = total_supply + dead_supply
+    assert amount <= total_supply, "token amount more than supply"
     assert i < N_COINS, "coin out of range"
 
 
@@ -1329,14 +1332,14 @@ def _calc_withdraw_one_coin(
     #   default. This is because the fee calculation will otherwise underflow.
 
     xp_imprecise: uint256[N_COINS] = xp
-    xp_correction: uint256 = xp[i] * N_COINS * token_amount // token_supply
+    xp_correction: uint256 = xp[i] * N_COINS * amount // adjusted_supply
     fee: uint256 = self._unpack_3(self.packed_fee_params)[1]  # <- self.out_fee.
 
     if xp_correction < xp_imprecise[i]:
         xp_imprecise[i] -= xp_correction
         fee = self._fee(xp_imprecise)
 
-    dD: uint256 = unsafe_div(token_amount * D, token_supply)
+    dD: uint256 = unsafe_div(amount * D, adjusted_supply)
     D_fee: uint256 = fee * dD // (2 * 10**10) + 1  # <------- Actual fee on D.
 
     # --------- Calculate `approx_fee` (assuming balanced state) in ith token.
