@@ -191,6 +191,7 @@ version: public(constant(String[8])) = "v2.1.0"
 balanceOf: public(HashMap[address, uint256])
 allowance: public(HashMap[address, HashMap[address, uint256]])
 totalSupply: public(uint256)
+dead_supply: public(uint256)
 
 # ----------------------- Contract -------------------------------------------
 
@@ -504,15 +505,15 @@ def _absorb_donation():
         unsafe_div(D, N_COINS),
         D * PRECISION // (N_COINS * price_scale)
     ]
-    self.virtual_price = 10**18 * isqrt(xp[0] * xp[1]) // self.totalSupply
+    total_supply: uint256 = self.totalSupply
+    self.virtual_price = 10**18 * isqrt(xp[0] * xp[1]) // total_supply
 
     # We increase the total supply of LP tokens without issuing any new
     # shares of the pool to prevent LPs from accesssing the donated funds.
     # This is done both to limit attack vectors and to make sure that
     # donated funds are only used to rebalance the pool.
-    total_supply: uint256 = self.totalSupply
     dead_shares: uint256 = total_supply * D // old_D - total_supply
-    self.totalSupply += dead_shares
+    self.dead_supply += dead_shares
 
 
 @external
@@ -644,10 +645,19 @@ def remove_liquidity(
 
     # -------------------------------------------------------- Burn LP tokens.
 
+    # TODO pack dead_supply and total_supply into a single variable.
+    dead_supply: uint256 = self.dead_supply
+
     # We cache the total supply to avoid multiple SLOADs. It is important to do
     # this before the burnFrom call, as the burnFrom call will reduce the supply.
     total_supply: uint256 = self.totalSupply
     self.burnFrom(msg.sender, amount)
+
+    # When removing liquidity from the pool, we want to make sure that donated
+    # funds are not withdrawn. To do this, we add the dead_supply to the
+    # adjusted_supply. The dead_supply is the amount of LP tokens that were
+    # virtually minted from donations.
+    adjusted_supply: uint256 = total_supply + dead_supply
 
     # There are two cases for withdrawing tokens from the pool.
     #   Case 1. Withdrawal does not empty the pool.
@@ -661,7 +671,9 @@ def remove_liquidity(
     withdraw_amounts: uint256[N_COINS] = empty(uint256[N_COINS])
 
     adjusted_amount: uint256 = amount
-    if amount == total_supply:  # <----------------------------------- Case 2.
+    # This conditions can happen only when there's never been a donation before,
+    # and only one LP is left in the pool.
+    if amount == adjusted_supply:  # <----------------------------------- Case 2.
 
         for i: uint256 in range(N_COINS):
 
@@ -672,14 +684,14 @@ def remove_liquidity(
         adjusted_amount -= 1
 
         for i: uint256 in range(N_COINS):
-            withdraw_amounts[i] = self.balances[i] * adjusted_amount // total_supply
+            withdraw_amounts[i] = self.balances[i] * adjusted_amount // adjusted_supply
             assert withdraw_amounts[i] >= min_amounts[i], "slippage"
 
     D: uint256 = self.D
     # Reduce D proportionally to the amount of tokens leaving. Since withdrawals
     # are balanced, this is a simple subtraction. If amount == total_supply,
     # D will be 0.
-    self.D = D - unsafe_div(D * adjusted_amount, total_supply)
+    self.D = D - unsafe_div(D * adjusted_amount, adjusted_supply)
 
     # ---------------------------------- Transfers ---------------------------
 
@@ -689,7 +701,9 @@ def remove_liquidity(
         self._transfer_out(i, withdraw_amounts[i], receiver)
 
     # We intentionally use the unadjusted `amount` here as the amount of lp
-    # tokens burnt is `amount`, regardless of the rounding error.
+    # tokens burnt is `amount`, regardless of the rounding error. We also
+    # use the unadjusted `total_supply` as the end user shouldn't be aware
+    # of the dead_supply.
     log RemoveLiquidity(msg.sender, withdraw_amounts, total_supply - amount)
 
     return withdraw_amounts
