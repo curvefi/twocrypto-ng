@@ -484,7 +484,7 @@ def add_liquidity(
     if old_D > 0:
         d_token = token_supply * D // old_D - token_supply
     else:
-        d_token = self.get_xcp(D, price_scale)  # <----- Making initial virtual price equal to 1.
+        d_token = self._xcp(D, price_scale)  # <----- Making initial virtual price equal to 1.
 
     assert d_token > 0, "nothing minted"
 
@@ -841,16 +841,6 @@ def tweak_price(
 
     # ---------- Update profit numbers without price adjustment first --------
 
-    # Here we compute xp in a different way compared to `self._xp`:
-    # We assume that pool is balanced (which is not necessarily the case),
-    # and we proceed to compute D // (N_COINS * price_scale) where the price
-    # scale for xp[0] is 1. This is necessary to compute xcp and xcp_profit,
-    # see the whitepaper for more details.
-    xp: uint256[N_COINS] = [
-        unsafe_div(D, N_COINS),
-        D * PRECISION // (N_COINS * price_scale)
-    ]
-
     xcp_profit: uint256 = 10**18
     virtual_price: uint256 = 10**18
 
@@ -858,7 +848,7 @@ def tweak_price(
     total_supply: uint256 = self.totalSupply
     old_virtual_price: uint256 = self.virtual_price
     if old_virtual_price > 0:
-        xcp: uint256 = isqrt(xp[0] * xp[1])
+        xcp: uint256 = self._xcp(D, price_scale)
 
         # We increase the virtual price by 1 to avoid off by one rounding
         # errors. While this can lead to a small profit overestimation,
@@ -913,7 +903,7 @@ def tweak_price(
 
             # ---------------- Update stale xp (using price_scale) with p_new.
 
-            xp = [
+            xp: uint256[N_COINS] = [
                 _xp[0],
                 unsafe_div(_xp[1] * p_new, price_scale)
             ]
@@ -922,14 +912,12 @@ def tweak_price(
             new_D: uint256 = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
 
             # ------------------------------------- Convert xp to real prices.
-            xp = [
-                unsafe_div(new_D, N_COINS),
-                new_D * PRECISION // (N_COINS * p_new)
-            ]
+
+            xcp: uint256 = self._xcp(new_D, p_new)
 
             # unsafe_div because we did safediv before (if vp>1e18)
             new_virtual_price: uint256 = unsafe_div(
-                10**18 * isqrt(xp[0] * xp[1]), total_supply
+                10**18 * xcp, total_supply
             )
 
             # If we've got enough profit we rebalance the liquidity in the
@@ -1032,7 +1020,7 @@ def _claim_admin_fees():
         current_lp_token_supply + admin_share
     )
     vprice = (
-        10**18 * self.get_xcp(D, price_scale) //
+        10**18 * self._xcp(D, price_scale) //
         total_supply_including_admin_share
     )
 
@@ -1141,14 +1129,20 @@ def _fee(xp: uint256[N_COINS]) -> uint256:
 
 @internal
 @pure
-def get_xcp(D: uint256, price_scale: uint256) -> uint256:
-
+def _xcp(D: uint256, price_scale: uint256) -> uint256:
+    # Here we compute xp in a different way compared to `self._xp`:
+    # We assume that pool is balanced (which is not necessarily the case),
+    # and we proceed to compute D // (N_COINS * price_scale) where the price
+    # scale for xp[0] is 1. This is necessary to compute xcp and xcp_profit,
+    # see the whitepaper for more details.
+    # TODO is it xp or x here?
     x: uint256[N_COINS] = [
         unsafe_div(D, N_COINS),
         D * PRECISION // (price_scale * N_COINS)
     ]
 
-    return isqrt(x[0] * x[1])  # <------------------- Geometric Mean.
+    # Geometric mean.
+    return isqrt(x[0] * x[1])
 
 
 @view
@@ -1468,7 +1462,7 @@ def get_virtual_price() -> uint256:
          virtual price.
     @return uint256 Virtual Price.
     """
-    return 10**18 * self.get_xcp(self.D, self.cached_price_scale) // self.totalSupply
+    return 10**18 * self._xcp(self.D, self.cached_price_scale) // self.totalSupply
 
 
 @external
