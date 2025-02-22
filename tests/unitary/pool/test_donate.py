@@ -73,6 +73,10 @@ def test_absorbed_donation_cant_be_withdrawn(pool, coins):
 
     # we move 7 days into the future to fully absorb the donation
     boa.env.time_travel(86400 * 100000)
+    pool.internal._absorb_donation()
+    assert all(
+        pool.donation_balances(i) == 0 for i in range(N_COINS)
+    ), "donation balances should be 0"
 
     for holder, amount in lp_token_holders.items():
         pool.remove_liquidity(amount, [0] * N_COINS, sender=holder)

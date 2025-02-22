@@ -636,13 +636,14 @@ def remove_liquidity(
     """
     @notice This withdrawal method is very safe, does no complex math since
             tokens are withdrawn in balanced proportions. No fees are charged.
+    @dev This function inentionally does not rely on any external call to the
+            the math contract to make sure that failure in the invariant don't
+            prevent users from withdrawing their funds.
     @param amount Amount of LP tokens to burn
     @param min_amounts Minimum amounts of tokens to withdraw
     @param receiver Address to send the withdrawn tokens to
     @return uint256[3] Amount of pool tokens received by the `receiver`
     """
-    self._absorb_donation()
-
     # -------------------------------------------------------- Burn LP tokens.
 
     # TODO pack dead_supply and total_supply into a single variable.
