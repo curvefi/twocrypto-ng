@@ -149,7 +149,7 @@ D: public(uint256)
 xcp_profit: public(uint256)
 xcp_profit_a: public(uint256)  # <--- Full profit at last claim of admin fees.
 
-donation_D: public(uint256)
+donation_xcp: public(uint256)
 last_donation_absorb_timestamp: uint256
 donation_duration: public(uint256)  # time constant which determines donation speed
 
@@ -427,6 +427,11 @@ def exchange_received(
 @external
 @nonreentrant
 def donate(amounts: uint256[N_COINS]):
+    # Donations are kept in variable donation_xcp, in same units as used for virtual price etc
+    # they are calculated using get_xcp method and are connected in the following way:
+    # [xcp] = self.get_xcp([D], price_scale)
+    # [xcp] = [D] / (N_COINS * sqrt(price_scale))
+    # Using the latter, we can convert it both ways
     assert amounts[0] + amounts[1] > 0, "no coins to donate"
 
     # We forbid donating when the pool is empty as we consider this
@@ -435,7 +440,18 @@ def donate(amounts: uint256[N_COINS]):
     assert balances[0] + balances[1] > 0, "empty pool"
 
     price_scale: uint256 = self.cached_price_scale
-    old_xp: uint256[N_COINS] = self._xp(balances, price_scale)
+
+    A_gamma: uint256[2] = self._A_gamma()
+
+    old_D: uint256 = 0
+    if self._is_ramping():
+        # Recalculate D if A and/or gamma are ramping because the shape of
+        # the bonding curve is changing.
+        old_xp: uint256[N_COINS] = self._xp(balances, price_scale)
+        old_D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], old_xp, 0)
+    else:
+        old_D = self.D
+    assert old_D > 0, "empty pool"
 
     for i: uint256 in range(N_COINS):
         if amounts[i] > 0:
@@ -446,28 +462,17 @@ def donate(amounts: uint256[N_COINS]):
 
     # -------------------- Calculate LP tokens corresponding to donation -----------------------
 
-    A_gamma: uint256[2] = self._A_gamma()
-
-    old_D: uint256 = 0
-    if self._is_ramping():
-        # Recalculate D if A and/or gamma are ramping because the shape of
-        # the bonding curve is changing.
-        old_D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], old_xp, 0)
-    else:
-        old_D = self.D
-    assert old_D > 0, "empty pool"
-
     D: uint256 = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
 
     # Update the donation clock if there are no donations to be absorbed.
     # This makes sure that the donation starts being absorbed from the
     # block timestamp and not from the end of the last donation.
-    donation_D: uint256 = self.donation_D
+    donation_xcp: uint256 = self.donation_xcp
     if donation_D == 0:
         self.last_donation_absorb_timestamp = block.timestamp
 
     if D > old_D:
-        self.donation_D = donation_D + (D - old_D)
+        self.donation_xcp = donation_xcp + self.get_xcp(D - old_D, price_scale)
         self.D = D
         self.last_donation_absorb_timestamp = block.timestamp
         # virtual price and xcp_profit did not change yet
@@ -480,23 +485,24 @@ def _absorb_donation() -> uint256:
     # because `tweak_price` will check by how much the virtual price has increased
     # to compute `xcp_profit` which a donation should not affect.
 
-    donation_D: uint256 = self.donation_D
+    donation_xcp: uint256 = self.donation_xcp
 
-    if donation_D == 0:
+    if donation_xcp == 0:
         return 0
 
     elapsed: uint256 = block.timestamp - self.last_donation_absorb_timestamp
     # Early return if absorption is attempted multiple times in the same block (or
     # multiple blocks where block timestamp is the same).
     if elapsed == 0:
-        return donation_D
+        return donation_xcp
     # Update donations clock
     self.last_donation_absorb_timestamp = block.timestamp
 
-    new_donation_D: uint256 = donation_D - min(donation_D, donation_D * elapsed // self.donation_duration)
+    new_donation_xcp: uint256 = donation_xcp - min(donation_xcp, donation_xcp * elapsed // self.donation_duration)
 
+    # XXX paused here
     D: uint256 = self.D
-    if D > donation_D:  # in princuple should always be bigger but let's skip if not
+    if D > donation_D:  # in principle should always be bigger but let's skip if not
         self.donation_D = new_donation_D
         # This is what is enough for donations
         self.virtual_price = self.virtual_price * (D - new_donation_D) // (D - donation_D)
