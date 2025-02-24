@@ -25,18 +25,14 @@ class OnlySwapStateful(StatefulBase):
         # we use a data strategy since the amount we want to swap
         # depends on the pool liquidity which is only known at runtime
         dx = data.draw(
+            # swap can be between 0.01% and 50% of the pool liquidity
             integers(
-                # swap can be between 0.01% and 50% of the pool liquidity
-                min_value=int(liquidity * 0.0001),
+                # we add 1 to avoid exchanging 0 due to rounding
+                min_value=int(liquidity * 0.0001) + 1,
                 max_value=int(liquidity * 0.50),
             ),
             label="dx",
         )
-        # decimals: sometime very small amount get rounded to 0
-        if dx == 0:
-            note("corrected dx draw to 1")
-            event("corrected dx to 1")
-            dx = 1
 
         note("trying to swap: {:.2%} of pool liquidity".format(dx / liquidity))
 
