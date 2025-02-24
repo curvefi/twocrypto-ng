@@ -1140,19 +1140,10 @@ def _fee(xp: uint256[N_COINS]) -> uint256:
 @internal
 @pure
 def _xcp(D: uint256, price_scale: uint256) -> uint256:
-    # Here we compute xp in a different way compared to `self._xp`:
-    # We assume that pool is balanced (which is not necessarily the case),
-    # and we proceed to compute D // (N_COINS * price_scale) where the price
-    # scale for xp[0] is 1. This is necessary to compute xcp and xcp_profit,
-    # see the whitepaper for more details.
-    # TODO is it xp or x here?
-    x: uint256[N_COINS] = [
-        unsafe_div(D, N_COINS),
-        D * PRECISION // (price_scale * N_COINS)
-    ]
-
-    # Geometric mean.
-    return isqrt(x[0] * x[1])
+    # We compute xcp according to the formula in the whitepaper:
+    # xcp = sqrt(D // (N_COINS * 1) * D // (N_COINS * price_scale))
+    # this is equivalent to D // N_COINS * sqrt(price_scale).
+    return D // N_COINS * isqrt(price_scale * PRECISION) // PRECISION
 
 
 @view
