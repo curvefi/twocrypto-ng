@@ -1174,6 +1174,8 @@ def _xcp(D: uint256, price_scale: uint256) -> uint256:
     # The unit of xcp is √(coin0 * coin1)
     return D * PRECISION // N_COINS // isqrt(PRECISION * price_scale)
 
+  
+
 
 @view
 @internal
