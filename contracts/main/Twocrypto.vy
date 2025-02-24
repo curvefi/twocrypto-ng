@@ -468,7 +468,7 @@ def donate(amounts: uint256[N_COINS]):
     # This makes sure that the donation starts being absorbed from the
     # block timestamp and not from the end of the last donation.
     donation_xcp: uint256 = self.donation_xcp
-    if donation_D == 0:
+    if donation_xcp == 0:
         self.last_donation_absorb_timestamp = block.timestamp
 
     if D > old_D:
@@ -498,16 +498,18 @@ def _absorb_donation() -> uint256:
     # Update donations clock
     self.last_donation_absorb_timestamp = block.timestamp
 
+    sqrt_price_scale: uint256 = self.sqrt(self.cached_price_scale * PRECISION)
+    donation_D: uint256 = donation_xcp * N_COINS * sqrt_price_scale // PRECISION
     new_donation_xcp: uint256 = donation_xcp - min(donation_xcp, donation_xcp * elapsed // self.donation_duration)
+    new_donation_D: uint256 = new_donation_xcp * N_COINS * sqrt_price_scale // PRECISION
 
-    # XXX paused here
     D: uint256 = self.D
     if D > donation_D:  # in principle should always be bigger but let's skip if not
-        self.donation_D = new_donation_D
+        self.donation_xcp = new_donation_xcp
         # This is what is enough for donations
         self.virtual_price = self.virtual_price * (D - new_donation_D) // (D - donation_D)
 
-    return donation_D
+    return new_donation_D
 
 
 @external
@@ -834,7 +836,7 @@ def _exchange(
 
     # ----------------------- Calculate dy and fees --------------------------
 
-    y_out: uint256[2] = staticcall MATH.get_y(A_gamma[0], A_gamma[1], xp, self.D - self.donation_D, j)
+    y_out: uint256[2] = staticcall MATH.get_y(A_gamma[0], A_gamma[1], xp, self.D, j)
     dy = xp[j] - y_out[0]
     xp[j] -= dy
     dy -= 1
@@ -888,7 +890,7 @@ def tweak_price(
     price_scale: uint256 = self.cached_price_scale
     rebalancing_params: uint256[3] = self._unpack_3(self.packed_rebalancing_params)
     # Contains: allowed_extra_profit, adjustment_step, ma_time. -----^
-    donation_D: uint256 = self.donation_D
+    donation_D: uint256 = self.donation_xcp * N_COINS * self.sqrt(price_scale * PRECISION) // PRECISION
     adjusted_D: uint256 = D - donation_D
 
     # ------------------ Update Price Oracle if needed -----------------------
@@ -957,7 +959,7 @@ def tweak_price(
     total_supply: uint256 = self.totalSupply
     old_virtual_price: uint256 = self.virtual_price
     if old_virtual_price > 0:
-        xcp: uint256 = isqrt(xp[0] * xp[1])
+        xcp: uint256 = self.sqrt(xp[0] * xp[1])
 
         # We increase the virtual price by 1 to avoid off by one rounding
         # errors. While this can lead to a small profit overestimation,
@@ -1029,7 +1031,7 @@ def tweak_price(
 
             # unsafe_div because we did safediv before (if vp>1e18)
             new_virtual_price: uint256 = unsafe_div(
-                10**18 * isqrt(xp[0] * xp[1]), total_supply
+                10**18 * self.sqrt(xp[0] * xp[1]), total_supply
             )
 
             # If we've got enough profit we rebalance the liquidity in the
@@ -1093,9 +1095,10 @@ def _claim_admin_fees():
 
     A_gamma: uint256[2] = self._A_gamma()
     D: uint256 = self.D
-    adjusted_D: uint256 = D - self.donation_D
-    vprice: uint256 = self.virtual_price
     price_scale: uint256 = self.cached_price_scale
+    donation_D: uint256 = self.donation_xcp * N_COINS * self.sqrt(price_scale) // PRECISION
+    adjusted_D: uint256 = D - donation_D
+    vprice: uint256 = self.virtual_price
     fee_receiver: address = staticcall factory.fee_receiver()
     balances: uint256[N_COINS] = self.balances
 
@@ -1242,14 +1245,14 @@ def _fee(xp: uint256[N_COINS]) -> uint256:
 
 @internal
 @pure
+def sqrt(x: uint256) -> uint256:
+    return isqrt(x)
+
+
+@internal
+@pure
 def get_xcp(D: uint256, price_scale: uint256) -> uint256:
-
-    x: uint256[N_COINS] = [
-        unsafe_div(D, N_COINS),
-        D * PRECISION // (price_scale * N_COINS)
-    ]
-
-    return isqrt(x[0] * x[1])  # <------------------- Geometric Mean.
+    return D * PRECISION // (N_COINS * self.sqrt(price_scale * PRECISION))
 
 
 @view
@@ -1323,7 +1326,8 @@ def _calc_withdraw_one_coin(
         xp_imprecise[i] -= xp_correction
         fee = self._fee(xp_imprecise)
 
-    dD: uint256 = unsafe_div(token_amount * (D - self.donation_D), token_supply)
+    donation_D: uint256 = self.donation_xcp * N_COINS * self.sqrt(price_scale) // PRECISION
+    dD: uint256 = unsafe_div(token_amount * (D - donation_D), token_supply)
     D_fee: uint256 = fee * dD // (2 * 10**10) + 1  # <------- Actual fee on D.
 
     # --------- Calculate `approx_fee` (assuming balanced state) in ith token.
@@ -1569,7 +1573,7 @@ def get_virtual_price() -> uint256:
          virtual price.
     @return uint256 Virtual Price.
     """
-    return 10**18 * self.get_xcp(self.D - self.donation_D, self.cached_price_scale) // self.totalSupply
+    return 10**18 * (self.get_xcp(self.D, self.cached_price_scale) - self.donation_xcp) // self.totalSupply
 
 
 @external
