@@ -3,45 +3,39 @@ import pytest
 
 
 @pytest.fixture(scope="module")
-def weth(deployer):
-    with boa.env.prank(deployer):
-        return boa.load("contracts/mocks/WETH.vy")
-
-
-@pytest.fixture(scope="module")
 def usd(deployer):
     with boa.env.prank(deployer):
-        return boa.load("contracts/mocks/ERC20Mock.vy", "USD", "USD", 18)
+        return boa.load("tests/mocks/MockERC20.vy", "USD", "USD", 18)
 
 
 @pytest.fixture(scope="module")
 def btc(deployer):
     with boa.env.prank(deployer):
-        return boa.load("contracts/mocks/ERC20Mock.vy", "BTC", "BTC", 18)
+        return boa.load("tests/mocks/MockERC20.vy", "BTC", "BTC", 18)
 
 
 @pytest.fixture(scope="module")
 def stg(deployer):
     with boa.env.prank(deployer):
-        return boa.load("contracts/mocks/ERC20Mock.vy", "STG", "STG", 18)
+        return boa.load("tests/mocks/MockERC20.vy", "STG", "STG", 18)
 
 
 @pytest.fixture(scope="module")
 def usdt(deployer):
     with boa.env.prank(deployer):
-        return boa.load("contracts/mocks/ERC20Mock.vy", "USDT", "USDT", 6)
+        return boa.load("tests/mocks/MockERC20.vy", "USDT", "USDT", 6)
 
 
 @pytest.fixture(scope="module")
 def usdc(deployer):
     with boa.env.prank(deployer):
-        return boa.load("contracts/mocks/ERC20Mock.vy", "USDC", "USDC", 6)
+        return boa.load("tests/mocks/MockERC20.vy", "USDC", "USDC", 6)
 
 
 @pytest.fixture(scope="module")
 def dai(deployer):
     with boa.env.prank(deployer):
-        return boa.load("contracts/mocks/ERC20Mock.vy", "DAI", "DAI", 18)
+        return boa.load("tests/mocks/MockERC20.vy", "DAI", "DAI", 18)
 
 
 @pytest.fixture(scope="module")
