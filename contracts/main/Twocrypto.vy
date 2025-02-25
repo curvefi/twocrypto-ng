@@ -120,7 +120,8 @@ event ClaimAdminFee:
 # ----------------------- Storage/State Variables ----------------------------
 
 N_COINS: constant(uint256) = 2
-PRECISION: constant(uint256) = 10**18  # <------- The precision to convert to.
+ONE: constant(uint256) = 10**18  # <------- The precision to convert to.
+FEE_ONE: constant(uint256) = 10**10
 PRECISIONS: immutable(uint256[N_COINS])
 
 MATH: public(immutable(Math))
@@ -159,10 +160,10 @@ packed_rebalancing_params: public(uint256)  # <---------- Contains rebalancing
 # Fee params that determine dynamic fees:
 packed_fee_params: public(uint256)  # <---- Packs mid_fee, out_fee, fee_gamma.
 
-ADMIN_FEE: public(constant(uint256)) = 5 * 10**9  # <----- 50% of earned fees.
-MIN_FEE: constant(uint256) = 5 * 10**5  # <-------------------------- 0.5 BPS.
-MAX_FEE: constant(uint256) = 10 * 10**9
-NOISE_FEE: constant(uint256) = 10**5  # <---------------------------- 0.1 BPS.
+MAX_FEE: constant(uint256) = FEE_ONE # 10_000 BPS (100%)
+ADMIN_FEE: public(constant(uint256)) = MAX_FEE // 2 # 5_000 BPS (50%)
+MIN_FEE: constant(uint256) = 5 * 10**5  # 0.5 BPS (0.005%)
+NOISE_FEE: constant(uint256) = 10**5  # 0.1 BPS (0.001%)
 
 # ----------------------- Admin params ---------------------------------------
 
@@ -239,7 +240,7 @@ def __init__(
     self.cached_price_oracle = initial_price
     self.last_prices = initial_price
     self.last_timestamp = block.timestamp
-    self.xcp_profit_a = 10**18
+    self.xcp_profit_a = ONE
 
     log Transfer(empty(address), self, 0)  # <------- Fire empty transfer from
     #                                       0x0 to self for indexers to catch.
@@ -492,13 +493,13 @@ def add_liquidity(
     if old_D > 0:
 
         d_token_fee = (
-            self._calc_token_fee(amountsp, xp) * d_token // 10**10 + 1
+            self._calc_token_fee(amountsp, xp) * d_token // FEE_ONE + 1
         )
 
         d_token -= d_token_fee
         token_supply += d_token
         self.mint(receiver, d_token)
-        self.admin_lp_virtual_balance += unsafe_div(ADMIN_FEE * d_token_fee, 10**10)
+        self.admin_lp_virtual_balance += unsafe_div(ADMIN_FEE * d_token_fee, FEE_ONE)
 
         price_scale = self.tweak_price(A_gamma, xp, D)
 
@@ -507,9 +508,9 @@ def add_liquidity(
         # (re)instatiating an empty pool:
 
         self.D = D
-        self.virtual_price = 10**18
-        self.xcp_profit = 10**18
-        self.xcp_profit_a = 10**18
+        self.virtual_price = ONE
+        self.xcp_profit = ONE
+        self.xcp_profit_a = ONE
 
         self.mint(receiver, d_token)
 
@@ -727,7 +728,7 @@ def _exchange(
         x0 *= PRECISIONS[i]
 
         if i > 0:
-            x0 = unsafe_div(x0 * price_scale, PRECISION)
+            x0 = unsafe_div(x0 * price_scale, ONE)
 
         x1: uint256 = xp[i]  # <------------------ Back up old value in xp ...
         xp[i] = x0                                                         # |
@@ -743,17 +744,17 @@ def _exchange(
     dy -= 1
 
     if j > 0:
-        dy = dy * PRECISION // price_scale
+        dy = dy * ONE // price_scale
     dy //= PRECISIONS[j]
 
-    fee: uint256 = unsafe_div(self._fee(xp) * dy, 10**10)
+    fee: uint256 = unsafe_div(self._fee(xp) * dy, FEE_ONE)
     dy -= fee  # <--------------------- Subtract fee from the outgoing amount.
     assert dy >= min_dy, "slippage"
     y -= dy
 
     y *= PRECISIONS[j]
     if j > 0:
-        y = unsafe_div(y * price_scale, PRECISION)
+        y = unsafe_div(y * price_scale, ONE)
     xp[j] = y  # <------------------------------------------------- Update xp.
 
     # ------ Tweak price_scale with good initial guess for newton_D ----------
@@ -807,7 +808,7 @@ def tweak_price(
         alpha = staticcall MATH.wad_exp(
             -convert(
                 unsafe_div(
-                    unsafe_sub(block.timestamp, last_timestamp) * 10**18,
+                    unsafe_sub(block.timestamp, last_timestamp) * ONE,
                     rebalancing_params[2]  # <----------------------- ma_time.
                 ),
                 int256,
@@ -819,9 +820,9 @@ def tweak_price(
         # ----------------- We cap state price that goes into the EMA with
         #                                                 2 x price_scale.
         price_oracle = unsafe_div(
-            min(last_prices, 2 * price_scale) * (10**18 - alpha) +
+            min(last_prices, 2 * price_scale) * (ONE - alpha) +
             price_oracle * alpha,  # ^-------- Cap spot price into EMA.
-            10**18
+            ONE
         )
 
         self.cached_price_oracle = price_oracle
@@ -836,13 +837,13 @@ def tweak_price(
     # and can be manipulated.
     self.last_prices = unsafe_div(
         staticcall MATH.get_p(_xp, D, A_gamma) * price_scale,
-        10**18
+        ONE
     )
 
     # ---------- Update profit numbers without price adjustment first --------
 
-    xcp_profit: uint256 = 10**18
-    virtual_price: uint256 = 10**18
+    xcp_profit: uint256 = ONE
+    virtual_price: uint256 = ONE
 
     # `totalSupply` will not change during this function call.
     total_supply: uint256 = self.totalSupply
@@ -853,7 +854,7 @@ def tweak_price(
         # We increase the virtual price by 1 to avoid off by one rounding
         # errors. While this can lead to a small profit overestimation,
         # given virtual_price has 18 decimals, this is negligible.
-        virtual_price = 10**18 * xcp // total_supply + 1
+        virtual_price = ONE * xcp // total_supply + 1
 
         # Safe to do unsafe_div as old_virtual_price > 0.
         old_xcp_profit: uint256 = self.xcp_profit
@@ -874,17 +875,17 @@ def tweak_price(
     self.xcp_profit = xcp_profit
 
     # ------------ Rebalance liquidity if there's enough profits to adjust it:
-    if virtual_price ** 2 > xcp_profit * (10**18 + 2 * rebalancing_params[0]):
+    if virtual_price ** 2 > xcp_profit * (ONE + 2 * rebalancing_params[0]):
         #                          allowed_extra_profit --------^
 
         # Calculate the vector distance between price_scale and price_oracle.
         norm: uint256 = unsafe_div(
-            unsafe_mul(price_oracle, 10**18), price_scale
+            unsafe_mul(price_oracle, ONE), price_scale
         )
         if norm > 10**18:
-            norm = unsafe_sub(norm, 10**18)
+            norm = unsafe_sub(norm, ONE)
         else:
-            norm = unsafe_sub(10**18, norm)
+            norm = unsafe_sub(ONE, norm)
         adjustment_step: uint256 = max(
             rebalancing_params[1], unsafe_div(norm, 5)
         )  #           ^------------------------------------- adjustment_step.
@@ -923,8 +924,8 @@ def tweak_price(
             # If we've got enough profit we rebalance the liquidity in the
             # pool by moving the price_scale closer to the oracle price.
             if (
-                new_virtual_price > 10**18 and
-                new_virtual_price ** 2 > xcp_profit * 10**18
+                new_virtual_price > ONE and
+                new_virtual_price ** 2 > xcp_profit * ONE
             ):
 
                 self.D = new_D
@@ -974,7 +975,7 @@ def _claim_admin_fees():
     # 2. there are less than 10**18 (or 1 unit of) lp tokens, else it can lead
     #    to manipulated virtual prices.
 
-    if xcp_profit <= xcp_profit_a or current_lp_token_supply < 10**18:
+    if xcp_profit <= xcp_profit_a or current_lp_token_supply < ONE:
         return
 
     # ---------- Conditions met to claim admin fees: compute state. ----------
@@ -996,7 +997,7 @@ def _claim_admin_fees():
     #         are left with half; so divide by 2.
 
     fees: uint256 = unsafe_div(
-        unsafe_sub(xcp_profit, xcp_profit_a) * ADMIN_FEE, 2 * 10**10
+        unsafe_sub(xcp_profit, xcp_profit_a) * ADMIN_FEE, 2 * FEE_ONE
     )
 
     # ------------------------------ Claim admin fees by minting admin's share
@@ -1009,8 +1010,8 @@ def _claim_admin_fees():
     if fee_receiver != empty(address) and fees > 0:
 
         # -------------------------------- Calculate admin share to be minted.
-        frac = vprice * 10**18 // (vprice - fees) - 10**18
-        admin_share += current_lp_token_supply * frac // 10**18
+        frac = vprice * ONE // (vprice - fees) - ONE
+        admin_share += current_lp_token_supply * frac // ONE
 
         # ------ Subtract fees from profits that will be used for rebalancing.
         xcp_profit -= fees * 2
@@ -1020,12 +1021,12 @@ def _claim_admin_fees():
         current_lp_token_supply + admin_share
     )
     vprice = (
-        10**18 * self._xcp(D, price_scale) //
+        ONE * self._xcp(D, price_scale) //
         total_supply_including_admin_share
     )
 
     # Do not claim fees if doing so causes virtual price to drop below 10**18.
-    if vprice < 10**18:
+    if vprice < ONE:
         return
 
     # ---------------------------- Update State ------------------------------
@@ -1072,7 +1073,7 @@ def _xp(
 ) -> uint256[N_COINS]:
     return [
         balances[0] * PRECISIONS[0],
-        unsafe_div(balances[1] * PRECISIONS[1] * price_scale, PRECISION)
+        unsafe_div(balances[1] * PRECISIONS[1] * price_scale, ONE)
     ]
 
 @internal
@@ -1116,14 +1117,14 @@ def _fee(xp: uint256[N_COINS]) -> uint256:
 
     fee_params: uint256[3] = self._unpack_3(self.packed_fee_params)
     f: uint256 = xp[0] + xp[1]
-    f = fee_params[2] * 10**18 // (
-        fee_params[2] + 10**18 -
-        (10**18 * N_COINS**N_COINS) * xp[0] // f * xp[1] // f
+    f = fee_params[2] * ONE // (
+        fee_params[2] + ONE -
+        (ONE * N_COINS**N_COINS) * xp[0] // f * xp[1] // f
     )
 
     return unsafe_div(
-        fee_params[0] * f + fee_params[1] * (10**18 - f),
-        10**18
+        fee_params[0] * f + fee_params[1] * (ONE - f),
+        ONE
     )
 
 
@@ -1138,7 +1139,7 @@ def _xcp(D: uint256, price_scale: uint256) -> uint256:
     # TODO is it xp or x here?
     x: uint256[N_COINS] = [
         unsafe_div(D, N_COINS),
-        D * PRECISION // (price_scale * N_COINS)
+        D * ONE // (price_scale * N_COINS)
     ]
 
     # Geometric mean.
@@ -1217,7 +1218,7 @@ def _calc_withdraw_one_coin(
         fee = self._fee(xp_imprecise)
 
     dD: uint256 = unsafe_div(token_amount * D, token_supply)
-    D_fee: uint256 = fee * dD // (2 * 10**10) + 1  # <------- Actual fee on D.
+    D_fee: uint256 = fee * dD // (2 * FEE_ONE) + 1  # <------- Actual fee on D.
 
     # --------- Calculate `approx_fee` (assuming balanced state) in ith token.
     # -------------------------------- We only need this for fee in the event.
@@ -1230,8 +1231,8 @@ def _calc_withdraw_one_coin(
 
     price_scale_i: uint256 = price_scale * PRECISIONS[1]
     if i == 0:
-        price_scale_i = PRECISION * PRECISIONS[0]
-    dy: uint256 = (xp[i] - y) * PRECISION // price_scale_i
+        price_scale_i = ONE * PRECISIONS[0]
+    dy: uint256 = (xp[i] - y) * ONE // price_scale_i
     xp[i] = y
 
     return dy, D, xp, approx_fee
@@ -1358,7 +1359,7 @@ def internal_price_oracle() -> uint256:
         ma_time: uint256 = self._unpack_3(self.packed_rebalancing_params)[2]
         alpha: uint256 = staticcall MATH.wad_exp(
             -convert(
-                unsafe_sub(block.timestamp, last_prices_timestamp) * 10**18 // ma_time,
+                unsafe_sub(block.timestamp, last_prices_timestamp) * ONE // ma_time,
                 int256,
             )
         )
@@ -1367,7 +1368,7 @@ def internal_price_oracle() -> uint256:
         return (
             min(last_prices, 2 * price_scale) * (10**18 - alpha) +
             price_oracle * alpha
-        ) // 10**18
+        ) // ONE
 
     return price_oracle
 
@@ -1449,7 +1450,7 @@ def lp_price() -> uint256:
             0th index
     @return uint256 LP price.
     """
-    return 2 * self.virtual_price * isqrt(self.internal_price_oracle() * 10**18) // 10**18
+    return 2 * self.virtual_price * isqrt(self.internal_price_oracle() * ONE) // ONE
 
 
 @external
