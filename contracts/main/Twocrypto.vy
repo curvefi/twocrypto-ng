@@ -152,9 +152,9 @@ future_A_gamma_time: public(uint256)  # <------ Time when ramping is finished.
 #                                                            and not set to 0.
 
 # TODO pack these two into one variable
-donation_xcp: public(uint256)  
+donation_xcp: public(uint256)
 # Time constant which determines donation speed
-donation_duration: public(uint256)  
+donation_duration: public(uint256)
 last_donation_absorb_timestamp: public(uint256)
 
 balances: public(uint256[N_COINS])
@@ -473,7 +473,7 @@ def donate(amounts: uint256[N_COINS]):
 
     # Donations need to be stored in a way that allows us to compare them across rebalances.
     # We store them using xcp that can be seen as a way to normalize the value of D for
-    # different price scales. 
+    # different price scales.
     old_donation_xcp: uint256 = self.donation_xcp
 
     # Update the donation clock if there are no donations to be absorbed.
@@ -483,7 +483,7 @@ def donate(amounts: uint256[N_COINS]):
         self.last_donation_absorb_timestamp = block.timestamp
 
     # dD (delta D) represents the amount of D that was added to the pool
-    # after the donation was made. 
+    # after the donation was made.
     # Note that doing `D - old_D` implicitly checks that D >= old_D.
     dD: uint256 = D - old_D
 
@@ -525,7 +525,7 @@ def _absorb_donation() -> uint256:
     price_scale: uint256 = self.cached_price_scale
 
     # TODO cache sqrt result here to save gas
-    # We convert donation_xcp to D units, before the absorption. 
+    # We convert donation_xcp to D units, before the absorption.
     donation_D: uint256 = self._D_from_xcp(donation_xcp, price_scale)
     # We reduce the donation_xcp by the amount that has been absorbed
     new_donation_xcp: uint256 = donation_xcp - min(donation_xcp, donation_xcp * elapsed // self.donation_duration)
@@ -536,7 +536,7 @@ def _absorb_donation() -> uint256:
     if D > donation_D:  # in principle should always be bigger but let's skip if not
         self.donation_xcp = new_donation_xcp
         # `D - new_donation_D` is the amount of D that belongs to the liquidity providers
-        # after the absorption. `D - donation_D` is the amount of D that belongs to the 
+        # after the absorption. `D - donation_D` is the amount of D that belongs to the
         # liquidity providers before the absorption. The absorption increases the value
         # of the numerator, which we can use to quantify the increase in value of the
         # virtual price.
@@ -791,7 +791,7 @@ def _remove_liquidity_fixed_out(
     receiver: address,
 ) -> uint256:
 
-    self._claim_admin_fees()
+    self._claim_admin_fees()  
 
     A_gamma: uint256[2] = self._A_gamma()
 
@@ -1331,7 +1331,7 @@ def _fee(xp: uint256[N_COINS]) -> uint256:
 def _D_from_xcp(xcp: uint256, price_scale: uint256) -> uint256:
     # TODO explain where the formula comes from
     return xcp * N_COINS * isqrt(price_scale * PRECISION) // PRECISION
-    
+
 
     # regulate slope using fee_gamma
     # fee_gamma * balance_term / (fee_gamma * balance_term + 1 - balance_term)
