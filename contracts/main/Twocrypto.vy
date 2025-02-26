@@ -198,7 +198,6 @@ def __init__(
     _symbol: String[32],
     _coins: address[N_COINS],
     _math: address,
-    _salt: bytes32,
     packed_precisions: uint256,
     packed_gamma_A: uint256,
     packed_fee_params: uint256,
