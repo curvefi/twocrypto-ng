@@ -1124,11 +1124,11 @@ def _fee(xp: uint256[N_COINS]) -> uint256:
 
     # regulate slope using fee_gamma
     # fee_gamma * balance_term / (fee_gamma * balance_term + 1 - balance_term)
-    B = fee_params[2] * B // (unsafe_div(fee_params[2] * B, 10**18)  + 10**18 - B) 
+    B = fee_params[2] * B // (unsafe_div(fee_params[2] * B, 10**18)  + 10**18 - B)
 
     # mid_fee * B + out_fee * (1 - B)
     return unsafe_div(fee_params[0] * B + fee_params[1] * (10**18 - B), 10**18)
-    
+
 
 @internal
 @pure
