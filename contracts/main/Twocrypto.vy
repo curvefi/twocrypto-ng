@@ -513,17 +513,18 @@ def donate(amounts: uint256[N_COINS], min_amount: uint256):
     # We can do unsafe_sub here because we asserted that D > old_D.
     dD: uint256 = unsafe_sub(D, old_D)
 
-    # TODO add constant here for max_bps
+
+        # We convert dD in "xcp units" so that donations can be compared across rebalances.
+    new_donation_xcp: uint256 = old_donation_xcp + self._xcp(dD, price_scale)
+    self.donation_xcp = new_donation_xcp
+
     # Since this function effectively acts as a `add_liquidity` but it doesn't
     # call `tweak_price` at the end, imbalanced liquidity deposits can push the
     # price of the pool far away from the center of liquidity. For this reason
-    # TODO this is wrong because one can just do multiple txs, need to rewrite this
-    # to use xcp_donation
-    assert 10_000 * dD // D <= self.max_donation_ratio, "ratio too high"
-
-    # We convert dD in "xcp units" so that donations can be compared across rebalances.
-    new_donation_xcp: uint256 = old_donation_xcp + self._xcp(dD, price_scale)
-    self.donation_xcp = new_donation_xcp
+    # we limit the amount of donation that can be stored to some percentage of D.
+    donation_D: uint256 = self._D_from_xcp(new_donation_xcp, price_scale)
+    # TODO add constant here for max_bps
+    assert 10_000 * donation_D // D <= self.max_donation_ratio, "ratio too high"
 
 
 
