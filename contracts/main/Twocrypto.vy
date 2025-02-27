@@ -445,7 +445,8 @@ def donate(amounts: uint256[N_COINS], min_amount: uint256):
             that in turn will allow the pool to rebalance more frequently.
     @param amounts Amounts of each coin to donate.
     @param min_amount Amount of lp tokens that would be minted if the donation was
-            an `add_liquidity` operation.
+            an `add_liquidity` operation. Can be computed from `calc_token_amount`,
+            by passing `donation=True`.
     """
 
     # This function intentionally doesn't update virtual price because it gets slowly
@@ -489,8 +490,7 @@ def donate(amounts: uint256[N_COINS], min_amount: uint256):
     # operations can be subject to slippage or potentially sandwich attacks.
     # Note that we're not minting any lp tokens here.
     total_supply: uint256 = self.totalSupply
-    print(total_supply * D // old_D - total_supply)
-    assert total_supply * D // old_D - total_supply >= min_amount, "donation slippage too high"
+    assert total_supply * D // old_D - total_supply >= min_amount, "donation slippage"
 
     # Donations need to be stored in a way that allows us to compare them across rebalances.
     # We store them using xcp that can be seen as a way to normalize the value of D for
