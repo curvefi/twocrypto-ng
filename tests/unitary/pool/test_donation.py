@@ -62,3 +62,42 @@ def test_absorption(pool):
         old_donation_xcp = pool.donation_xcp()
         old_virtual_price = pool.virtual_price()
         old_xcp_profit = pool.xcp_profit()
+
+
+def test_slippage(pool, views_contract):
+    DONATION_AMOUNT = [10**18, 2 * 10**18]
+
+    expected_amount = views_contract.calc_token_amount(
+        DONATION_AMOUNT,
+        True,
+        pool.address,
+        True,  # Donation mode is enabled.
+    )
+
+    # Donation should pass if no operation happened before.
+    with boa.env.anchor():
+        pool.donate(DONATION_AMOUNT, slippage=expected_amount)
+
+    # Even a small change before donation should revert because of slippage.
+    pool.add_liquidity([10**18, 10**18])
+
+    with boa.reverts("donation slippage"):
+        pool.donate(DONATION_AMOUNT, slippage=expected_amount)
+
+
+def test_donation_ratio_too_high(pool):
+    pass  # TODO
+
+
+#     balances = [pool.balances(i) for i in range(N_COINS)]
+#     donation_amounts = [balance // 9 for balance in balances]
+
+#     # This should not revert because we're maxing out the allowed ratio
+#     # but not exceeding it.
+#     with boa.env.anchor():
+#         pool.donate(donation_amounts)
+
+#     donation_amounts = [int(amount * 1.1) for amount in donation_amounts]
+
+#     with boa.reverts("ratio too high"):
+#         pool.donate(donation_amounts)
