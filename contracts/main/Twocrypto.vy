@@ -151,10 +151,11 @@ future_A_gamma_time: public(uint256)  # <------ Time when ramping is finished.
 #      (i.e. self.future_A_gamma_time < block.timestamp), the variable is left
 #                                                            and not set to 0.
 
-# TODO pack these two into one variable
 donation_xcp: public(uint256)
 # Time constant which determines donation speed
+# TODO pack these three into one variable
 donation_duration: public(uint256)
+max_donation_ratio: public(uint256)
 last_donation_absorb_timestamp: public(uint256)
 
 balances: public(uint256[N_COINS])
@@ -256,6 +257,7 @@ def __init__(
 
     # TODO add setters etc
     self.donation_duration = 7 * 86400
+    self.max_donation_ratio = 1_000 # Max is 10_000 bps
 
     log Transfer(sender=empty(address), receiver=self, value=0)  # <------- Fire empty transfer from
     #                                       0x0 to self for indexers to catch.
@@ -433,7 +435,19 @@ def exchange_received(
 
 @external
 @nonreentrant
-def donate(amounts: uint256[N_COINS]):
+def donate(amounts: uint256[N_COINS], min_amount: uint256):
+    """
+    @notice Donate to the pool. The donation will directly impact D but will not
+            immediately impact the virtual price. The donation will be absorbed
+            over time (with exponential decay).
+    @dev Donations can be useful when a pool's price scale is very far away from
+            the market price. Donating some coins will increase the virtual_price
+            that in turn will allow the pool to rebalance more frequently.
+    @param amounts Amounts of each coin to donate.
+    @param min_amount Amount of lp tokens that would be minted if the donation was
+            an `add_liquidity` operation.
+    """
+
     # This function intentionally doesn't update virtual price because it gets slowly
     # increased by the _absorb_donation function. This allows not to spend the whole donation
     # at once (if multiple rebalances happen in a short timeframe) but release it over time.
@@ -471,6 +485,13 @@ def donate(amounts: uint256[N_COINS]):
     D: uint256 = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
     self.D = D
 
+    # Here we do a slippage check because donations, exactly as `add_liquidity`
+    # operations can be subject to slippage or potentially sandwich attacks.
+    # Note that we're not minting any lp tokens here.
+    total_supply: uint256 = self.totalSupply
+    print(total_supply * D // old_D - total_supply)
+    assert total_supply * D // old_D - total_supply >= min_amount, "donation slippage too high"
+
     # Donations need to be stored in a way that allows us to compare them across rebalances.
     # We store them using xcp that can be seen as a way to normalize the value of D for
     # different price scales.
@@ -482,13 +503,29 @@ def donate(amounts: uint256[N_COINS]):
     if old_donation_xcp == 0:
         self.last_donation_absorb_timestamp = block.timestamp
 
+    # When the donation is very small D might be miscalculated.
+    assert D > old_D, "donation caused loss"
+
     # dD (delta D) represents the amount of D that was added to the pool
     # after the donation was made.
-    # Note that doing `D - old_D` implicitly checks that D >= old_D.
-    dD: uint256 = D - old_D
+    # The subtraction here is mathematically sound because D and old_D exist
+    # on the same bonding curve, (price scale, A and gamma are the same).
+    # We can do unsafe_sub here because we asserted that D > old_D.
+    dD: uint256 = unsafe_sub(D, old_D)
+
+    # TODO add constant here for max_bps
+    # Since this function effectively acts as a `add_liquidity` but it doesn't
+    # call `tweak_price` at the end, imbalanced liquidity deposits can push the
+    # price of the pool far away from the center of liquidity. For this reason
+    # TODO this is wrong because one can just do multiple txs, need to rewrite this
+    # to use xcp_donation
+    assert 10_000 * dD // D <= self.max_donation_ratio, "ratio too high"
 
     # We convert dD in "xcp units" so that donations can be compared across rebalances.
-    self.donation_xcp = old_donation_xcp + self._xcp(dD, price_scale)
+    new_donation_xcp: uint256 = old_donation_xcp + self._xcp(dD, price_scale)
+    self.donation_xcp = new_donation_xcp
+
+
 
 @external
 def absorb_donation() -> uint256:
