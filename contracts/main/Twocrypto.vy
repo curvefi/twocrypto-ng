@@ -729,7 +729,7 @@ def _exchange(
 
         x1: uint256 = xp[i]  # <------------------ Back up old value in xp ...
         xp[i] = x0                                                         # |
-        self.D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)              # |
+        self.D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)   # |
         xp[i] = x1  # <-------------------------------------- ... and restore.
 
     # ----------------------- Calculate dy and fees --------------------------
@@ -1112,18 +1112,23 @@ def _A_gamma() -> uint256[2]:
 @view
 def _fee(xp: uint256[N_COINS]) -> uint256:
 
+    # unpack mid_fee, out_fee, fee_gamma
     fee_params: uint256[3] = self._unpack_3(self.packed_fee_params)
-    f: uint256 = xp[0] + xp[1]
-    f = fee_params[2] * 10**18 // (
-        fee_params[2] + 10**18 -
-        (10**18 * N_COINS**N_COINS) * xp[0] // f * xp[1] // f
-    )
 
-    return unsafe_div(
-        fee_params[0] * f + fee_params[1] * (10**18 - f),
-        10**18
-    )
+    # warm up variable with sum of balances
+    B: uint256 = xp[0] + xp[1]
 
+    # balance indicator that goes from 10**18 (perfect pool balance) to 0 (very imbalanced, 100:1 and worse)
+    # N^N * (xp[0] * xp[1]) / (xp[0] + xp[1])**2
+    B = 10**18 * N_COINS**N_COINS * xp[0] // B * xp[1] // B
+
+    # regulate slope using fee_gamma
+    # fee_gamma * balance_term / (fee_gamma * balance_term + 1 - balance_term)
+    B = fee_params[2] * B // (unsafe_div(fee_params[2] * B, 10**18)  + 10**18 - B) 
+
+    # mid_fee * B + out_fee * (1 - B)
+    return unsafe_div(fee_params[0] * B + fee_params[1] * (10**18 - B), 10**18)
+    
 
 @internal
 @pure
