@@ -27,6 +27,8 @@ dev-dependencies = [
     "python-dotenv==1.0.1",
     "hypothesis==6.124.2",
     "pandas==2.2.3",
+    "numpy",
+    "matplotlib",
 ]
 
 [tool.ruff]
