@@ -86,18 +86,15 @@ def test_slippage(pool, views_contract):
 
 
 def test_donation_ratio_too_high(pool):
-    pass  # TODO
+    balances = [pool.balances(i) for i in range(N_COINS)]
+    donation_amounts = [balance // 9 for balance in balances]
 
+    # This should not revert because we're maxing out the allowed ratio
+    # but not exceeding it.
+    with boa.env.anchor():
+        pool.donate(donation_amounts)
 
-#     balances = [pool.balances(i) for i in range(N_COINS)]
-#     donation_amounts = [balance // 9 for balance in balances]
+    donation_amounts = [int(amount * 1.1) for amount in donation_amounts]
 
-#     # This should not revert because we're maxing out the allowed ratio
-#     # but not exceeding it.
-#     with boa.env.anchor():
-#         pool.donate(donation_amounts)
-
-#     donation_amounts = [int(amount * 1.1) for amount in donation_amounts]
-
-#     with boa.reverts("ratio too high"):
-#         pool.donate(donation_amounts)
+    with boa.reverts("ratio too high"):
+        pool.donate(donation_amounts)
