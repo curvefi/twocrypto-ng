@@ -448,11 +448,7 @@ def donate(amounts: uint256[N_COINS], min_amount: uint256):
     # at once (if multiple rebalances happen in a short timeframe) but release it over time.
     assert amounts[0] + amounts[1] > 0, "no coins to donate"
 
-    # We forbid donating when the pool is empty as we consider this
-    # undefined behavior.
     balances: uint256[N_COINS] = self.balances
-    assert balances[0] + balances[1] > 0, "empty pool"
-
     price_scale: uint256 = self.cached_price_scale
     A_gamma: uint256[2] = self._A_gamma()
     old_D: uint256 = 0
@@ -464,7 +460,8 @@ def donate(amounts: uint256[N_COINS], min_amount: uint256):
     else:
         old_D = self.D
 
-    # TODO is this necessary?
+    # We forbid donating when the pool is empty as we consider this
+    # undefined behavior.
     assert old_D > 0, "empty pool"
 
     for i: uint256 in range(N_COINS):
