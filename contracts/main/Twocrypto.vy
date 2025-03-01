@@ -1317,7 +1317,7 @@ def _xcp(D: uint256, price_scale: uint256) -> uint256:
     # and we proceed to compute D // (N_COINS * price_scale) where the price
     # scale for xp[0] is 1. This is necessary to compute xcp and xcp_profit,
     # see the whitepaper for more details.
-    # TODO is it xp or x here?
+    # TODO use simplified formula xcp = D // (N_COINS * √price_scale)
     x: uint256[N_COINS] = [
         unsafe_div(D, N_COINS),
         D * PRECISION // (price_scale * N_COINS)
