@@ -1367,9 +1367,9 @@ def _fee(xp: uint256[N_COINS]) -> uint256:
 @internal
 @pure
 def _D_from_xcp(xcp: uint256, price_scale: uint256) -> uint256:
-    # TODO explain where the formula comes from
+    # For N_COINS=2 xcp equals to D // (N_COINS * √price_scale), this is just
+    # the inverse of the formula used in `_xcp`.
     return xcp * N_COINS * isqrt(price_scale * PRECISION) // PRECISION
-
 
     # regulate slope using fee_gamma
     # fee_gamma * balance_term / (fee_gamma * balance_term + 1 - balance_term)
