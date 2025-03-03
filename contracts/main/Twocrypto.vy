@@ -144,7 +144,8 @@ future_A_gamma_time: public(uint256)  # <------ Time when ramping is finished.
 #      (i.e. self.future_A_gamma_time < block.timestamp), the variable is left
 #                                                            and not set to 0.
 
-donation_xcp: public(uint256)
+pending_donation_xcp: public(uint256)
+total_donation_xcp: public(uint256)
 # Time constant which determines donation speed
 # TODO pack these three into one variable
 donation_duration: public(uint256)
@@ -486,92 +487,99 @@ def donate(amounts: uint256[N_COINS], min_amount: uint256):
     # Donations need to be stored in a way that allows us to compare them across rebalances.
     # We store them using xcp that can be seen as a way to normalize the value of D for
     # different price scales.
-    old_donation_xcp: uint256 = self.donation_xcp
+    old_pending_donation_xcp: uint256 = self.pending_donation_xcp
 
     # Update the donation clock if there are no donations to be absorbed.
     # This makes sure that the donation starts being absorbed from the
     # block timestamp and not from the last time the clock was updated.
-    if old_donation_xcp == 0:
+    if old_pending_donation_xcp == 0:
         self.last_donation_absorb_timestamp = block.timestamp
 
     # When the donation is very small D might be miscalculated.
     assert D > old_D, "donation caused loss"
 
-    # dD (delta D) represents the amount of D that was added to the pool
+    # `delta_D` represents the amount of D that was added to the pool
     # after the donation was made.
     # The subtraction here is mathematically sound because D and old_D exist
     # on the same bonding curve, (price scale, A and gamma are the same).
     # We can do unsafe_sub here because we asserted that D > old_D.
-    dD: uint256 = unsafe_sub(D, old_D)
+    delta_D: uint256 = unsafe_sub(D, old_D)
 
+    # We convert dD in "xcp units" so that the new donation can be integrated
+    # in the existing donation buffer.
+    delta_xcp: uint256 = self._xcp(delta_D, price_scale)
 
-        # We convert dD in "xcp units" so that donations can be compared across rebalances.
-    new_donation_xcp: uint256 = old_donation_xcp + self._xcp(dD, price_scale)
-    self.donation_xcp = new_donation_xcp
+    # We update the pending and total donation buffer with the new amount to be donated.
+    new_pending_donation_xcp: uint256 = old_pending_donation_xcp + delta_xcp
+    self.pending_donation_xcp = new_pending_donation_xcp
+    new_total_donation_xcp: uint256 = self.total_donation_xcp + delta_xcp
+    self.total_donation_xcp = new_total_donation_xcp
 
     # Since this function effectively acts as a `add_liquidity` but it doesn't
     # call `tweak_price` at the end, imbalanced liquidity deposits can push the
     # price of the pool far away from the center of liquidity. For this reason
     # we limit the amount of donation that can be stored to some percentage of D.
-    donation_D: uint256 = self._D_from_xcp(new_donation_xcp, price_scale)
+    donation_D: uint256 = self._D_from_xcp(new_total_donation_xcp, price_scale)
     # TODO add constant here for max_bps
     assert 10_000 * donation_D // D <= self.max_donation_ratio, "ratio too high"
 
 
 
 @external
-def absorb_donation() -> uint256:
+def absorb_donation():
     # TODO remove once boa fixes problem
-    return self._absorb_donation()
+    self._absorb_donation()
 
 
 @internal
-def _absorb_donation() -> uint256:
-    # Note that it is very important to call this function at the beginning of any
-    # `balance` changing function BEFORE any other `balance` changes are made. This is
-    # because `tweak_price` will check by how much the virtual price has increased
-    # to compute `xcp_profit` which a donation should not affect.
+def _absorb_donation():
+    # `old_donation_xcp` here represents the amount of donations yet to be released
+    # before the donation clock is updated. We remove the pending prefix to improve
+    # readability as `total_donation_xcp` is not used in this function.
+    old_donation_xcp: uint256 = self.pending_donation_xcp
 
-    # This function returns the amount of D that has been absorbed in the time elapsed
-    # since the last time this function was called.
-
-    # `donation_xcp` here represents the amount of donations yet to be released.
-    donation_xcp: uint256 = self.donation_xcp
-
-    # If there are no donations to be distributed, D does not increase.
-    if donation_xcp == 0:
-        return 0
+    # If there are no donations to be distributed, the virtual price does not increase.
+    if old_donation_xcp == 0:
+        return
 
     elapsed: uint256 = block.timestamp - self.last_donation_absorb_timestamp
     # Early return if absorption is attempted multiple times in the same block (or
     # multiple blocks where block timestamp is the same).
     if elapsed == 0:
-        return 0
-
-    # Update donations clock
-    self.last_donation_absorb_timestamp = block.timestamp
+        return
 
     price_scale: uint256 = self.cached_price_scale
 
     # TODO cache sqrt result here to save gas
-    # We convert donation_xcp to D units, before the absorption.
-    donation_D: uint256 = self._D_from_xcp(donation_xcp, price_scale)
+    # We convert `donation_xcp` to D units, before the absorption.
+    old_donation_D: uint256 = self._D_from_xcp(old_donation_xcp, price_scale)
     # We reduce the donation_xcp by the amount that has been absorbed
-    new_donation_xcp: uint256 = donation_xcp - min(donation_xcp, donation_xcp * elapsed // self.donation_duration)
+    new_donation_xcp: uint256 = old_donation_xcp - min(old_donation_xcp, old_donation_xcp * elapsed // self.donation_duration)
     # We convert donation_xcp to D units, after the absorption
     new_donation_D: uint256 = self._D_from_xcp(new_donation_xcp, price_scale)
 
     D: uint256 = self.D
-    if D > donation_D:  # in principle should always be bigger but let's skip if not
-        self.donation_xcp = new_donation_xcp
-        # `D - new_donation_D` is the amount of D that belongs to the liquidity providers
-        # after the absorption. `D - donation_D` is the amount of D that belongs to the
-        # liquidity providers before the absorption. The absorption increases the value
-        # of the numerator, which we can use to quantify the increase in value of the
-        # virtual price.
-        self.virtual_price = self.virtual_price * (D - new_donation_D) // (D - donation_D)
 
-    return new_donation_D
+    # If the pool loses a significant amount of liquidity, the donation buffer can
+    # potentially become bigger than D. In that case a donation can wait
+    # as there will be already enough liquidity in the donation buffer to be used.
+    # TODO will add back this condition later to simplify testing
+    # if D > donation_D:
+
+    # Update donations clock if we are absorbing the donation.
+    self.last_donation_absorb_timestamp = block.timestamp
+
+    # Update the pending donation buffer with a reduced amount, since a part of the
+    # donation has been dripped.
+    self.pending_donation_xcp = new_donation_xcp
+
+    # `D - new_pending_donation_D` is the amount of D that belongs to the liquidity providers
+    # after the absorption. `D - donation_D` is the amount of D that belongs to the
+    # liquidity providers before the absorption. The absorption increases the value
+    # of the numerator, which we can use to quantify the increase in value of the
+    # virtual price.
+    self.virtual_price = self.virtual_price * (D - new_donation_D) // (D - old_donation_D)
+
 
 
 @external
@@ -591,7 +599,6 @@ def add_liquidity(
 
 
     assert amounts[0] + amounts[1] > 0, "no coins to add"
-    donation_D: uint256 = self._absorb_donation()
 
     # --------------------- Get prices, balances -----------------------------
 
@@ -635,20 +642,31 @@ def add_liquidity(
         old_D = self.D
 
     D: uint256 = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
-    adjusted_D: uint256 = D - donation_D
+
+    # We fetch how much the donation buffer is worth in invariant units.
+    donation_D: uint256 = self._D_from_xcp(self.total_donation_xcp, price_scale)
+    # TODO I suspect these subtractions might underflow bricking the pool
+    # TODO find a better name, pool_D is confusing, adjusted_D is too vague, liquidity_D is too long.
+    # We deduce donation from D to get the amount of liquidity that belongs to
+    # liquidity providers. This prevents donations from diluting the pool shares.
+    pool_D: uint256 = D - donation_D
+    # old_D also needs to be adjusted to account donations, we can just subtract
+    # the same donation_D as it didn't change between the two states.
+    pool_old_D: uint256 = old_D - donation_D
 
 
     token_supply: uint256 = self.totalSupply
     d_token: uint256 = 0
-    if old_D > 0:
-        d_token = token_supply * adjusted_D // old_D - token_supply
+    # TODO edge case too niche?
+    if pool_old_D > 0:
+        d_token = token_supply *  pool_D // pool_old_D - token_supply
     else:
-        d_token = self._xcp(adjusted_D, price_scale)  # <----- Making initial virtual price equal to 1.
+        d_token = self._xcp(pool_D, price_scale)  # <----- Making initial virtual price equal to 1.
 
     assert d_token > 0, "nothing minted"
 
     d_token_fee: uint256 = 0
-    if old_D > 0:
+    if pool_old_D > 0:
 
         d_token_fee = (
             self._calc_token_fee(amountsp, xp) * d_token // 10**10 + 1
@@ -706,7 +724,6 @@ def remove_liquidity(
     @return uint256[N_COINS] Amount of pool tokens received by the `receiver`
     """
 
-    donation_D: uint256 = self._absorb_donation()
 
     # -------------------------------------------------------- Burn LP tokens.
 
@@ -715,35 +732,30 @@ def remove_liquidity(
     total_supply: uint256 = self.totalSupply
     self.burnFrom(msg.sender, amount)
 
-    # There are two cases for withdrawing tokens from the pool.
-    #   Case 1. Withdrawal does not empty the pool.
-    #           In this situation, D is adjusted proportional to the amount of
-    #           LP tokens burnt. ERC20 tokens transferred is proportional
-    #           to : (AMM balance * LP tokens in) / LP token total supply
-    #   Case 2. Withdrawal empties the pool.
-    #           In this situation, all tokens are withdrawn and the invariant
-    #           is reset.
-
     withdraw_amounts: uint256[N_COINS] = empty(uint256[N_COINS])
     D: uint256 = self.D
+    donation_D: uint256 = self._D_from_xcp(self.total_donation_xcp, self.cached_price_scale)
 
-    if amount == total_supply:  # <----------------------------------- Case 2.
-
+    if amount == total_supply and donation_D == 0:
+        # Withdrawal empties the pool. All tokens are withdrawn and the invariant
+        # is reset.
+        # TODO can we just remove this condition? Feels like gas gulfing for a
+        # very rare case.
         for i: uint256 in range(N_COINS):
 
             withdraw_amounts[i] = self.balances[i]
-
-    else:  # <-------------------------------------------------------- Case 1.
+    else:
+        # Withdrawal does not empty the pool: D is adjusted proportional to the
+        # amount of LP tokens burnt. ERC20 tokens transferred is proportional
+        # to : (AMM balance - AMM donation balance) * LP tokens burned)  LP token total supply
         for i: uint256 in range(N_COINS):
-            # TODO improve comments here
-            # Withdraws slightly less -> favors LPs already
             withdraw_amounts[i] = self.balances[i] * (D - donation_D) // D * amount // total_supply
 
             assert withdraw_amounts[i] >= min_amounts[i], "slippage"
 
     # Reduce D proportionally to the amount of tokens leaving. Since withdrawals
     # are balanced, this is a simple subtraction. If amount == total_supply,
-    # D will be 0.
+    # D - donation_D will be 0.
     self.D = D - unsafe_div((D - donation_D) * amount, total_supply)
 
     # ---------------------------------- Transfers ---------------------------
@@ -779,7 +791,6 @@ def remove_liquidity_one_coin(
     @return Amount of tokens at index i received by the `receiver`
     """
 
-    self._absorb_donation()
     self._claim_admin_fees()
 
     A_gamma: uint256[2] = self._A_gamma()
@@ -873,8 +884,6 @@ def _exchange(
     assert i != j, "same coin"
     assert dx_received > 0, "zero dx"
 
-    self._absorb_donation()
-
     A_gamma: uint256[2] = self._A_gamma()
     balances: uint256[N_COINS] = self.balances
     dy: uint256 = 0
@@ -901,6 +910,7 @@ def _exchange(
 
     # ----------------------- Calculate dy and fees --------------------------
 
+    # We use both users liquidity and donations liquidity here.
     D: uint256 = self.D
     y_out: uint256[2] = staticcall MATH.get_y(A_gamma[0], A_gamma[1], xp, D, j)
     dy = xp[j] - y_out[0]
@@ -992,7 +1002,7 @@ def tweak_price(
         self.cached_price_oracle = price_oracle
         self.last_timestamp = block.timestamp
 
-    #  `price_oracle` is used further on to calculate its vector distance from
+    # `price_oracle` is used further on to calculate its vector distance from
     # price_scale. This distance is used to calculate the amount of adjustment
     # to be done to the price_scale.
     # ------------------------------------------------------------------------
@@ -1009,14 +1019,15 @@ def tweak_price(
     xcp_profit: uint256 = 10**18
     virtual_price: uint256 = 10**18
 
-    # TODO use absorb return here
-    donation_D: uint256 = self._D_from_xcp(self.donation_xcp, price_scale)
 
     # `totalSupply` will not change during this function call.
     total_supply: uint256 = self.totalSupply
+
+    total_donation_D: uint256 = self._D_from_xcp(self.total_donation_xcp, price_scale)
+    self._absorb_donation()
     old_virtual_price: uint256 = self.virtual_price
     if old_virtual_price > 0:
-        xcp: uint256 = self._xcp(D - donation_D, price_scale)
+        xcp: uint256 = self._xcp(D - total_donation_D, price_scale)
 
         # We increase the virtual price by 1 to avoid off by one rounding
         # errors. While this can lead to a small profit overestimation,
@@ -1081,7 +1092,7 @@ def tweak_price(
 
             # ------------------------------------- Convert xp to real prices.
 
-            xcp: uint256 = self._xcp(new_D - donation_D, p_new)
+            xcp: uint256 = self._xcp(new_D - total_donation_D, p_new)
 
             # unsafe_div because we did safediv before (if vp>1e18)
             new_virtual_price: uint256 = unsafe_div(
@@ -1151,8 +1162,7 @@ def _claim_admin_fees():
     D: uint256 = self.D
     vprice: uint256 = self.virtual_price
     price_scale: uint256 = self.cached_price_scale
-    # TODO use absorb return here
-    donation_D: uint256 = self._D_from_xcp(self.donation_xcp, price_scale)
+    donation_D: uint256 = self._D_from_xcp(self.total_donation_xcp, price_scale)
     adjusted_D: uint256 = D - donation_D
     fee_receiver: address = staticcall factory.fee_receiver()
     balances: uint256[N_COINS] = self.balances
@@ -1370,6 +1380,7 @@ def _calc_withdraw_one_coin(
 
     D: uint256 = 0
 
+    # TODO adjust D for donations
     if self._is_ramping():
         D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
     else:
