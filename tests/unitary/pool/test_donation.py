@@ -14,7 +14,12 @@ def test_cant_donate_on_empty_pool(pool):
 
 
 def test_donate(pool):
-    assert pool.donation_xcp() == 0, "donation xcp should be 0 before any donation has been sent"
+    assert (
+        pool.total_donation_xcp() == 0
+    ), "donation xcp should be 0 before any donation has been sent"
+    assert (
+        pool.pending_donation_xcp() == 0
+    ), "donation xcp should be 0 before any donation has been sent"
 
     DONATION_AMOUNTS = [10**18, 2 * 10**18]
     old_virtual_price = pool.virtual_price()
@@ -31,35 +36,39 @@ def test_donate(pool):
         ), "donations should increase balances"
 
     assert (
-        pool.donation_xcp() > 0
+        pool.total_donation_xcp() > 0
     ), "donation xcp should be greater than 0 after a donation has been sent"
+    assert (
+        pool.pending_donation_xcp() == pool.total_donation_xcp()
+    ), "donations shouldn't have dripped right after donation"
 
 
 def test_absorption(pool):
     DONATION_AMOUNTS = [10**18, 2 * 10**18]
     pool.donate(DONATION_AMOUNTS)
 
-    assert (
-        pool.donation_xcp() > 0
-    ), "donation xcp should be greater than 0 after a donation has been sent"
-
-    old_donation_xcp = pool.donation_xcp()
+    old_total_donation_xcp = pool.total_donation_xcp()
+    old_pending_donation_xcp = pool.pending_donation_xcp()
     old_virtual_price = pool.virtual_price()
     old_xcp_profit = pool.xcp_profit()
 
-    for i in range(86400 * 7 // 1000):
+    for _ in range(86400 * 7 // 1000):
         boa.env.time_travel(seconds=1)
         pool.absorb_donation()
 
         assert (
-            pool.donation_xcp() < old_donation_xcp
-        ), "donation xcp should decrease after absorption"
+            pool.total_donation_xcp() == old_total_donation_xcp
+        ), "total donation xcp should not change after absorption"
+        assert (
+            pool.pending_donation_xcp() < old_pending_donation_xcp
+        ), "pending donation xcp should decrease after absorption"
         assert (
             pool.virtual_price() > old_virtual_price
         ), "virtual price should increase after absorption"
         assert pool.xcp_profit() == old_xcp_profit, "xcp profit should not change after absorption"
 
-        old_donation_xcp = pool.donation_xcp()
+        old_total_donation_xcp = pool.total_donation_xcp()
+        old_pending_donation_xcp = pool.pending_donation_xcp()
         old_virtual_price = pool.virtual_price()
         old_xcp_profit = pool.xcp_profit()
 
