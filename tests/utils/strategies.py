@@ -180,3 +180,98 @@ def pool_from_preset(draw, preset=sampled_from(all_presets)):
             ma_exp_time=just(params["ma_exp_time"]),
         )
     )
+
+
+# TODO no need to have these as separate strategies, reduce code duplication
+s_amm_deployer = boa.load_partial("contracts/stableswap_invariant/TwocryptoStableswap.vy")
+s_math_deployer = boa.load_partial("contracts/stableswap_invariant/TwocryptoStableswapMath.vy")
+
+
+@composite
+def stableswap_factory(
+    draw,
+):
+    _deployer = draw(deployer)
+    _fee_receiver = draw(fee_receiver)
+    _owner = draw(owner)
+
+    assume(_fee_receiver != _owner != _deployer)
+
+    with boa.env.prank(_deployer):
+        amm_implementation = s_amm_deployer.deploy_as_blueprint()
+        gauge_implementation = gauge_deployer.deploy_as_blueprint()
+
+        view_contract = view_deployer.deploy()
+        math_contract = s_math_deployer.deploy()
+
+        _factory = factory_deployer.deploy()
+        _factory.initialise_ownership(_fee_receiver, _owner)
+
+    with boa.env.prank(_owner):
+        _factory.set_pool_implementation(amm_implementation, 0)
+        _factory.set_gauge_implementation(gauge_implementation)
+        _factory.set_views_implementation(view_contract)
+        _factory.set_math_implementation(math_contract)
+
+    return _factory
+
+
+@composite
+def stable_pool(
+    draw,
+    A=A,
+    gamma=gamma,
+    fees=fees(),
+    fee_gamma=fee_gamma,
+    allowed_extra_profit=allowed_extra_profit,
+    adjustment_step=adjustment_step,
+    ma_exp_time=ma_exp_time,
+    price=price,
+):
+    """Creates a factory based pool with the following fuzzed parameters:
+    Custom strategies can be passed as argument to override the default
+    """
+
+    # Creates a factory based pool with the following fuzzed parameters:
+    _factory = draw(stableswap_factory())
+    mid_fee, out_fee = draw(fees)
+
+    # TODO should test weird tokens as well (non-standard/non-compliant)
+    tokens = [draw(token), draw(token)]
+
+    with boa.env.prank(draw(deployer)):
+        _pool = _factory.deploy_pool(
+            "stateful simulation",
+            "SIMULATION",
+            tokens,
+            0,
+            draw(A),
+            draw(gamma),
+            mid_fee,
+            out_fee,
+            draw(fee_gamma),
+            draw(allowed_extra_profit),
+            draw(adjustment_step),
+            draw(ma_exp_time),
+            draw(price),
+        )
+
+    _pool = s_amm_deployer.at(_pool)
+
+    note(
+        "deployed pool with "
+        + "A: {:.2e}".format(_pool.A())
+        + ", gamma: {:.2e}".format(_pool.gamma())
+        + ", price: {:.2e}".format(_pool.price_oracle())
+        + ", fee_gamma: {:.2e}".format(_pool.fee_gamma())
+        + ", allowed_extra_profit: {:.2e}".format(_pool.allowed_extra_profit())
+        + ", adjustment_step: {:.2e}".format(_pool.adjustment_step())
+        + "\n    coin 0 has {} decimals".format(tokens[0].decimals())
+        + "\n    coin 1 has {} decimals".format(tokens[1].decimals())
+    )
+    return _pool
+
+
+if __name__ == "__main__":
+    print(stableswap_factory().example())
+    print(stable_pool().example())
