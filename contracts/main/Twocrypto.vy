@@ -876,7 +876,7 @@ def tweak_price(
     # Mathematical basis for rebalancing condition:
     # 1. xcp_profit compounds as (1+r)^n, where r is some hypothetical growth rate
     # 2. We reserve half of the growth for LPs: (1+r/2)^n, rest is used to rebalance the pool
-    # 3. (1+r/2)^n ~= (1+r)^(n/2) = sqrt((1+r)^n)
+    # 3. (Using taylor expansions) (1+r/2)^n ~= (1+r)^(n/2) = sqrt((1+r)^n)
     # 4. Therefore half-rate growth equals sqrt(xcp_profit)
     #
     # Rebalancing condition transformation:
