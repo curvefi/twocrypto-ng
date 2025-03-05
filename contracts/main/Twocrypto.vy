@@ -1131,7 +1131,7 @@ def _xcp(D: uint256, price_scale: uint256) -> uint256:
     # We compute xcp according to the formula in the whitepaper:
     # xcp = sqrt(D // (N_COINS * 1) * D // (N_COINS * price_scale))
     # this is equivalent to D // N_COINS * sqrt(price_scale).
-    return D // N_COINS * isqrt(price_scale * PRECISION) // PRECISION
+    return D * PRECISION // N_COINS // isqrt(PRECISION * price_scale)
 
 
 @view
