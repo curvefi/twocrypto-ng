@@ -883,8 +883,8 @@ def tweak_price(
     # virtual_price > sqrt(xcp_profit) + allowed_extra_profit
     # (virtual_price - allowed_extra_profit)^2 > xcp_profit
     #
-    # The allowed_extra_profit parameter prevents gas-wasting rebalance
-    # attempts that would revert by ensuring sufficient profit margin
+    # The allowed_extra_profit parameter prevents reverting gas-wasting rebalances
+    # by ensuring sufficient profit margin
     if (virtual_price - rebalancing_params[0])**2 > xcp_profit * 10**18:
         # allowed_extra_profit ---^
         # Calculate the vector distance between price_scale and price_oracle.
