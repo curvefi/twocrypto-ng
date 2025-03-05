@@ -872,18 +872,21 @@ def tweak_price(
     self.xcp_profit = xcp_profit
 
     # ------------ Rebalance liquidity if there's enough profits to adjust it:
-    # virtual_price compounds as follows:
-    # vp = (1+r)^n, where r is some hypothetical growth rate
-    # half of the growth rate is reserved for LPs, (1+r/2)^n, rest can be used to rebalance the pool
-    # (1+r/2)^n can be approximated as (1+r)^(n/2), which is sqrt(xcp_profit)
-    # condition below:
+    #
+    # Mathematical basis for rebalancing condition:
+    # 1. xcp_profit compounds as (1+r)^n, where r is some hypothetical growth rate
+    # 2. We reserve half of the growth for LPs: (1+r/2)^n, rest is used to rebalance the pool
+    # 3. (1+r/2)^n ~= (1+r)^(n/2) = sqrt((1+r)^n)
+    # 4. Therefore half-rate growth equals sqrt(xcp_profit)
+    #
+    # Rebalancing condition transformation:
     # virtual_price > sqrt(xcp_profit) + allowed_extra_profit
-    # virtual_price - allowed_extra_profit > sqrt(xcp_profit)
-    # (virtual_price - allowed_extra_profit)**2 > xcp_profit
-    # sole purpose of allowed_extra_profit is to avoid reverting rebalances and save gas
+    # (virtual_price - allowed_extra_profit)^2 > xcp_profit
+    #
+    # The allowed_extra_profit parameter prevents gas-wasting rebalance
+    # attempts that would revert by ensuring sufficient profit margin
     if (virtual_price - rebalancing_params[0])**2 > xcp_profit * 10**18:
         # allowed_extra_profit ---^
-
         # Calculate the vector distance between price_scale and price_oracle.
         norm: uint256 = unsafe_div(
             unsafe_mul(price_oracle, 10**18), price_scale
