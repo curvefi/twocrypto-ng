@@ -1170,11 +1170,7 @@ def _xcp(D: uint256, price_scale: uint256) -> uint256:
     # In the end we take the geometric average of the scaled balances:
     # xcp = sqrt(D // (N_COINS * 1) * D // (N_COINS * price_scale))
     # this is equivalent to D // N_COINS * sqrt(price_scale).
-
-    # The unit of xcp is √(coin0 * coin1)
     return D * PRECISION // N_COINS // isqrt(PRECISION * price_scale)
-
-  
 
 
 @view
