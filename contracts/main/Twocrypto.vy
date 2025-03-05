@@ -872,8 +872,17 @@ def tweak_price(
     self.xcp_profit = xcp_profit
 
     # ------------ Rebalance liquidity if there's enough profits to adjust it:
-    if virtual_price ** 2 > xcp_profit * (10**18 + 2 * rebalancing_params[0]):
-        #                          allowed_extra_profit --------^
+    # virtual_price compounds as follows:
+    # vp = (1+r)^n, where r is some hypothetical growth rate
+    # half of the growth rate is reserved for LPs, (1+r/2)^n, rest can be used to rebalance the pool
+    # (1+r/2)^n can be approximated as (1+r)^(n/2), which is sqrt(xcp_profit)
+    # condition below:
+    # virtual_price > sqrt(xcp_profit) + allowed_extra_profit
+    # virtual_price - allowed_extra_profit > sqrt(xcp_profit)
+    # (virtual_price - allowed_extra_profit)**2 > xcp_profit
+    # sole purpose of allowed_extra_profit is to avoid reverting rebalances and save gas
+    if (virtual_price - rebalancing_params[0])**2 > xcp_profit * 10**18:
+        # allowed_extra_profit ---^
 
         # Calculate the vector distance between price_scale and price_oracle.
         norm: uint256 = unsafe_div(
