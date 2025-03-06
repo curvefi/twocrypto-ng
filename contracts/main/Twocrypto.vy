@@ -1140,19 +1140,37 @@ def _fee(xp: uint256[N_COINS]) -> uint256:
 @internal
 @pure
 def _xcp(D: uint256, price_scale: uint256) -> uint256:
-    # Here we compute xp in a different way compared to `self._xp`:
-    # We assume that pool is balanced (which is not necessarily the case),
-    # and we proceed to compute D // (N_COINS * price_scale) where the price
-    # scale for xp[0] is 1. This is necessary to compute xcp and xcp_profit,
-    # see the whitepaper for more details.
-    # TODO is it xp or x here?
-    x: uint256[N_COINS] = [
-        unsafe_div(D, N_COINS),
-        D * PRECISION // (price_scale * N_COINS)
-    ]
+    # We compute xcp according to the formula in the whitepaper:
 
-    # Geometric mean.
-    return isqrt(x[0] * x[1])
+    # The following explanation relies on the assumption that the
+    # balances have already been scaled by the price scale as shown
+    # above.
+
+    # The intuition behind this formula comes from the UniV2
+    # whitepaper where the initial amount of LP tokens is set to
+    # the geometric mean of the balances, in fact xcp stands for
+    # x (balances) constant product.
+
+    # Our invariant behaves in such a way that at the center of the
+    # bonding curve:
+    # (1) D(x, y) = D(x, x) = 2x.
+    # In simple terms this mean that at the center the pool behaves exactly
+    # like a constant sum AMM.
+    # Here we want to treat the pool as a constant product AMM:
+    # (2) xy = k (the constant product invariant).
+    # (3) x^2 = k (because we are at the center of the curve where x = y).
+    # (4) x = D / 2 (because D(x, y) = 2x in (1]).
+
+    # For xp[0] the price scale is 1 (see whitepaper) so we can obtain
+    # x[0] directly from [4]
+    # For xp[1] the price scale is != 1 so we divide by the price scale
+    # that has unit (coin0/coin1) to convert D (coin0) into xp[1] (coin1):
+    # (5) x[1] = D / 2 / price_scale.
+
+    # In the end we take the geometric average of the scaled balances:
+    # xcp = sqrt(D // (N_COINS * 1) * D // (N_COINS * price_scale))
+    # this is equivalent to D // N_COINS * sqrt(price_scale).
+    return D * PRECISION // N_COINS // isqrt(PRECISION * price_scale)
 
 
 @view
