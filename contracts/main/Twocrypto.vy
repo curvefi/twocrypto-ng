@@ -1132,7 +1132,7 @@ def _fee(xp: uint256[N_COINS]) -> uint256:
 
     # balance indicator that goes from 10**18 (perfect pool balance) to 0 (very imbalanced, 100:1 and worse)
     # N^N * (xp[0] * xp[1]) / (xp[0] + xp[1])**2
-    B = 10**18 * N_COINS**N_COINS * xp[0] // B * xp[1] // B
+    B = PRECISION * N_COINS**N_COINS * xp[0] // B * xp[1] // B
 
     # regulate slope using fee_gamma
     # fee_gamma * balance_term / (fee_gamma * balance_term + 1 - balance_term)
