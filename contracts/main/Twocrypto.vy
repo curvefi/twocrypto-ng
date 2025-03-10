@@ -1356,9 +1356,9 @@ def _calc_withdraw_fixed_out(
 
     token_supply: uint256 = self.totalSupply
     assert lp_token_amount <= token_supply, "withdraw > supply"
-    # TODO I think you can skip this for N_COINS = 2
-    assert i < N_COINS, "coin out of range"
 
+    # Since N_COINS = 2, we don't need to check if i < N_COINS
+    # because j = 1 - i will underflow for any i > 1
     j: uint256 = 1 - i
 
     balances: uint256[N_COINS] = self.balances
