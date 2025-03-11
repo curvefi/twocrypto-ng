@@ -85,46 +85,6 @@ def swap(
 
 
 @pytest.fixture(scope="module")
-def swap_multiprecision(
-    factory,
-    amm_interface,
-    stgusdc,
-    deployer,
-):
-    # STG/USDC pool params (on deployment)
-    _params = {
-        "A": 400000,
-        "gamma": 72500000000000,
-        "mid_fee": 26000000,
-        "out_fee": 45000000,
-        "allowed_extra_profit": 2000000000000,
-        "fee_gamma": 230000000000000,
-        "adjustment_step": 146000000000000,
-        "ma_time": 866,
-        "initial_prices": 1777655918836068423,
-    }
-
-    swap = factory.deploy_pool(
-        "Curve.fi STG/USDC",
-        "STGUSDC",
-        [coin.address for coin in stgusdc],  # _coins: address[N_COINS]
-        0,  # implementation_id: uint256
-        _params["A"],  # A: uint256
-        _params["gamma"],  # gamma: uint256
-        _params["mid_fee"],  # mid_fee: uint256
-        _params["out_fee"],  # out_fee: uint256
-        _params["fee_gamma"],  # fee_gamma: uint256
-        _params["allowed_extra_profit"],  # allowed_extra_profit: uint256
-        _params["adjustment_step"],  # adjustment_step: uint256
-        _params["ma_time"],  # ma_exp_time: uint256
-        _params["initial_prices"],  # initial_price: uint256
-        sender=deployer,
-    )
-
-    return amm_interface.at(swap)
-
-
-@pytest.fixture(scope="module")
 def swap_with_deposit(swap, coins, user):
     return _crypto_swap_with_deposit(coins, user, swap, INITIAL_PRICES)
 

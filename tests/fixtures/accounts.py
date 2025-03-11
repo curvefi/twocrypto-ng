@@ -1,6 +1,5 @@
 import boa
 import pytest
-from eth_account.account import Account
 
 
 @pytest.fixture(scope="module")
@@ -10,11 +9,6 @@ def deployer():
 
 @pytest.fixture(scope="module")
 def owner():
-    return boa.env.generate_address()
-
-
-@pytest.fixture(scope="module")
-def hacker():
     return boa.env.generate_address()
 
 
@@ -48,11 +42,6 @@ def users():
     for acc in accs:
         boa.env.set_balance(acc, 10**25)
     return accs
-
-
-@pytest.fixture(scope="module")
-def eth_acc():
-    return Account.create()
 
 
 @pytest.fixture(scope="module")

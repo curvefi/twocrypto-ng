@@ -15,12 +15,6 @@ def usd(deployer):
 
 
 @pytest.fixture(scope="module")
-def btc(deployer):
-    with boa.env.prank(deployer):
-        return boa.load("contracts/mocks/ERC20Mock.vy", "BTC", "BTC", 18)
-
-
-@pytest.fixture(scope="module")
 def stg(deployer):
     with boa.env.prank(deployer):
         return boa.load("contracts/mocks/ERC20Mock.vy", "STG", "STG", 18)
@@ -52,13 +46,3 @@ def coins(usd, weth):
 @pytest.fixture(scope="module")
 def stgusdc(stg, usdc):
     yield [stg, usdc]
-
-
-@pytest.fixture(scope="module")
-def stablecoins(usdc, usdt, dai):
-    yield [dai, usdc, usdt]
-
-
-@pytest.fixture(scope="module")
-def pool_coins(coins):
-    yield coins
