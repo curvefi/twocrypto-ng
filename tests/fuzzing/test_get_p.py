@@ -5,7 +5,6 @@ from hypothesis import given, settings
 
 from tests.fixtures.pool import INITIAL_PRICES
 from tests.utils import approx
-from tests.utils.tokens import mint_for_testing
 
 SETTINGS = {"max_examples": 20, "deadline": None}
 
@@ -88,7 +87,7 @@ def test_dxdy_similar(
     j = 1 - i
 
     amount_in = int(dollar_amount * 10**36 // INITIAL_PRICES[i])
-    mint_for_testing(coins[i], user, amount_in)
+    boa.deal(coins[i], user, amount_in)
     yuge_swap.exchange(i, j, amount_in, 0, sender=user)
 
     dxdy_vyper = _get_prices_vyper(yuge_swap, dydx_safemath)

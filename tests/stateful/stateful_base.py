@@ -16,7 +16,6 @@ from contracts.main import TwocryptoFactory as factory
 from contracts.mocks import ERC20Mock as ERC20
 from tests.utils.constants import UNIX_DAY
 from tests.utils.strategies import address, pool_from_preset
-from tests.utils.tokens import mint_for_testing
 
 
 class StatefulBase(RuleBasedStateMachine):
@@ -189,7 +188,7 @@ class StatefulBase(RuleBasedStateMachine):
             # infinite approval
             coin.approve(self.pool, 2**256 - 1, sender=user)
             # mint the amount of tokens for the depositor
-            mint_for_testing(coin, user, amount)
+            boa.deal(coin, user, amount)
 
         # store the amount of lp tokens before the deposit
         lp_tokens = self.pool.balanceOf(user)
@@ -228,7 +227,7 @@ class StatefulBase(RuleBasedStateMachine):
         j = 1 - i
 
         # mint coins for the user
-        mint_for_testing(self.coins[i], user, dx)
+        boa.deal(self.coins[i], user, dx)
         self.coins[i].approve(self.pool, dx, sender=user)
 
         note(

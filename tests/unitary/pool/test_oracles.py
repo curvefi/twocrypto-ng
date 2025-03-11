@@ -6,7 +6,6 @@ import pytest
 from tests.fixtures.pool import INITIAL_PRICES
 from tests.utils import approx
 from tests.utils.constants import UNIX_DAY
-from tests.utils.tokens import mint_for_testing
 
 SETTINGS = {"max_examples": 1000, "deadline": None}
 
@@ -35,8 +34,8 @@ def test_price_scale_change(swap_with_deposit, i, coins, users):
     user = users[1]
     prices1 = INITIAL_PRICES
     amount = amount * 10**18 // prices1[i]
-    mint_for_testing(coins[i], user, amount)
-    mint_for_testing(coins[j], user, amount)
+    boa.deal(coins[i], user, amount)
+    boa.deal(coins[j], user, amount)
     coins[i].approve(swap_with_deposit, 2**256 - 1, sender=user)
     coins[j].approve(swap_with_deposit, 2**256 - 1, sender=user)
 
