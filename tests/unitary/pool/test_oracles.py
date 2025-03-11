@@ -3,7 +3,7 @@ from math import sqrt
 import boa
 import pytest
 
-from tests.fixtures.pool import INITIAL_PRICES
+from tests.conftest import INITIAL_PRICES
 from tests.utils import approx
 from tests.utils.constants import UNIX_DAY
 
