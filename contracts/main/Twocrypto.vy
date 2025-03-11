@@ -1363,6 +1363,13 @@ def _fee(xp: uint256[N_COINS]) -> uint256:
     # N^N * (xp[0] * xp[1]) / (xp[0] + xp[1])**2
     B = PRECISION * N_COINS**N_COINS * xp[0] // B * xp[1] // B
 
+    # regulate slope using fee_gamma
+    # fee_gamma * balance_term / (fee_gamma * balance_term + 1 - balance_term)
+    B = fee_params[2] * B // (unsafe_div(fee_params[2] * B, 10**18)  + 10**18 - B)
+
+    # mid_fee * B + out_fee * (1 - B)
+    return unsafe_div(fee_params[0] * B + fee_params[1] * (10**18 - B), 10**18)
+
 
 @internal
 @pure
@@ -1371,12 +1378,7 @@ def _D_from_xcp(xcp: uint256, price_scale: uint256) -> uint256:
     # the inverse of the formula used in `_xcp`.
     return xcp * N_COINS * isqrt(price_scale * PRECISION) // PRECISION
 
-    # regulate slope using fee_gamma
-    # fee_gamma * balance_term / (fee_gamma * balance_term + 1 - balance_term)
-    B = fee_params[2] * B // (unsafe_div(fee_params[2] * B, 10**18)  + 10**18 - B)
 
-    # mid_fee * B + out_fee * (1 - B)
-    return unsafe_div(fee_params[0] * B + fee_params[1] * (10**18 - B), 10**18)
 
 
 @internal
