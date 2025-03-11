@@ -9,12 +9,6 @@ from boa.test import strategy
 from hypothesis import assume, note
 from hypothesis.strategies import composite, integers, just, sampled_from
 
-# compiling contracts
-from contracts.main import TwocryptoMath as math_deployer
-from contracts.main import TwocryptoView as view_deployer
-from contracts.main import TwocryptoFactory as factory_deployer
-from contracts.main import Twocrypto as amm_deployer
-from contracts.main import LiquidityGauge as gauge_deployer
 from tests.utils.constants import (
     MAX_A,
     MAX_FEE,
@@ -25,9 +19,16 @@ from tests.utils.constants import (
 )
 from tests.utils.pool_presets import all_presets
 
+# compiling contracts
+math_deployer = boa.load_partial("contracts/main/TwocryptoMath.vy")
+view_deployer = boa.load_partial("contracts/main/TwocryptoView.vy")
+factory_deployer = boa.load_partial("contracts/main/TwocryptoFactory.vy")
+amm_deployer = boa.load_partial("contracts/main/Twocrypto.vy")
+gauge_deployer = boa.load_partial("contracts/main/LiquidityGauge.vy")
+
 # ---------------- hypothesis test profiles ----------------
 
-# just a more hyptohesis-like way to get an address
+# just a more hypothesis-like way to get an address
 # from boa's search strategy
 address = strategy("address")
 
@@ -101,9 +102,8 @@ price = integers(min_value=int(1e10), max_value=int(1e26))
 # towards 18 in case of failure (instead of 2)
 token = sampled_from([18, 6, 2]).map(
     # token = just(18).map(
-    lambda x: boa.load("contracts/mocks/ERC20Mock.vy", "USD", "USD", x)
+    lambda x: boa.load("tests/mocks/ERC20Mock.vy", "USD", "USD", x)
 )
-weth = just(boa.load("contracts/mocks/WETH.vy"))
 
 
 # ---------------- pool ----------------
