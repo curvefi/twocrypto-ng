@@ -2,8 +2,6 @@ import boa
 import pytest
 from eth_account.account import Account
 
-from tests.utils.tokens import mint_for_testing
-
 
 @pytest.fixture(scope="module")
 def deployer():
@@ -66,7 +64,7 @@ def alice():
 
 @pytest.fixture(scope="module")
 def loaded_alice(swap, alice):
-    mint_for_testing(swap, alice, 10**21)
+    boa.deal(swap, alice, 10**21)
     return alice
 
 

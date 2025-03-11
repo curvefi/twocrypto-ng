@@ -1,8 +1,6 @@
 import boa
 import pytest
 
-from tests.utils.tokens import mint_for_testing
-
 
 @pytest.mark.parametrize("idx", range(5))
 def test_initial_approval_is_zero(swap, alice, users, idx):
@@ -69,7 +67,7 @@ def test_infinite_approval(swap, alice, bob):
     with boa.env.prank(alice):
         swap.approve(bob, 2**256 - 1)
 
-    mint_for_testing(swap, alice, 10**18)
+    boa.deal(swap, alice, 10**18)
     with boa.env.prank(bob):
         swap.transferFrom(alice, bob, 10**18)
 

@@ -3,7 +3,6 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from tests.fixtures.pool import INITIAL_PRICES
-from tests.utils.tokens import mint_for_testing
 
 
 @given(ratio=st.floats(min_value=0.0001, max_value=0.1))
@@ -13,7 +12,7 @@ def test_admin_fee_after_deposit(swap, coins, fee_receiver, user, user_b, ratio)
 
     for coin, q in zip(coins, quantities):
         for u in [user, user_b]:
-            mint_for_testing(coin, u, q)
+            boa.deal(coin, u, q)
             with boa.env.prank(u):
                 coin.approve(swap, 2**256 - 1)
 

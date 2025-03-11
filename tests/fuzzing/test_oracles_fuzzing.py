@@ -6,7 +6,6 @@ from hypothesis import given, settings
 
 from tests.fixtures.pool import INITIAL_PRICES
 from tests.utils.constants import UNIX_DAY
-from tests.utils.tokens import mint_for_testing
 
 SETTINGS = {"max_examples": 1000, "deadline": None}
 
@@ -38,7 +37,7 @@ def test_last_price_remove_liq(swap_with_deposit, user, token_frac, i):
 def test_ma(swap_with_deposit, coins, user, amount, i, t):
     prices1 = INITIAL_PRICES
     amount = amount * 10**18 // prices1[i]
-    mint_for_testing(coins[i], user, amount)
+    boa.deal(coins[i], user, amount)
 
     rebal_params = swap_with_deposit.internal._unpack_3(
         swap_with_deposit._storage.packed_rebalancing_params.get()
@@ -77,7 +76,7 @@ def test_ma(swap_with_deposit, coins, user, amount, i, t):
 def test_price_scale_range(swap_with_deposit, coins, user, amount, i, t):
     prices1 = INITIAL_PRICES
     amount = amount * 10**18 // prices1[i]
-    mint_for_testing(coins[i], user, amount)
+    boa.deal(coins[i], user, amount)
 
     with boa.env.prank(user):
         swap_with_deposit.exchange(i, 1 - i, amount, 0)

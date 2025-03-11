@@ -1,6 +1,5 @@
 import boa
 import pytest
-from tests.utils.tokens import mint_for_testing
 
 
 # @pytest.mark.gas_profile
@@ -48,7 +47,7 @@ def test_round_trip_swaps(swap_with_deposit, coins, user, fee_gamma, initial_bal
     print(f"\nTesting with fee_gamma={fee_gamma}, initial_balance_rate={initial_balance_rate}")
 
     # Mint tokens for the user
-    mint_for_testing(coins[0], user, initial_swap_amount)
+    boa.deal(coins[0], user, initial_swap_amount)
     assert coins[0].balanceOf(user) == initial_swap_amount
 
     # Approve the swap contract to use the tokens
