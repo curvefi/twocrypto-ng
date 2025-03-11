@@ -3,7 +3,6 @@ from boa.test import strategy
 from hypothesis import given, settings  # noqa
 
 from tests.fixtures.pool import INITIAL_PRICES
-from tests.utils.tokens import mint_for_testing
 
 SETTINGS = {"max_examples": 100, "deadline": None}
 
@@ -29,7 +28,7 @@ def test_exchange_all(
         return
 
     amount = amount * 10**18 // INITIAL_PRICES[i]
-    mint_for_testing(coins[i], user, amount)
+    boa.deal(coins[i], user, amount)
 
     calculated = views_contract.get_dy(i, j, amount, swap_with_deposit)
 
@@ -74,7 +73,7 @@ def test_exchange_received_success(
         return
 
     amount = amount * 10**18 // INITIAL_PRICES[i]
-    mint_for_testing(coins[i], user, amount)
+    boa.deal(coins[i], user, amount)
 
     calculated = views_contract.get_dy(i, j, amount, swap_with_deposit)
 
@@ -120,7 +119,7 @@ def test_exchange_received_revert_on_no_transfer(
         return
 
     amount = amount * 10**18 // INITIAL_PRICES[i]
-    mint_for_testing(coins[i], user, amount)
+    boa.deal(coins[i], user, amount)
 
     calculated = views_contract.get_dy(i, j, amount, swap_with_deposit)
 

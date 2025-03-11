@@ -5,7 +5,6 @@ from hypothesis import given, settings
 from tests.fixtures.pool import INITIAL_PRICES
 from tests.utils import approx
 from tests.utils import simulator as sim
-from tests.utils.tokens import mint_for_testing
 
 SETTINGS = {"max_examples": 100, "deadline": None}
 
@@ -25,7 +24,7 @@ def test_second_deposit_single_token(swap_with_deposit, coins, user, i, amount):
     for j in range(len(coins)):
         if j == i:
             quantities[j] = amount * 10 ** coins[i].decimals()
-            mint_for_testing(coins[j], user, quantities[j])
+            boa.deal(coins[j], user, quantities[j])
 
     # Single sided deposit
     with boa.env.prank(user):
@@ -55,7 +54,7 @@ def test_second_deposit(
     safe = all(f >= 1.1e16 and f <= 0.9e20 for f in [_x * 10**18 // _D for _x in xp])
 
     for coin, q in zip(coins, amounts):
-        mint_for_testing(coin, user, 10**30)
+        boa.deal(coin, user, 10**30)
         with boa.env.prank(user):
             coin.approve(swap_with_deposit, 2**256 - 1)
 
@@ -97,7 +96,7 @@ def test_second_deposit_one(
 ):
     amounts = [0] * len(coins)
     amounts[i] = value * 10**18 // (INITIAL_PRICES)[i]
-    mint_for_testing(coins[i], user, amounts[i])
+    boa.deal(coins[i], user, amounts[i])
 
     try:
         calculated = views_contract.calc_token_amount(amounts, True, swap_with_deposit)
