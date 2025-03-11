@@ -3,7 +3,7 @@ import pytest
 from boa.test import strategy
 from hypothesis import given, settings
 
-from tests.fixtures.pool import INITIAL_PRICES
+from tests.conftest import INITIAL_PRICES, _crypto_swap_with_deposit
 from tests.utils import approx
 
 SETTINGS = {"max_examples": 20, "deadline": None}
@@ -36,6 +36,11 @@ def get_p(
     return numerator * 10**18 // denominator
 """
     return boa.loads(get_price_impl)
+
+
+@pytest.fixture(scope="module")
+def yuge_swap(swap, coins, user):
+    return _crypto_swap_with_deposit(coins, user, swap, INITIAL_PRICES, dollar_amt_each_coin=10**10)
 
 
 def _get_dydx_vyper(swap, price_calc):

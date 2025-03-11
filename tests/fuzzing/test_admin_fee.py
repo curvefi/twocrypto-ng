@@ -2,11 +2,13 @@ import boa
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from tests.fixtures.pool import INITIAL_PRICES
+from tests.conftest import INITIAL_PRICES
+
+SETTINGS = {"max_examples": 100, "deadline": None}
 
 
 @given(ratio=st.floats(min_value=0.0001, max_value=0.1))
-@settings(max_examples=10, deadline=None)
+@settings(**SETTINGS)
 def test_admin_fee_after_deposit(swap, coins, fee_receiver, user, user_b, ratio):
     quantities = [10**42 // p for p in INITIAL_PRICES]
 

@@ -4,7 +4,7 @@ import boa
 from boa.test import strategy
 from hypothesis import given, settings
 
-from tests.fixtures.pool import INITIAL_PRICES
+from tests.conftest import INITIAL_PRICES
 from tests.utils.constants import UNIX_DAY
 
 SETTINGS = {"max_examples": 1000, "deadline": None}

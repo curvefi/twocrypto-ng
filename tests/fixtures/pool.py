@@ -87,8 +87,3 @@ def swap(
 @pytest.fixture(scope="module")
 def swap_with_deposit(swap, coins, user):
     return _crypto_swap_with_deposit(coins, user, swap, INITIAL_PRICES)
-
-
-@pytest.fixture(scope="module")
-def yuge_swap(swap, coins, user):
-    return _crypto_swap_with_deposit(coins, user, swap, INITIAL_PRICES, dollar_amt_each_coin=10**10)
