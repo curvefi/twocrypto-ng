@@ -1,10 +1,17 @@
 import boa
 from hypothesis import given, settings
 from hypothesis import strategies as st
-
+from pytest import fixture
 from tests.conftest import INITIAL_PRICES
 
 SETTINGS = {"max_examples": 100, "deadline": None}
+
+
+@fixture(scope="module")
+def user_b():
+    acc = boa.env.generate_address()
+    boa.env.set_balance(acc, 10**25)
+    return acc
 
 
 @given(ratio=st.floats(min_value=0.0001, max_value=0.1))

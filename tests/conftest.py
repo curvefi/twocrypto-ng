@@ -1,5 +1,6 @@
+from pytest import fixture
+
 import boa
-import pytest
 
 # Constants
 INITIAL_PRICES = [10**18, 1500 * 10**18]  # price relative to coin_id = 0
@@ -44,41 +45,34 @@ def _crypto_swap_with_deposit(
 
 
 # Account fixtures
-@pytest.fixture(scope="module")
+@fixture(scope="module")
 def deployer():
     return boa.env.generate_address()
 
 
-@pytest.fixture(scope="module")
+@fixture(scope="module")
 def owner():
     return boa.env.generate_address()
 
 
-@pytest.fixture(scope="module")
+@fixture(scope="module")
 def factory_admin(factory):
     return factory.admin()
 
 
-@pytest.fixture(scope="module")
+@fixture(scope="module")
 def fee_receiver():
     return boa.env.generate_address()
 
 
-@pytest.fixture(scope="module")
+@fixture(scope="module")
 def user():
     acc = boa.env.generate_address()
     boa.env.set_balance(acc, 10**25)
     return acc
 
 
-@pytest.fixture(scope="module")
-def user_b():
-    acc = boa.env.generate_address()
-    boa.env.set_balance(acc, 10**25)
-    return acc
-
-
-@pytest.fixture(scope="module")
+@fixture(scope="module")
 def users():
     accs = [i() for i in [boa.env.generate_address] * 10]
     for acc in accs:
@@ -86,116 +80,75 @@ def users():
     return accs
 
 
-@pytest.fixture(scope="module")
+@fixture(scope="module")
 def alice():
     acc = boa.env.generate_address()
     boa.env.set_balance(acc, 10**25)
     return acc
 
 
-@pytest.fixture(scope="module")
+@fixture(scope="module")
 def loaded_alice(swap, alice):
     boa.deal(swap, alice, 10**21)
     return alice
 
 
-@pytest.fixture(scope="module")
+@fixture(scope="module")
 def bob():
     acc = boa.env.generate_address()
     boa.env.set_balance(acc, 10**25)
     return acc
 
 
-@pytest.fixture(scope="module")
+@fixture(scope="module")
 def charlie():
     acc = boa.env.generate_address()
     boa.env.set_balance(acc, 10**25)
     return acc
 
 
-# Token fixtures
-@pytest.fixture(scope="module")
-def weth(deployer):
-    with boa.env.prank(deployer):
-        return boa.load("contracts/mocks/WETH.vy")
-
-
-@pytest.fixture(scope="module")
-def usd(deployer):
-    with boa.env.prank(deployer):
-        return boa.load("contracts/mocks/ERC20Mock.vy", "USD", "USD", 18)
-
-
-@pytest.fixture(scope="module")
-def stg(deployer):
-    with boa.env.prank(deployer):
-        return boa.load("contracts/mocks/ERC20Mock.vy", "STG", "STG", 18)
-
-
-@pytest.fixture(scope="module")
-def usdt(deployer):
-    with boa.env.prank(deployer):
-        return boa.load("contracts/mocks/ERC20Mock.vy", "USDT", "USDT", 6)
-
-
-@pytest.fixture(scope="module")
-def usdc(deployer):
-    with boa.env.prank(deployer):
-        return boa.load("contracts/mocks/ERC20Mock.vy", "USDC", "USDC", 6)
-
-
-@pytest.fixture(scope="module")
-def dai(deployer):
-    with boa.env.prank(deployer):
-        return boa.load("contracts/mocks/ERC20Mock.vy", "DAI", "DAI", 18)
-
-
-@pytest.fixture(scope="module")
-def coins(usd, weth):
-    yield [usd, weth]
-
-
-@pytest.fixture(scope="module")
-def stgusdc(stg, usdc):
-    yield [stg, usdc]
+@fixture(scope="module")
+def coins():
+    erc20_factory = boa.load_partial("tests/mocks/ERC20Mock.vy")
+    return [erc20_factory("USD", "USD", 18), erc20_factory("BTC", "BTC", 18)]
 
 
 # Factory fixtures
-@pytest.fixture(scope="module")
+@fixture(scope="module")
 def math_contract(deployer):
     with boa.env.prank(deployer):
         return boa.load("contracts/main/TwocryptoMath.vy")
 
 
-@pytest.fixture(scope="module")
+@fixture(scope="module")
 def gauge_interface():
     return boa.load_partial("contracts/main/LiquidityGauge.vy")
 
 
-@pytest.fixture(scope="module")
+@fixture(scope="module")
 def gauge_implementation(deployer, gauge_interface):
     with boa.env.prank(deployer):
         return gauge_interface.deploy_as_blueprint()
 
 
-@pytest.fixture(scope="module")
+@fixture(scope="module")
 def amm_interface():
     return boa.load_partial("contracts/main/Twocrypto.vy")
 
 
-@pytest.fixture(scope="module")
+@fixture(scope="module")
 def amm_implementation(deployer, amm_interface):
     with boa.env.prank(deployer):
         return amm_interface.deploy_as_blueprint()
 
 
-@pytest.fixture(scope="module")
+@fixture(scope="module")
 def views_contract(deployer):
     with boa.env.prank(deployer):
         return boa.load("contracts/main/TwocryptoView.vy")
 
 
-@pytest.fixture(scope="module")
+@fixture(scope="module")
 def factory(
     deployer,
     fee_receiver,
@@ -219,7 +172,7 @@ def factory(
 
 
 # Pool fixtures
-@pytest.fixture(scope="module")
+@fixture(scope="module")
 def params():
     return {
         "A": 400000,
@@ -234,7 +187,7 @@ def params():
     }
 
 
-@pytest.fixture(scope="module")
+@fixture(scope="module")
 def swap(
     factory,
     amm_interface,
@@ -262,6 +215,6 @@ def swap(
     return amm_interface.at(swap)
 
 
-@pytest.fixture(scope="module")
+@fixture(scope="module")
 def swap_with_deposit(swap, coins, user):
     return _crypto_swap_with_deposit(coins, user, swap, INITIAL_PRICES)

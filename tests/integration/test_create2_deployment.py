@@ -159,7 +159,7 @@ def factory(
 
 @pytest.fixture(scope="module")
 def coins():
-    erc20_mock = boa.load_partial("./contracts/mocks/ERC20Mock.vy")
+    erc20_mock = boa.load_partial("tests/mocks/ERC20Mock.vy")
     return [
         erc20_mock.at("0xf939E0A03FB07F59A73314E73794Be0E57ac1b4E"),
         erc20_mock.at("0xD533a949740bb3306d119CC777fa900bA034cd52"),

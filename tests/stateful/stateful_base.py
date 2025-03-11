@@ -12,10 +12,14 @@ from hypothesis.stateful import (
 )
 from hypothesis.strategies import integers
 
-from contracts.main import TwocryptoFactory as factory
-from contracts.mocks import ERC20Mock as ERC20
 from tests.utils.constants import UNIX_DAY
 from tests.utils.strategies import address, pool_from_preset
+
+boa.load_partial("contracts/main/TwocryptoFactory.vy")
+boa.load_partial("tests/mocks/ERC20Mock.vy")
+
+factory = boa.load_partial("contracts/main/TwocryptoFactory.vy")
+ERC20 = boa.load_partial("tests/mocks/ERC20Mock.vy")
 
 
 class StatefulBase(RuleBasedStateMachine):
