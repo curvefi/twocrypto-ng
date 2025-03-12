@@ -1,4 +1,4 @@
-# pragma version ~=0.4.0
+# pragma version ~=0.4.1
 """
 @title TwocryptoFactory
 @author Curve.Fi
@@ -31,29 +31,29 @@ event LiquidityGaugeDeployed:
     gauge: address
 
 event UpdateFeeReceiver:
-    _old_fee_receiver: address
-    _new_fee_receiver: address
+    old_fee_receiver: address
+    new_fee_receiver: address
 
 event UpdatePoolImplementation:
-    _implemention_id: uint256
-    _old_pool_implementation: address
-    _new_pool_implementation: address
+    implementation_id: uint256
+    old_pool_implementation: address
+    new_pool_implementation: address
 
 event UpdateGaugeImplementation:
-    _old_gauge_implementation: address
-    _new_gauge_implementation: address
+    old_gauge_implementation: address
+    new_gauge_implementation: address
 
 event UpdateMathImplementation:
-    _old_math_implementation: address
-    _new_math_implementation: address
+    old_math_implementation: address
+    new_math_implementation: address
 
 event UpdateViewsImplementation:
-    _old_views_implementation: address
-    _new_views_implementation: address
+    old_views_implementation: address
+    new_views_implementation: address
 
 event TransferOwnership:
-    _old_owner: address
-    _new_owner: address
+    old_owner: address
+    new_owner: address
 
 
 struct PoolArray:
@@ -103,8 +103,8 @@ def initialise_ownership(_fee_receiver: address, _admin: address):
     self.fee_receiver = _fee_receiver
     self.admin = _admin
 
-    log UpdateFeeReceiver(empty(address), _fee_receiver)
-    log TransferOwnership(empty(address), _admin)
+    log UpdateFeeReceiver(old_fee_receiver=empty(address), new_fee_receiver=_fee_receiver)
+    log TransferOwnership(old_owner=empty(address), new_owner=_admin)
 
 
 @internal
@@ -222,17 +222,17 @@ def deploy_pool(
     self._add_coins_to_market(_coins[0], _coins[1], pool)
 
     log TwocryptoPoolDeployed(
-        pool,
-        _name,
-        _symbol,
-        _coins,
-        _math_implementation,
-        precisions,
-        packed_gamma_A,
-        packed_fee_params,
-        packed_rebalancing_params,
-        initial_price,
-        msg.sender,
+        pool=pool,
+        name=_name,
+        symbol=_symbol,
+        coins=_coins,
+        math=_math_implementation,
+        precisions=precisions,
+        packed_A_gamma=packed_gamma_A,
+        packed_fee_params=packed_fee_params,
+        packed_rebalancing_params=packed_rebalancing_params,
+        packed_prices=initial_price,
+        deployer=msg.sender,
     )
 
     return pool
@@ -261,7 +261,7 @@ def deploy_gauge(_pool: address) -> address:
     gauge: address = create_from_blueprint(self.gauge_implementation, _pool, code_offset=3)
     self.pool_data[_pool].liquidity_gauge = gauge
 
-    log LiquidityGaugeDeployed(_pool, gauge)
+    log LiquidityGaugeDeployed(pool=_pool, gauge=gauge)
     return gauge
 
 
@@ -276,7 +276,7 @@ def set_fee_receiver(_fee_receiver: address):
     """
     assert msg.sender == self.admin, "admin only"
 
-    log UpdateFeeReceiver(self.fee_receiver, _fee_receiver)
+    log UpdateFeeReceiver(old_fee_receiver=self.fee_receiver, new_fee_receiver=_fee_receiver)
     self.fee_receiver = _fee_receiver
 
 
@@ -293,9 +293,9 @@ def set_pool_implementation(
     assert msg.sender == self.admin, "admin only"
 
     log UpdatePoolImplementation(
-        _implementation_index,
-        self.pool_implementations[_implementation_index],
-        _pool_implementation
+        implementation_id=_implementation_index,
+        old_pool_implementation=self.pool_implementations[_implementation_index],
+        new_pool_implementation=_pool_implementation
     )
 
     self.pool_implementations[_implementation_index] = _pool_implementation
@@ -310,7 +310,7 @@ def set_gauge_implementation(_gauge_implementation: address):
     """
     assert msg.sender == self.admin, "admin only"
 
-    log UpdateGaugeImplementation(self.gauge_implementation, _gauge_implementation)
+    log UpdateGaugeImplementation(old_gauge_implementation=self.gauge_implementation, new_gauge_implementation=_gauge_implementation)
     self.gauge_implementation = _gauge_implementation
 
 
@@ -322,7 +322,7 @@ def set_views_implementation(_views_implementation: address):
     """
     assert msg.sender == self.admin,  "admin only"
 
-    log UpdateViewsImplementation(self.views_implementation, _views_implementation)
+    log UpdateViewsImplementation(old_views_implementation=self.views_implementation, new_views_implementation=_views_implementation)
     self.views_implementation = _views_implementation
 
 
@@ -334,7 +334,7 @@ def set_math_implementation(_math_implementation: address):
     """
     assert msg.sender == self.admin, "admin only"
 
-    log UpdateMathImplementation(self.math_implementation, _math_implementation)
+    log UpdateMathImplementation(old_math_implementation=self.math_implementation, new_math_implementation=_math_implementation)
     self.math_implementation = _math_implementation
 
 
@@ -357,7 +357,7 @@ def accept_transfer_ownership():
     """
     assert msg.sender == self.future_admin, "future admin only"
 
-    log TransferOwnership(self.admin, msg.sender)
+    log TransferOwnership(old_owner=self.admin, new_owner=msg.sender)
     self.admin = msg.sender
 
 
