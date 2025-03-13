@@ -310,8 +310,6 @@ def _transfer_in(
 def _transfer_out(_coin_idx: uint256, _amount: uint256, receiver: address):
     """
     @notice Transfer a single token from the pool to receiver.
-    @dev This function is called by `remove_liquidity` and
-         `remove_liquidity_one`, `_claim_admin_fees` and `_exchange` methods.
     @params _coin_idx uint256 Index of the token to transfer out
     @params _amount Amount of token to transfer out
     @params receiver Address to send the tokens to
@@ -602,63 +600,6 @@ def remove_liquidity(
 
     return withdraw_amounts
 
-
-@external
-@nonreentrant
-def remove_liquidity_one_coin(
-    token_amount: uint256,
-    i: uint256,
-    min_amount: uint256,
-    receiver: address = msg.sender
-) -> uint256:
-    """
-    @notice Withdraw liquidity in a single token.
-            Involves fees (lower than swap fees).
-    @dev This operation also involves an admin fee claim.
-    @param token_amount Amount of LP tokens to burn
-    @param i Index of the token to withdraw
-    @param min_amount Minimum amount of token to withdraw.
-    @param receiver Address to send the withdrawn tokens to
-    @return Amount of tokens at index i received by the `receiver`
-    """
-
-    self._claim_admin_fees()  # <--------- Auto-claim admin fees occasionally.
-
-    A_gamma: uint256[2] = self._A_gamma()
-
-    dy: uint256 = 0
-    D: uint256 = 0
-    xp: uint256[N_COINS] = empty(uint256[N_COINS])
-    approx_fee: uint256 = 0
-
-    dy, D, xp, approx_fee = self._calc_withdraw_one_coin(
-        A_gamma,
-        token_amount,
-        i,
-    )
-
-    assert dy >= min_amount, "slippage"
-
-    # ---------------------------- State Updates -----------------------------
-
-    # Burn user's tokens:
-    self.burnFrom(msg.sender, token_amount)
-
-    price_scale: uint256 = self.tweak_price(A_gamma, xp, D)
-    # Safe to use D from _calc_withdraw_one_coin here ---^
-
-    # ------------------------- Transfers ------------------------------------
-
-    # _transfer_out updates self.balances here. Update to state occurs before
-    # external calls:
-    self._transfer_out(i, dy, receiver)
-
-    log RemoveLiquidityOne(
-        provider=msg.sender, token_amount=token_amount, coin_index=i, coin_amount=dy, approx_fee=approx_fee, price_scale=price_scale
-    )
-
-    return dy
-
 @external
 @nonreentrant
 def remove_liquidity_fixed_out(
@@ -677,13 +618,60 @@ def remove_liquidity_fixed_out(
     @param receiver Address to send the withdrawn tokens to
     @return Amount of tokens at index j=1-i received by the `receiver`
     """
-    self._claim_admin_fees()  # <--------- Auto-claim admin fees occasionally.
+    return self._remove_liquidity_fixed_out(
+        token_amount,
+        i,
+        amount_i,
+        min_amount_j,
+        receiver,
+    )
+
+
+@external
+@nonreentrant
+def remove_liquidity_one_coin(
+    lp_token_amount: uint256,
+    i: uint256,
+    min_amount: uint256,
+    receiver: address = msg.sender
+) -> uint256:
+    """
+    @notice Withdraw liquidity in a single coin.
+    @param lp_token_amount Amount of LP tokens to burn.
+    @param i Index of the coin to withdraw.
+    @param min_amount Minimum amount of coin[i] to withdraw.
+    @param receiver Address to send the withdrawn tokens to
+    @return Amount of coin[i] tokens received by the `receiver`
+    """
+    return self._remove_liquidity_fixed_out(
+        lp_token_amount,
+        1 - i, # Here we flip i because we want to constrain the other coin to be zero.
+        0, # We set the amount of coin[1 - i] to be withdrawn to 0.
+        min_amount,
+        receiver,
+    )
+
+
+@internal
+def _remove_liquidity_fixed_out(
+    token_amount: uint256,
+    i: uint256,
+    amount_i: uint256,
+    min_amount_j: uint256,
+    receiver: address,
+) -> uint256:
+
+    self._claim_admin_fees()
 
     A_gamma: uint256[2] = self._A_gamma()
 
+    # Amount of coin[j] withdrawn.
     dy: uint256 = 0
+    # New value of D after the withdrawal.
     D: uint256 = 0
+    # New scaled balances after the withdrawal.
     xp: uint256[N_COINS] = empty(uint256[N_COINS])
+    # TODO I think this is no longer approximate
     approx_fee: uint256 = 0
 
     # ------------------------------------------------------------------------
@@ -699,23 +687,19 @@ def remove_liquidity_fixed_out(
 
     # ---------------------------- State Updates -----------------------------
 
-    # Burn user's tokens:
     self.burnFrom(msg.sender, token_amount)
 
     price_scale: uint256 = self.tweak_price(A_gamma, xp, D)
 
-    # ------------------------- Transfers ------------------------------------
-
-    # _transfer_out updates self.balances here. Update to state occurs before
-    # external calls:
     self._transfer_out(i, amount_i, receiver)
     self._transfer_out(1 - i, dy, receiver)
+
     token_amounts: uint256[N_COINS] = empty(uint256[N_COINS])
     token_amounts[i] = amount_i
     token_amounts[1-i] = dy
 
     log RemoveLiquidityImbalance(
-        provider=   msg.sender,
+        provider=msg.sender,
         lp_token_amount=token_amount,
         token_amounts=token_amounts,
         approx_fee=approx_fee * token_amount // PRECISION,
@@ -765,8 +749,6 @@ def _pack_2(p1: uint256, p2: uint256) -> uint256:
 def _unpack_2(packed: uint256) -> uint256[2]:
     return [packed & (2**128 - 1), packed >> 128]
 
-
-# ---------------------- AMM Internal Functions -------------------------------
 
 
 @internal
@@ -847,7 +829,7 @@ def tweak_price(
     @notice Updates price_oracle, last_price and conditionally adjusts
             price_scale. This is called whenever there is an unbalanced
             liquidity operation: _exchange, add_liquidity, or
-            remove_liquidity_one_coin.
+            remove_liquidity_fixed_out.
     @dev Contains main liquidity rebalancing logic, by tweaking `price_scale`.
     @param A_gamma Array of A and gamma parameters.
     @param _xp Array of current balances.
@@ -1274,73 +1256,41 @@ def _calc_token_fee(amounts: uint256[N_COINS], xp: uint256[N_COINS]) -> uint256:
 
     return fee * Sdiff // S + NOISE_FEE
 
-
-@internal
 @view
-def _calc_withdraw_one_coin(
-    A_gamma: uint256[2],
-    token_amount: uint256,
-    i: uint256,
-) -> (uint256, uint256, uint256[N_COINS], uint256):
+@external
+def calc_withdraw_fixed_out(lp_token_amount: uint256, i: uint256, amount_i: uint256) -> uint256:
+    """
+    @notice Calculate the amounts of coin[1-i] that will be received for burning the lp
+    tokens while specifying the amount of coin[i] to be withdrawn.
+    @param lp_token_amount LP Token amount to burn.
+    @param i index of the token for which the withdrawal amount is specified.
+    @param amount_i exact amount of token i which will be withdrawn.
+    @return uint256 Amount of token 1-i received for burning token_amount LP tokens.
+    """
+    return self._calc_withdraw_fixed_out(
+        self._A_gamma(),
+        lp_token_amount,
+        i,
+        amount_i,
+    )[0]
 
-    token_supply: uint256 = self.totalSupply
-    assert token_amount <= token_supply, "token amount more than supply"
-    assert i < N_COINS, "coin out of range"
-
-
-    # -------------------------- Calculate D0 and xp -------------------------
-
-    price_scale: uint256 = self.cached_price_scale
-    balances: uint256[N_COINS] = self.balances
-    xp: uint256[N_COINS] = self._xp(balances, price_scale)
-
-    D: uint256 = 0
-
-    if self._is_ramping():
-        D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
-    else:
-        D = self.D
-
-    # -------------------------------- Fee Calc ------------------------------
-
-    # Charge fees on D. Roughly calculate xp[i] after withdrawal and use that
-    # to calculate fee. Precision is not paramount here: we just want a
-    # behavior where the higher the imbalance caused the more fee the AMM
-    # charges.
-
-    # xp is adjusted assuming xp[0] ~= xp[1] ~= x[2], which is usually not the
-    #  case. We charge self._fee(xp), where xp is an imprecise adjustment post
-    #  withdrawal in one coin. If the withdraw is too large: charge max fee by
-    #   default. This is because the fee calculation will otherwise underflow.
-
-    xp_correction: uint256 = xp[i] * N_COINS * token_amount // token_supply
-    fee: uint256 = self._unpack_3(self.packed_fee_params)[1]  # <- self.out_fee.
-
-    xp_imprecise: uint256[N_COINS] = xp
-    if xp_correction < xp_imprecise[i]:
-        xp_imprecise[i] -= xp_correction
-        fee = self._fee(xp_imprecise)
-
-    dD: uint256 = unsafe_div(token_amount * D, token_supply)
-    D_fee: uint256 = fee * dD // (2 * 10**10) + 1  # <------- Actual fee on D.
-
-    # --------- Calculate `approx_fee` (assuming balanced state) in ith token.
-    # -------------------------------- We only need this for fee in the event.
-    approx_fee: uint256 = N_COINS * D_fee * balances[i] // D  # <------------------<---------- TODO: Check math.
-
-    # ------------------------------------------------------------------------
-    D -= (dD - D_fee)  # <----------------------------------- Charge fee on D.
-    # --------------------------------- Calculate `y_out`` with `(D - D_fee)`.
-    y: uint256 = (staticcall MATH.get_y(A_gamma[0], A_gamma[1], xp, D, i))[0]
-
-    price_scale_i: uint256 = price_scale * PRECISIONS[1]
-    if i == 0:
-        price_scale_i = PRECISION * PRECISIONS[0]
-    dy: uint256 = (xp[i] - y) * PRECISION // price_scale_i
-    xp[i] = y
-
-    return dy, D, xp, approx_fee
-
+@view
+@external
+def calc_withdraw_one_coin(lp_token_amount: uint256, i: uint256) -> uint256:
+    """
+    @notice Calculate how much of coin[i] will be received when withdrawing liquidity in a single coin.
+    @dev This function uses the logic from _calc_withdraw_fixed_out by setting amount_i to 0.
+        This forces the withdrawal to be entirely in the other coin.
+    @param lp_token_amount LP Token amount to burn.
+    @param i index of the token to be withdrawn
+    @return uint256 Amount of coin[i] tokens received for burning token_amount LP tokens.
+    """
+    return self._calc_withdraw_fixed_out(
+        self._A_gamma(),
+        lp_token_amount,
+        1 - i, # Here we flip i because we want to constrain the other coin to be zero.
+        0, # We set the amount of coin[1 - i] to be withdrawn to 0.
+    )[0]
 
 @internal
 @view
@@ -1683,21 +1633,6 @@ def fee() -> uint256:
     return self._fee(self._xp(self.balances, self.cached_price_scale))
 
 
-@view
-@external
-def calc_withdraw_one_coin(token_amount: uint256, i: uint256) -> uint256:
-    """
-    @notice Calculates output tokens with fee
-    @param token_amount LP Token amount to burn
-    @param i token in which liquidity is withdrawn
-    @return uint256 Amount of ith tokens received for burning token_amount LP tokens.
-    """
-
-    return self._calc_withdraw_one_coin(
-        self._A_gamma(),
-        token_amount,
-        i,
-    )[0]
 
 
 @external
