@@ -80,62 +80,6 @@ def _snekmate_log_2(x: uint256, roundup: bool) -> uint256:
 
 @internal
 @pure
-def _cbrt(x: uint256) -> uint256:
-
-    xx: uint256 = 0
-    if x >= 115792089237316195423570985008687907853269 * 10**18:
-        xx = x
-    elif x >= 115792089237316195423570985008687907853269:
-        xx = unsafe_mul(x, 10**18)
-    else:
-        xx = unsafe_mul(x, 10**36)
-
-    log2x: int256 = convert(self._snekmate_log_2(xx, False), int256)
-
-    # When we divide log2x by 3, the remainder is (log2x % 3).
-    # So if we just multiply 2**(log2x/3) and discard the remainder to calculate our
-    # guess, the newton method will need more iterations to converge to a solution,
-    # since it is missing that precision. It's a few more calculations now to do less
-    # calculations later:
-    # pow = log2(x) // 3
-    # remainder = log2(x) % 3
-    # initial_guess = 2 ** pow * cbrt(2) ** remainder
-    # substituting -> 2 = 1.26 ≈ 1260 / 1000, we get:
-    #
-    # initial_guess = 2 ** pow * 1260 ** remainder // 1000 ** remainder
-
-    remainder: uint256 = convert(log2x, uint256) % 3
-    a: uint256 = unsafe_div(
-        unsafe_mul(
-            pow_mod256(2, unsafe_div(convert(log2x, uint256), 3)),  # <- pow
-            pow_mod256(1260, remainder),
-        ),
-        pow_mod256(1000, remainder),
-    )
-
-    # Because we chose good initial values for cube roots, 7 newton raphson iterations
-    # are just about sufficient. 6 iterations would result in non-convergences, and 8
-    # would be one too many iterations. Without initial values, the iteration count
-    # can go up to 20 or greater. The iterations are unrolled. This reduces gas costs
-    # but takes up more bytecode:
-    a = unsafe_div(unsafe_add(unsafe_mul(2, a), unsafe_div(xx, unsafe_mul(a, a))), 3)
-    a = unsafe_div(unsafe_add(unsafe_mul(2, a), unsafe_div(xx, unsafe_mul(a, a))), 3)
-    a = unsafe_div(unsafe_add(unsafe_mul(2, a), unsafe_div(xx, unsafe_mul(a, a))), 3)
-    a = unsafe_div(unsafe_add(unsafe_mul(2, a), unsafe_div(xx, unsafe_mul(a, a))), 3)
-    a = unsafe_div(unsafe_add(unsafe_mul(2, a), unsafe_div(xx, unsafe_mul(a, a))), 3)
-    a = unsafe_div(unsafe_add(unsafe_mul(2, a), unsafe_div(xx, unsafe_mul(a, a))), 3)
-    a = unsafe_div(unsafe_add(unsafe_mul(2, a), unsafe_div(xx, unsafe_mul(a, a))), 3)
-
-    if x >= 115792089237316195423570985008687907853269 * 10**18:
-        a = unsafe_mul(a, 10**12)
-    elif x >= 115792089237316195423570985008687907853269:
-        a = unsafe_mul(a, 10**6)
-
-    return a
-
-
-@internal
-@pure
 def _newton_y(ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: uint256, lim_mul: uint256) -> uint256:
     """
     Calculating x[i] given other balances x[0..N_COINS-1] and invariant D
@@ -337,17 +281,15 @@ def get_y(
 
     b_cbrt: int256 = 0
     if b > 0:
-        b_cbrt = convert(self._cbrt(convert(b, uint256)), int256)
+        b_cbrt = convert(math._cbrt(convert(b, uint256), False), int256)
     else:
-        b_cbrt = -convert(self._cbrt(convert(-b, uint256)), int256)
+        b_cbrt = -convert(math._cbrt(convert(-b, uint256), False), int256)
 
     second_cbrt: int256 = 0
     if delta1 > 0:
-        # second_cbrt = convert(self._cbrt(convert((delta1 + sqrt_val), uint256) / 2), int256)
-        second_cbrt = convert(self._cbrt(convert(unsafe_add(delta1, sqrt_val), uint256) // 2), int256)
+        second_cbrt = convert(math._cbrt(convert(unsafe_add(delta1, sqrt_val), uint256) // 2, False), int256)
     else:
-        # second_cbrt = -convert(self._cbrt(convert(unsafe_sub(sqrt_val, delta1), uint256) / 2), int256)
-        second_cbrt = -convert(self._cbrt(unsafe_div(convert(unsafe_sub(sqrt_val, delta1), uint256), 2)), int256)
+        second_cbrt = -convert(math._cbrt(unsafe_div(convert(unsafe_sub(sqrt_val, delta1), uint256), 2), False), int256)
 
     # C1: int256 = b_cbrt**2/10**18*second_cbrt/10**18
     C1: int256 = unsafe_div(unsafe_mul(unsafe_div(b_cbrt**2, 10**18), second_cbrt), 10**18)
