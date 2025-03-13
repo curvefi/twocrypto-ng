@@ -228,7 +228,7 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
         depositor_ratio = depositor_balance / lp_supply
 
         # TODO check these two conditions
-        max_withdraw = 0.3 if depositor_ratio > 0.25 else 1
+        max_withdraw = 0.2 if depositor_ratio > 0.25 else 1
 
         # we draw a percentage of the depositor balance to withdraw
         percentage = data.draw(floats(min_value=0.01, max_value=max_withdraw))
