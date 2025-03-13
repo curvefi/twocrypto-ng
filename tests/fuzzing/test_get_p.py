@@ -39,33 +39,33 @@ def get_p(
 
 
 @pytest.fixture(scope="module")
-def yuge_swap(swap, coins, user):
-    return _crypto_swap_with_deposit(coins, user, swap, INITIAL_PRICES, dollar_amt_each_coin=10**10)
+def huge_pool(pool, coins, user):
+    return _crypto_swap_with_deposit(coins, user, pool, INITIAL_PRICES, dollar_amt_each_coin=10**10)
 
 
-def _get_dydx_vyper(swap, price_calc):
-    xp = swap.internal._xp(
-        swap._storage.balances.get(),
-        swap.price_scale(),
+def _get_dydx_vyper(pool, price_calc):
+    xp = pool.internal._xp(
+        pool._storage.balances.get(),
+        pool.price_scale(),
     )
 
-    return price_calc.get_p(xp, swap.D(), swap.internal._A_gamma())
+    return price_calc.get_p(xp, pool.D(), pool.internal._A_gamma())
 
 
-def _get_prices_vyper(swap, price_calc):
-    price_token_1_wrt_0 = _get_dydx_vyper(swap, price_calc)
-    return price_token_1_wrt_0 * swap.price_scale() // 10**18
+def _get_prices_vyper(pool, price_calc):
+    price_token_1_wrt_0 = _get_dydx_vyper(pool, price_calc)
+    return price_token_1_wrt_0 * pool.price_scale() // 10**18
 
 
-def _get_prices_numeric_nofee(swap, views, i):
+def _get_prices_numeric_nofee(pool, views, i):
     if i == 0:  # token at index 1 is being pupmed.
         dx = int(0.01 * 10**36 // INITIAL_PRICES[1])
-        dolla_out = views.internal._get_dy_nofee(1, 0, dx, swap)[0]
+        dolla_out = views.internal._get_dy_nofee(1, 0, dx, pool)[0]
         price = dolla_out * 10**18 // dx
 
     else:  # token at index 1 is being dupmed.
         dx = 10**16  # 0.01 USD
-        dy = views.internal._get_dy_nofee(0, 1, dx, swap)[0]
+        dy = views.internal._get_dy_nofee(0, 1, dx, pool)[0]
         price = dx * 10**18 // dy
 
     return price
@@ -80,7 +80,7 @@ def _get_prices_numeric_nofee(swap, views, i):
 @settings(**SETTINGS)
 @pytest.mark.parametrize("i", [0, 1])
 def test_dxdy_similar(
-    yuge_swap,
+    huge_pool,
     dydx_safemath,
     views_contract,
     user,
@@ -88,16 +88,16 @@ def test_dxdy_similar(
     coins,
     i,
 ):
-    previous_p = yuge_swap.price_scale()
+    previous_p = huge_pool.price_scale()
     j = 1 - i
 
     amount_in = int(dollar_amount * 10**36 // INITIAL_PRICES[i])
     boa.deal(coins[i], user, amount_in)
-    yuge_swap.exchange(i, j, amount_in, 0, sender=user)
+    huge_pool.exchange(i, j, amount_in, 0, sender=user)
 
-    dxdy_vyper = _get_prices_vyper(yuge_swap, dydx_safemath)
-    dxdy_swap = yuge_swap.last_prices()  # <-- we check unsafe impl here.
-    dxdy_numeric = _get_prices_numeric_nofee(yuge_swap, views_contract, i)
+    dxdy_vyper = _get_prices_vyper(huge_pool, dydx_safemath)
+    dxdy_swap = huge_pool.last_prices()  # <-- we check unsafe impl here.
+    dxdy_numeric = _get_prices_numeric_nofee(huge_pool, views_contract, i)
 
     if i == 0:  # token at index 1 is being pupmed, so last_price should go up
         assert dxdy_swap > previous_p

@@ -1,4 +1,5 @@
 from pytest import fixture
+from tests.utils.god_mode import GodModePool
 
 import boa
 
@@ -88,8 +89,8 @@ def alice():
 
 
 @fixture(scope="module")
-def loaded_alice(swap, alice):
-    boa.deal(swap, alice, 10**21)
+def loaded_alice(pool, alice):
+    boa.deal(pool, alice, 10**21)
     return alice
 
 
@@ -188,7 +189,7 @@ def params():
 
 
 @fixture(scope="module")
-def swap(
+def pool(
     factory,
     amm_interface,
     coins,
@@ -196,7 +197,7 @@ def swap(
     deployer,
 ):
     with boa.env.prank(deployer):
-        swap = factory.deploy_pool(
+        pool = factory.deploy_pool(
             "Curve.fi USD<>WETH",  # _name: String[64]
             "USD<>WETH",  # _symbol: String[32]
             [coin.address for coin in coins],  # _coins: address[N_COINS]
@@ -212,9 +213,13 @@ def swap(
             params["initial_prices"][1],  # initial_price: uint256
         )
 
-    return amm_interface.at(swap)
+    return amm_interface.at(pool)
+
+
+def gm_pool(pool, coins):
+    return GodModePool(pool, coins)
 
 
 @fixture(scope="module")
-def swap_with_deposit(swap, coins, user):
-    return _crypto_swap_with_deposit(coins, user, swap, INITIAL_PRICES)
+def pool_with_deposit(pool, coins, user):
+    return _crypto_swap_with_deposit(coins, user, pool, INITIAL_PRICES)
