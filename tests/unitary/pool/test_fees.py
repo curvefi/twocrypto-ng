@@ -11,7 +11,7 @@ import pytest
     "initial_balance_rate",
     [0.1, 0.3, 0.5, 2, 5],  # Different rates of pool balance
 )
-def test_round_trip_swaps(swap_with_deposit, coins, user, fee_gamma, initial_balance_rate, params):
+def test_round_trip_swaps(pool_with_deposit, coins, user, fee_gamma, initial_balance_rate, params):
     """
     Test that swaps back and forth between token0 and token1 result in
     only losing the fee amount of token0.
@@ -23,8 +23,8 @@ def test_round_trip_swaps(swap_with_deposit, coins, user, fee_gamma, initial_bal
     The test always uses the entire balance of coins the user has for each swap.
     """
     # Set fee_gamma parameter
-    with boa.env.prank(swap_with_deposit.admin()):
-        swap_with_deposit.apply_new_parameters(
+    with boa.env.prank(pool_with_deposit.admin()):
+        pool_with_deposit.apply_new_parameters(
             params["mid_fee"],
             params["out_fee"],
             fee_gamma,
@@ -34,7 +34,7 @@ def test_round_trip_swaps(swap_with_deposit, coins, user, fee_gamma, initial_bal
         )
 
     # Get initial pool balances
-    initial_pool_balance_0 = swap_with_deposit.balances(0)
+    initial_pool_balance_0 = pool_with_deposit.balances(0)
 
     # get initial user balances
 
@@ -52,8 +52,8 @@ def test_round_trip_swaps(swap_with_deposit, coins, user, fee_gamma, initial_bal
 
     # Approve the swap contract to use the tokens
     with boa.env.prank(user):
-        coins[0].approve(swap_with_deposit.address, 2**256 - 1)
-        coins[1].approve(swap_with_deposit.address, 2**256 - 1)
+        coins[0].approve(pool_with_deposit.address, 2**256 - 1)
+        coins[1].approve(pool_with_deposit.address, 2**256 - 1)
 
     # Number of round trips to perform
     num_round_trips = 10
@@ -62,11 +62,11 @@ def test_round_trip_swaps(swap_with_deposit, coins, user, fee_gamma, initial_bal
     for i in range(num_round_trips):
         # Swap all token0 -> token1
         with boa.env.prank(user):
-            swap_with_deposit.exchange(0, 1, coins[0].balanceOf(user), 0)
+            pool_with_deposit.exchange(0, 1, coins[0].balanceOf(user), 0)
             assert coins[0].balanceOf(user) == 0
         # Swap all token1 -> token0
         with boa.env.prank(user):
-            swap_with_deposit.exchange(1, 0, coins[1].balanceOf(user), 0)
+            pool_with_deposit.exchange(1, 0, coins[1].balanceOf(user), 0)
             assert coins[1].balanceOf(user) == 0
 
     # Calculate how much token0 was lost due to fees

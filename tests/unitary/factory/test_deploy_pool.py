@@ -40,54 +40,54 @@ def test_nondeployer_cannot_set_ownership(deployer):
     assert factory.fee_receiver() == ZERO_ADDRESS
 
 
-def test_check_packed_params_on_deployment(swap, params, coins):
+def test_check_packed_params_on_deployment(pool, params, coins):
     # check packed precisions
-    unpacked_precisions = swap.precisions()
+    unpacked_precisions = pool.precisions()
     for i in range(len(coins)):
         assert unpacked_precisions[i] == 10 ** (18 - coins[i].decimals())
 
     # check packed fees
-    unpacked_fees = swap.internal._unpack_3(swap._storage.packed_fee_params.get())
+    unpacked_fees = pool.internal._unpack_3(pool._storage.packed_fee_params.get())
     assert params["mid_fee"] == unpacked_fees[0]
     assert params["out_fee"] == unpacked_fees[1]
     assert params["fee_gamma"] == unpacked_fees[2]
 
     # check packed rebalancing params
-    unpacked_rebalancing_params = swap.internal._unpack_3(
-        swap._storage.packed_rebalancing_params.get()
+    unpacked_rebalancing_params = pool.internal._unpack_3(
+        pool._storage.packed_rebalancing_params.get()
     )
     assert params["allowed_extra_profit"] == unpacked_rebalancing_params[0]
     assert params["adjustment_step"] == unpacked_rebalancing_params[1]
     assert params["ma_time"] == unpacked_rebalancing_params[2]
 
     # check packed A_gamma
-    A = swap.A()
-    gamma = swap.gamma()
+    A = pool.A()
+    gamma = pool.gamma()
     assert params["A"] == A
     assert params["gamma"] == gamma
 
     # check packed_prices
-    assert swap.price_oracle() == params["initial_prices"][1]
-    assert swap.price_scale() == params["initial_prices"][1]
-    assert swap.last_prices() == params["initial_prices"][1]
+    assert pool.price_oracle() == params["initial_prices"][1]
+    assert pool.price_scale() == params["initial_prices"][1]
+    assert pool.last_prices() == params["initial_prices"][1]
 
 
-def test_check_pool_data_on_deployment(swap, factory, coins):
+def test_check_pool_data_on_deployment(pool, factory, coins):
     for i, coin_a in enumerate(coins):
         for j, coin_b in enumerate(coins):
             if coin_a == coin_b:
                 continue
 
-            assert factory.find_pool_for_coins(coin_a, coin_b).lower() == swap.address.lower()
+            assert factory.find_pool_for_coins(coin_a, coin_b).lower() == pool.address.lower()
 
-            factory.get_coin_indices(swap.address, coin_a, coin_b) == (i, j)
+            factory.get_coin_indices(pool.address, coin_a, coin_b) == (i, j)
 
-    pool_coins = factory.get_coins(swap.address)
+    pool_coins = factory.get_coins(pool.address)
     coins_lower = [coin.address.lower() for coin in coins]
     for i in range(len(pool_coins)):
         assert pool_coins[i].lower() == coins_lower[i]
 
-    pool_decimals = list(factory.get_decimals(swap.address))
+    pool_decimals = list(factory.get_decimals(pool.address))
     assert pool_decimals == [coin.decimals() for coin in coins]
 
 
