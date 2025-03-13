@@ -216,6 +216,7 @@ def pool(
     return amm_interface.at(pool)
 
 
+@fixture(scope="module")
 def gm_pool(pool, coins):
     return GodModePool(pool, coins)
 
