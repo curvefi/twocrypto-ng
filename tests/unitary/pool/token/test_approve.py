@@ -3,58 +3,58 @@ import pytest
 
 
 @pytest.mark.parametrize("idx", range(5))
-def test_initial_approval_is_zero(swap, alice, users, idx):
-    assert swap.allowance(alice, users[idx]) == 0
+def test_initial_approval_is_zero(pool, alice, users, idx):
+    assert pool.allowance(alice, users[idx]) == 0
 
 
-def test_approve(swap, alice, bob):
+def test_approve(pool, alice, bob):
     with boa.env.prank(alice):
-        swap.approve(bob, 10**19)
+        pool.approve(bob, 10**19)
 
-    assert swap.allowance(alice, bob) == 10**19
+    assert pool.allowance(alice, bob) == 10**19
 
 
-def test_modify_approve_zero_nonzero(swap, alice, bob):
+def test_modify_approve_zero_nonzero(pool, alice, bob):
     with boa.env.prank(alice):
-        swap.approve(bob, 10**19)
-        swap.approve(bob, 0)
-        swap.approve(bob, 12345678)
+        pool.approve(bob, 10**19)
+        pool.approve(bob, 0)
+        pool.approve(bob, 12345678)
 
-    assert swap.allowance(alice, bob) == 12345678
+    assert pool.allowance(alice, bob) == 12345678
 
 
-def test_revoke_approve(swap, alice, bob):
+def test_revoke_approve(pool, alice, bob):
     with boa.env.prank(alice):
-        swap.approve(bob, 10**19)
-        swap.approve(bob, 0)
+        pool.approve(bob, 10**19)
+        pool.approve(bob, 0)
 
-    assert swap.allowance(alice, bob) == 0
+    assert pool.allowance(alice, bob) == 0
 
 
-def test_approve_self(swap, alice):
+def test_approve_self(pool, alice):
     with boa.env.prank(alice):
-        swap.approve(alice, 10**19)
+        pool.approve(alice, 10**19)
 
-    assert swap.allowance(alice, alice) == 10**19
+    assert pool.allowance(alice, alice) == 10**19
 
 
-def test_only_affects_target(swap, alice, bob):
+def test_only_affects_target(pool, alice, bob):
     with boa.env.prank(alice):
-        swap.approve(bob, 10**19)
+        pool.approve(bob, 10**19)
 
-    assert swap.allowance(bob, alice) == 0
+    assert pool.allowance(bob, alice) == 0
 
 
-def test_returns_true(swap, alice, bob):
+def test_returns_true(pool, alice, bob):
     with boa.env.prank(alice):
-        assert swap.approve(bob, 10**19)
+        assert pool.approve(bob, 10**19)
 
 
-def test_approval_event_fires(swap, alice, bob):
+def test_approval_event_fires(pool, alice, bob):
     with boa.env.prank(alice):
-        swap.approve(bob, 10**19)
+        pool.approve(bob, 10**19)
 
-    logs = swap.get_logs()
+    logs = pool.get_logs()
 
     assert len(logs) == 1
     assert type(logs[0]).__name__ == "Approval"
@@ -63,12 +63,12 @@ def test_approval_event_fires(swap, alice, bob):
     assert logs[0].value == 10**19
 
 
-def test_infinite_approval(swap, alice, bob):
+def test_infinite_approval(pool, alice, bob):
     with boa.env.prank(alice):
-        swap.approve(bob, 2**256 - 1)
+        pool.approve(bob, 2**256 - 1)
 
-    boa.deal(swap, alice, 10**18)
+    boa.deal(pool, alice, 10**18)
     with boa.env.prank(bob):
-        swap.transferFrom(alice, bob, 10**18)
+        pool.transferFrom(alice, bob, 10**18)
 
-    assert swap.allowance(alice, bob) == 2**256 - 1
+    assert pool.allowance(alice, bob) == 2**256 - 1
