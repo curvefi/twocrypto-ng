@@ -2239,8 +2239,8 @@ wheels = [
 
 [[package]]
 name = "titanoboa"
-version = "0.2.5"
-source = { git = "https://github.com/vyperlang/titanoboa.git?rev=3e8bc3a29c0d837e99ab666649e77acccf88d494#3e8bc3a29c0d837e99ab666649e77acccf88d494" }
+version = "0.2.6"
+source = { git = "https://github.com/vyperlang/titanoboa.git?rev=c098714a76d9b983e0dda5b2b1954f19d5dd6478#c098714a76d9b983e0dda5b2b1954f19d5dd6478" }
 dependencies = [
     { name = "eth-abi" },
     { name = "eth-account" },
@@ -2339,7 +2339,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "snekmate", specifier = "==0.1.1rc1" },
-    { name = "titanoboa", git = "https://github.com/vyperlang/titanoboa.git?rev=3e8bc3a29c0d837e99ab666649e77acccf88d494" },
+    { name = "titanoboa", git = "https://github.com/vyperlang/titanoboa.git?rev=c098714a76d9b983e0dda5b2b1954f19d5dd6478" },
     { name = "vyper", specifier = "==0.4.1" },
 ]
 
