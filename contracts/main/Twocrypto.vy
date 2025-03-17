@@ -1301,7 +1301,7 @@ def _calc_withdraw_fixed_out(
     amount_i: uint256,
 ) -> (uint256, uint256, uint256[N_COINS], uint256):
     """
-    Withdraws specified number of tokens while amount of coin `i` is also specified
+    Withdraws specified number of LP tokens while amount of coin `i` is also specified
     """
 
     token_supply: uint256 = self.totalSupply
