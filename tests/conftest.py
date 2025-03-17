@@ -1,6 +1,13 @@
 from pytest import fixture
 from tests.utils.god_mode import GodModePool
-
+from tests.utils.constants import (
+    MATH_DEPLOYER,
+    GAUGE_DEPLOYER,
+    POOL_DEPLOYER,
+    VIEW_DEPLOYER,
+    FACTORY_DEPLOYER,
+    ERC20_DEPLOYER,
+)
 import boa
 
 # Constants
@@ -110,43 +117,32 @@ def charlie():
 
 @fixture(scope="module")
 def coins():
-    erc20_factory = boa.load_partial("tests/mocks/ERC20Mock.vy")
-    return [erc20_factory("USD", "USD", 18), erc20_factory("BTC", "BTC", 18)]
+    return [ERC20_DEPLOYER.deploy("USD", "USD", 18), ERC20_DEPLOYER.deploy("BTC", "BTC", 18)]
 
 
 # Factory fixtures
 @fixture(scope="module")
 def math_contract(deployer):
     with boa.env.prank(deployer):
-        return boa.load("contracts/main/TwocryptoMath.vy")
+        return MATH_DEPLOYER.deploy()
 
 
 @fixture(scope="module")
-def gauge_interface():
-    return boa.load_partial("contracts/main/LiquidityGauge.vy")
-
-
-@fixture(scope="module")
-def gauge_implementation(deployer, gauge_interface):
+def gauge_implementation(deployer):
     with boa.env.prank(deployer):
-        return gauge_interface.deploy_as_blueprint()
+        return GAUGE_DEPLOYER.deploy_as_blueprint()
 
 
 @fixture(scope="module")
-def amm_interface():
-    return boa.load_partial("contracts/main/Twocrypto.vy")
-
-
-@fixture(scope="module")
-def amm_implementation(deployer, amm_interface):
+def amm_implementation(deployer):
     with boa.env.prank(deployer):
-        return amm_interface.deploy_as_blueprint()
+        return POOL_DEPLOYER.deploy_as_blueprint()
 
 
 @fixture(scope="module")
 def views_contract(deployer):
     with boa.env.prank(deployer):
-        return boa.load("contracts/main/TwocryptoView.vy")
+        return VIEW_DEPLOYER.deploy()
 
 
 @fixture(scope="module")
@@ -160,7 +156,7 @@ def factory(
     views_contract,
 ):
     with boa.env.prank(deployer):
-        factory = boa.load("contracts/main/TwocryptoFactory.vy")
+        factory = FACTORY_DEPLOYER.deploy()
         factory.initialise_ownership(fee_receiver, owner)
 
     with boa.env.prank(owner):
@@ -191,7 +187,6 @@ def params():
 @fixture(scope="module")
 def pool(
     factory,
-    amm_interface,
     coins,
     params,
     deployer,
@@ -213,7 +208,7 @@ def pool(
             params["initial_prices"][1],  # initial_price: uint256
         )
 
-    return amm_interface.at(pool)
+    return POOL_DEPLOYER.at(pool)
 
 
 @fixture(scope="module")
