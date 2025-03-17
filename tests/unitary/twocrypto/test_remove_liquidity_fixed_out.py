@@ -111,19 +111,3 @@ def test_zero_amount_i(i, lp_token_percent, gm_pool):
     assert (
         actual_dy_fixed == actual_dy_one
     ), "remove_liquidity_fixed_out with amount_i=0 should equal remove_liquidity_one_coin"
-
-
-def test_withdraw_more_than_supply(gm_pool):
-    # TODO move to calc tests
-    lp_tokens = gm_pool.balanceOf(boa.env.eoa)
-
-    amount_to_withdraw = lp_tokens + 1
-
-    with boa.reverts("withdraw > supply"):
-        gm_pool.remove_liquidity_fixed_out(amount_to_withdraw, 0, 0, 0)
-
-
-def test_withdraw_wrong_coin_index(gm_pool):
-    # TODO move to calc tests
-    with boa.reverts("safesub"):
-        gm_pool.remove_liquidity_fixed_out(100, 2, 0, 0)

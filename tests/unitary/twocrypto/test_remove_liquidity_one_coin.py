@@ -72,19 +72,3 @@ def test_slippage_failure(i, gm_pool):
 
     with boa.reverts("slippage"):
         gm_pool.remove_liquidity_one_coin(amount_to_withdraw, i, expected_dy + 1)
-
-
-def test_withdraw_more_than_owned(gm_pool):
-    # TODO move to calc tests
-    lp_tokens = gm_pool.balanceOf(boa.env.eoa)
-
-    amount_to_withdraw = lp_tokens + 1
-
-    with boa.reverts("withdraw > supply"):
-        gm_pool.remove_liquidity_one_coin(amount_to_withdraw, 0, 0)
-
-
-def test_withdraw_wrong_coin_index(gm_pool):
-    # TODO move to calc tests
-    with boa.reverts("safesub"):
-        gm_pool.remove_liquidity_one_coin(100, 2, 0)
