@@ -1,15 +1,15 @@
 import boa
 import pytest
 
+from tests.utils.constants import FACTORY_DEPLOYER
+
 ZERO_ADDRESS = boa.eval("empty(address)")
 
 
 @pytest.fixture(scope="module")
 def empty_factory(deployer, fee_receiver, owner):
     with boa.env.prank(deployer):
-        factory = boa.load(
-            "contracts/main/TwocryptoFactory.vy",
-        )
+        factory = FACTORY_DEPLOYER.deploy()
 
     assert factory.admin() == ZERO_ADDRESS
     assert factory.fee_receiver() == ZERO_ADDRESS
@@ -30,9 +30,7 @@ def test_deployer_cannot_set_ownership_twice(empty_factory, deployer):
 
 def test_nondeployer_cannot_set_ownership(deployer):
     with boa.env.prank(deployer):
-        factory = boa.load(
-            "contracts/main/TwocryptoFactory.vy",
-        )
+        factory = FACTORY_DEPLOYER.deploy()
 
     with boa.env.prank(boa.env.generate_address()), boa.reverts():
         factory.initialise_ownership(boa.env.generate_address(), boa.env.generate_address())

@@ -12,14 +12,8 @@ from hypothesis.stateful import (
 )
 from hypothesis.strategies import integers
 
-from tests.utils.constants import UNIX_DAY
+from tests.utils.constants import UNIX_DAY, FACTORY_DEPLOYER, ERC20_DEPLOYER
 from tests.utils.strategies import address, pool_from_preset
-
-boa.load_partial("contracts/main/TwocryptoFactory.vy")
-boa.load_partial("tests/mocks/ERC20Mock.vy")
-
-factory = boa.load_partial("contracts/main/TwocryptoFactory.vy")
-ERC20 = boa.load_partial("tests/mocks/ERC20Mock.vy")
 
 
 class StatefulBase(RuleBasedStateMachine):
@@ -57,7 +51,7 @@ class StatefulBase(RuleBasedStateMachine):
         self.total_supply = 0
 
         # caching coins here for easier access
-        self.coins = [ERC20.at(pool.coins(i)) for i in range(2)]
+        self.coins = [ERC20_DEPLOYER.at(pool.coins(i)) for i in range(2)]
 
         # these balances should follow the pool balances
         self.balances = [0, 0]
@@ -76,8 +70,8 @@ class StatefulBase(RuleBasedStateMachine):
 
         self.swapped_once = False
 
-        self.fee_receiver = factory.at(pool.factory()).fee_receiver()
-        self.admin = factory.at(pool.factory()).admin()
+        self.fee_receiver = FACTORY_DEPLOYER.at(pool.factory()).fee_receiver()
+        self.admin = FACTORY_DEPLOYER.at(pool.factory()).admin()
 
         # figure out the amount of the second token for a balanced deposit
         balanced_amounts = self.get_balanced_deposit_amounts(amount)

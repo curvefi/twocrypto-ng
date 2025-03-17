@@ -16,15 +16,14 @@ from tests.utils.constants import (
     MIN_A,
     MIN_FEE,
     MIN_GAMMA,
+    POOL_DEPLOYER,
+    ERC20_DEPLOYER,
+    FACTORY_DEPLOYER,
+    MATH_DEPLOYER,
+    GAUGE_DEPLOYER,
+    VIEW_DEPLOYER,
 )
 from tests.utils.pool_presets import all_presets
-
-# compiling contracts
-math_deployer = boa.load_partial("contracts/main/TwocryptoMath.vy")
-view_deployer = boa.load_partial("contracts/main/TwocryptoView.vy")
-factory_deployer = boa.load_partial("contracts/main/TwocryptoFactory.vy")
-amm_deployer = boa.load_partial("contracts/main/Twocrypto.vy")
-gauge_deployer = boa.load_partial("contracts/main/LiquidityGauge.vy")
 
 # ---------------- hypothesis test profiles ----------------
 
@@ -50,17 +49,17 @@ def factory(
     assume(_fee_receiver != _owner != _deployer)
 
     with boa.env.prank(_deployer):
-        amm_implementation = amm_deployer.deploy_as_blueprint()
-        gauge_implementation = gauge_deployer.deploy_as_blueprint()
+        pool_implementation = POOL_DEPLOYER.deploy_as_blueprint()
+        gauge_implementation = GAUGE_DEPLOYER.deploy_as_blueprint()
 
-        view_contract = view_deployer.deploy()
-        math_contract = math_deployer.deploy()
+        view_contract = VIEW_DEPLOYER.deploy()
+        math_contract = MATH_DEPLOYER.deploy()
 
-        _factory = factory_deployer.deploy()
+        _factory = FACTORY_DEPLOYER.deploy()
         _factory.initialise_ownership(_fee_receiver, _owner)
 
     with boa.env.prank(_owner):
-        _factory.set_pool_implementation(amm_implementation, 0)
+        _factory.set_pool_implementation(pool_implementation, 0)
         _factory.set_gauge_implementation(gauge_implementation)
         _factory.set_views_implementation(view_contract)
         _factory.set_math_implementation(math_contract)
@@ -102,7 +101,7 @@ price = integers(min_value=int(1e10), max_value=int(1e26))
 # towards 18 in case of failure (instead of 2)
 token = sampled_from([18, 6, 2]).map(
     # token = just(18).map(
-    lambda x: boa.load("tests/mocks/ERC20Mock.vy", "USD", "USD", x)
+    lambda x: ERC20_DEPLOYER.deploy("USD", "USD", x)
 )
 
 
@@ -147,7 +146,7 @@ def pool(
             draw(price),
         )
 
-    _pool = amm_deployer.at(_pool)
+    _pool = POOL_DEPLOYER.at(_pool)
 
     note(
         "deployed pool with "
