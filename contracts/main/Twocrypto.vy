@@ -925,6 +925,10 @@ def tweak_price(
 
             xcp: uint256 = self._xcp(new_D, p_new)
 
+            print("DEBUG")
+            print(xcp)
+            print(new_D)
+            print(p_new)
             # unsafe_div because we did safediv before (if vp>1e18)
             new_virtual_price: uint256 = unsafe_div(
                 10**18 * xcp, total_supply
