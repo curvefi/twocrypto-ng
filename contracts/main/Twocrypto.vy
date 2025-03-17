@@ -612,7 +612,7 @@ def remove_liquidity_fixed_out(
     """
     @notice Withdrawal where amount of token i is specified
     @param token_amount LP Token amount to burn
-    @param i token in which amount is specified
+    @param i Index of the coin to withdraw
     @param amount_i exact amount of token i which will be withdrawn
     @param min_amount_j Minimum amount of token j=1-i to withdraw.
     @param receiver Address to send the withdrawn tokens to
