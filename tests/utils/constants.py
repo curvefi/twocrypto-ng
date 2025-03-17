@@ -9,6 +9,7 @@ are consistent across different contracts.
 """
 
 import boa
+import os
 
 # TODO move this to deployers.py
 MATH_DEPLOYER = boa.load_partial("contracts/main/TwocryptoMath.vy")
@@ -18,6 +19,13 @@ POOL_DEPLOYER = boa.load_partial("contracts/main/Twocrypto.vy")
 GAUGE_DEPLOYER = boa.load_partial("contracts/main/LiquidityGauge.vy")
 ERC20_DEPLOYER = boa.load_partial("tests/mocks/ERC20Mock.vy")
 
+# Set venom flag based on CI environment variable, default to False for local development
+venom_enabled = os.getenv("VENOM", False) == "true"
+
+compiler_flags = {
+    "experimental_codegen": venom_enabled,
+}
+
 # TODO this should be tested from twocrypto directly
 # temporary workaround till https://github.com/vyperlang/titanoboa/issues/393 is fixed
 packing_utils = boa.load("contracts/main/packing_utils.vy")
@@ -26,7 +34,6 @@ PARAMS_DEPLOYER = boa.load_partial("contracts/main/params.vy")
 
 c = boa.load_partial("contracts/main/constants.vy")
 
-# TODO use constants vyper module
 N_COINS = c._constants.N_COINS
 MIN_GAMMA = c._constants.MIN_GAMMA
 MAX_GAMMA = c._constants.MAX_GAMMA

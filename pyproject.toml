@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-titanoboa = { git = "https://github.com/vyperlang/titanoboa.git", rev = "3e8bc3a29c0d837e99ab666649e77acccf88d494" }
+titanoboa = { git = "https://github.com/vyperlang/titanoboa.git", rev = "c098714a76d9b983e0dda5b2b1954f19d5dd6478" }
 
 [tool.uv]
 dev-dependencies = [
