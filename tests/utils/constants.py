@@ -9,13 +9,23 @@ are consistent across different contracts.
 """
 
 import boa
+import os
 
-MATH_DEPLOYER = boa.load_partial("contracts/main/TwocryptoMath.vy")
-VIEW_DEPLOYER = boa.load_partial("contracts/main/TwocryptoView.vy")
-FACTORY_DEPLOYER = boa.load_partial("contracts/main/TwocryptoFactory.vy")
-POOL_DEPLOYER = boa.load_partial("contracts/main/Twocrypto.vy")
-GAUGE_DEPLOYER = boa.load_partial("contracts/main/LiquidityGauge.vy")
-ERC20_DEPLOYER = boa.load_partial("tests/mocks/ERC20Mock.vy")
+# Set venom flag based on CI environment variable, default to False for local development
+venom_enabled = os.getenv("VENOM", False).lower() == "true"
+
+compiler_flags = {
+    "experimental_codegen": venom_enabled,
+}
+
+MATH_DEPLOYER = boa.load_partial("contracts/main/TwocryptoMath.vy", compiler_args=compiler_flags)
+VIEW_DEPLOYER = boa.load_partial("contracts/main/TwocryptoView.vy", compiler_args=compiler_flags)
+FACTORY_DEPLOYER = boa.load_partial(
+    "contracts/main/TwocryptoFactory.vy", compiler_args=compiler_flags
+)
+POOL_DEPLOYER = boa.load_partial("contracts/main/Twocrypto.vy", compiler_args=compiler_flags)
+GAUGE_DEPLOYER = boa.load_partial("contracts/main/LiquidityGauge.vy", compiler_args=compiler_flags)
+ERC20_DEPLOYER = boa.load_partial("tests/mocks/ERC20Mock.vy", compiler_args=compiler_flags)
 
 assert (
     POOL_DEPLOYER._constants.N_COINS
