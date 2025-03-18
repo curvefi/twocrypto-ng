@@ -671,7 +671,6 @@ def _remove_liquidity_fixed_out(
     D: uint256 = 0
     # New scaled balances after the withdrawal.
     xp: uint256[N_COINS] = empty(uint256[N_COINS])
-    # TODO I think this is no longer approximate
     approx_fee: uint256 = 0
 
     # ------------------------------------------------------------------------
@@ -1349,8 +1348,8 @@ def _calc_withdraw_fixed_out(
 
     # The only way to compute the fees is to simulate a withdrawal as we have done
     # above and then rewind and apply the fees.
-    fee: uint256 = self._calc_token_fee(amountsp, xp_new)
-    dD -= dD * fee // 10**10 + 1
+    approx_fee: uint256 = self._calc_token_fee(amountsp, xp_new)
+    dD -= dD * approx_fee // 10**10 + 1
 
     # We reduce D by the withdrawn + fees.
     D -= dD
@@ -1360,7 +1359,7 @@ def _calc_withdraw_fixed_out(
     dy: uint256 = (xp[j] - y) * PRECISION // price_scales[j]
     xp_new[j] = y
 
-    return dy, D, xp_new, fee
+    return dy, D, xp_new, approx_fee
 
 
 # ------------------------ ERC20 functions -----------------------------------
