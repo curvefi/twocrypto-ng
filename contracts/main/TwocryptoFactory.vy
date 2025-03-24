@@ -18,6 +18,7 @@ event TwocryptoPoolDeployed:
     symbol: String[32]
     coins: address[N_COINS]
     math: address
+    salt: bytes32
     precisions: uint256[N_COINS]
     packed_A_gamma: uint256
     packed_fee_params: uint256
@@ -197,12 +198,14 @@ def deploy_pool(
     packed_gamma_A: uint256 = self._pack_2(gamma, A)
 
     # pool is an ERC20 implementation
+    _salt: bytes32 = block.prevhash
     pool: address = create_from_blueprint(
         pool_implementation,  # blueprint: address
         _name,  # String[64]
         _symbol,  # String[32]
         _coins,  # address[N_COINS]
         _math_implementation,  # address
+        _salt,  # bytes32
         packed_precisions,  # uint256
         packed_gamma_A,  # uint256
         packed_fee_params,  # uint256
@@ -227,6 +230,7 @@ def deploy_pool(
         symbol=_symbol,
         coins=_coins,
         math=_math_implementation,
+        salt=_salt,
         precisions=precisions,
         packed_A_gamma=packed_gamma_A,
         packed_fee_params=packed_fee_params,
