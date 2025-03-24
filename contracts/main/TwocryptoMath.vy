@@ -28,111 +28,9 @@ version: public(constant(String[8])) = "v2.1.0"
 
 @internal
 @pure
-def _snekmate_log_2(x: uint256, roundup: bool) -> uint256:
-    """
-    @notice An `internal` helper function that returns the log in base 2
-         of `x`, following the selected rounding direction.
-    @dev This implementation is derived from Snekmate, which is authored
-         by pcaversaccio (Snekmate), distributed under the AGPL-3.0 license.
-         https://github.com/pcaversaccio/snekmate
-    @dev Note that it returns 0 if given 0. The implementation is
-         inspired by OpenZeppelin's implementation here:
-         https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/utils/math/Math.sol.
-    @param x The 32-byte variable.
-    @param roundup The Boolean variable that specifies whether
-           to round up or not. The default `False` is round down.
-    @return uint256 The 32-byte calculation result.
-    """
-    value: uint256 = x
-    result: uint256 = empty(uint256)
-
-    # The following lines cannot overflow because we have the well-known
-    # decay behaviour of `log_2(max_value(uint256)) < max_value(uint256)`.
-    if x >> 128 != empty(uint256):
-        value = x >> 128
-        result = 128
-    if value >> 64 != empty(uint256):
-        value = value >> 64
-        result = unsafe_add(result, 64)
-    if value >> 32 != empty(uint256):
-        value = value >> 32
-        result = unsafe_add(result, 32)
-    if value >> 16 != empty(uint256):
-        value = value >> 16
-        result = unsafe_add(result, 16)
-    if value >> 8 != empty(uint256):
-        value = value >> 8
-        result = unsafe_add(result, 8)
-    if value >> 4 != empty(uint256):
-        value = value >> 4
-        result = unsafe_add(result, 4)
-    if value >> 2 != empty(uint256):
-        value = value >> 2
-        result = unsafe_add(result, 2)
-    if value >> 1 != empty(uint256):
-        result = unsafe_add(result, 1)
-
-    if (roundup and (1 << result) < x):
-        result = unsafe_add(result, 1)
-
-    return result
-
-
-@internal
-@pure
 def _cbrt(x: uint256) -> uint256:
-
-    xx: uint256 = 0
-    if x >= 115792089237316195423570985008687907853269 * 10**18:
-        xx = x
-    elif x >= 115792089237316195423570985008687907853269:
-        xx = unsafe_mul(x, 10**18)
-    else:
-        xx = unsafe_mul(x, 10**36)
-
-    log2x: int256 = convert(self._snekmate_log_2(xx, False), int256)
-
-    # When we divide log2x by 3, the remainder is (log2x % 3).
-    # So if we just multiply 2**(log2x/3) and discard the remainder to calculate our
-    # guess, the newton method will need more iterations to converge to a solution,
-    # since it is missing that precision. It's a few more calculations now to do less
-    # calculations later:
-    # pow = log2(x) // 3
-    # remainder = log2(x) % 3
-    # initial_guess = 2 ** pow * cbrt(2) ** remainder
-    # substituting -> 2 = 1.26 ≈ 1260 / 1000, we get:
-    #
-    # initial_guess = 2 ** pow * 1260 ** remainder // 1000 ** remainder
-
-    remainder: uint256 = convert(log2x, uint256) % 3
-    a: uint256 = unsafe_div(
-        unsafe_mul(
-            pow_mod256(2, unsafe_div(convert(log2x, uint256), 3)),  # <- pow
-            pow_mod256(1260, remainder),
-        ),
-        pow_mod256(1000, remainder),
-    )
-
-    # Because we chose good initial values for cube roots, 7 newton raphson iterations
-    # are just about sufficient. 6 iterations would result in non-convergences, and 8
-    # would be one too many iterations. Without initial values, the iteration count
-    # can go up to 20 or greater. The iterations are unrolled. This reduces gas costs
-    # but takes up more bytecode:
-    a = unsafe_div(unsafe_add(unsafe_mul(2, a), unsafe_div(xx, unsafe_mul(a, a))), 3)
-    a = unsafe_div(unsafe_add(unsafe_mul(2, a), unsafe_div(xx, unsafe_mul(a, a))), 3)
-    a = unsafe_div(unsafe_add(unsafe_mul(2, a), unsafe_div(xx, unsafe_mul(a, a))), 3)
-    a = unsafe_div(unsafe_add(unsafe_mul(2, a), unsafe_div(xx, unsafe_mul(a, a))), 3)
-    a = unsafe_div(unsafe_add(unsafe_mul(2, a), unsafe_div(xx, unsafe_mul(a, a))), 3)
-    a = unsafe_div(unsafe_add(unsafe_mul(2, a), unsafe_div(xx, unsafe_mul(a, a))), 3)
-    a = unsafe_div(unsafe_add(unsafe_mul(2, a), unsafe_div(xx, unsafe_mul(a, a))), 3)
-
-    if x >= 115792089237316195423570985008687907853269 * 10**18:
-        a = unsafe_mul(a, 10**12)
-    elif x >= 115792089237316195423570985008687907853269:
-        a = unsafe_mul(a, 10**6)
-
-    return a
-
+    return math._cbrt(x, False)
+    
 
 @internal
 @pure
@@ -343,10 +241,8 @@ def get_y(
 
     second_cbrt: int256 = 0
     if delta1 > 0:
-        # second_cbrt = convert(self._cbrt(convert((delta1 + sqrt_val), uint256) / 2), int256)
         second_cbrt = convert(self._cbrt(convert(unsafe_add(delta1, sqrt_val), uint256) // 2), int256)
     else:
-        # second_cbrt = -convert(self._cbrt(convert(unsafe_sub(sqrt_val, delta1), uint256) / 2), int256)
         second_cbrt = -convert(self._cbrt(unsafe_div(convert(unsafe_sub(sqrt_val, delta1), uint256), 2)), int256)
 
     # C1: int256 = b_cbrt**2/10**18*second_cbrt/10**18
