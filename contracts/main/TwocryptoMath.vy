@@ -26,57 +26,6 @@ version: public(constant(String[8])) = "v2.1.0"
 # ------------------------ AMM math functions --------------------------------
 
 
-@internal
-@pure
-def _snekmate_log_2(x: uint256, roundup: bool) -> uint256:
-    """
-    @notice An `internal` helper function that returns the log in base 2
-         of `x`, following the selected rounding direction.
-    @dev This implementation is derived from Snekmate, which is authored
-         by pcaversaccio (Snekmate), distributed under the AGPL-3.0 license.
-         https://github.com/pcaversaccio/snekmate
-    @dev Note that it returns 0 if given 0. The implementation is
-         inspired by OpenZeppelin's implementation here:
-         https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/utils/math/Math.sol.
-    @param x The 32-byte variable.
-    @param roundup The Boolean variable that specifies whether
-           to round up or not. The default `False` is round down.
-    @return uint256 The 32-byte calculation result.
-    """
-    value: uint256 = x
-    result: uint256 = empty(uint256)
-
-    # The following lines cannot overflow because we have the well-known
-    # decay behaviour of `log_2(max_value(uint256)) < max_value(uint256)`.
-    if x >> 128 != empty(uint256):
-        value = x >> 128
-        result = 128
-    if value >> 64 != empty(uint256):
-        value = value >> 64
-        result = unsafe_add(result, 64)
-    if value >> 32 != empty(uint256):
-        value = value >> 32
-        result = unsafe_add(result, 32)
-    if value >> 16 != empty(uint256):
-        value = value >> 16
-        result = unsafe_add(result, 16)
-    if value >> 8 != empty(uint256):
-        value = value >> 8
-        result = unsafe_add(result, 8)
-    if value >> 4 != empty(uint256):
-        value = value >> 4
-        result = unsafe_add(result, 4)
-    if value >> 2 != empty(uint256):
-        value = value >> 2
-        result = unsafe_add(result, 2)
-    if value >> 1 != empty(uint256):
-        result = unsafe_add(result, 1)
-
-    if (roundup and (1 << result) < x):
-        result = unsafe_add(result, 1)
-
-    return result
-
 
 @internal
 @pure
