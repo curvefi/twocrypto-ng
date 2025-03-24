@@ -26,6 +26,11 @@ version: public(constant(String[8])) = "v2.1.0"
 # ------------------------ AMM math functions --------------------------------
 
 
+@internal
+@pure
+def _cbrt(x: uint256) -> uint256:
+    return math._cbrt(x, False)
+    
 
 @internal
 @pure
@@ -230,15 +235,15 @@ def get_y(
 
     b_cbrt: int256 = 0
     if b > 0:
-        b_cbrt = convert(math._cbrt(convert(b, uint256), False), int256)
+        b_cbrt = convert(self._cbrt(convert(b, uint256)), int256)
     else:
-        b_cbrt = -convert(math._cbrt(convert(-b, uint256), False), int256)
+        b_cbrt = -convert(self._cbrt(convert(-b, uint256)), int256)
 
     second_cbrt: int256 = 0
     if delta1 > 0:
-        second_cbrt = convert(math._cbrt(convert(unsafe_add(delta1, sqrt_val), uint256) // 2, False), int256)
+        second_cbrt = convert(self._cbrt(convert(unsafe_add(delta1, sqrt_val), uint256) // 2), int256)
     else:
-        second_cbrt = -convert(math._cbrt(unsafe_div(convert(unsafe_sub(sqrt_val, delta1), uint256), 2), False), int256)
+        second_cbrt = -convert(self._cbrt(unsafe_div(convert(unsafe_sub(sqrt_val, delta1), uint256), 2)), int256)
 
     # C1: int256 = b_cbrt**2/10**18*second_cbrt/10**18
     C1: int256 = unsafe_div(unsafe_mul(unsafe_div(b_cbrt**2, 10**18), second_cbrt), 10**18)
