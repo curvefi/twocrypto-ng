@@ -829,7 +829,7 @@ def _remove_liquidity_fixed_out(
     receiver: address,
 ) -> uint256:
 
-    self._claim_admin_fees()  
+    self._claim_admin_fees()
 
     A_gamma: uint256[2] = self._A_gamma()
 
@@ -1509,9 +1509,12 @@ def _calc_withdraw_fixed_out(
     else:
         D = self.D
 
+    # We adjust D not to take into account any donated amount. Donations
+    # should never be withdrawable by the LPs.
+    adjusted_D: uint256 = D - self._D_from_xcp(self.donation_xcp, price_scale)
 
     # ------------------------------ Amounts calc ----------------------------
-    dD: uint256 = unsafe_div(lp_token_amount * D, token_supply)
+    dD: uint256 = unsafe_div(lp_token_amount * adjusted_D, token_supply)
     xp_new: uint256[N_COINS] = xp
 
     price_scales: uint256[N_COINS] = [PRECISION * PRECISIONS[0], price_scale * PRECISIONS[1]]
@@ -1528,7 +1531,7 @@ def _calc_withdraw_fixed_out(
     # We compute the position on the y axis after a withdrawal of dD with the constraint
     # that xp_new[i] has been reduced by amountsp[i]. This is the new position on the curve
     # after the withdrawal without applying fees.
-    y: uint256 = (staticcall MATH.get_y(A_gamma[0], A_gamma[1], xp_new, D - dD, j))[0]
+    y: uint256 = (staticcall MATH.get_y(A_gamma[0], A_gamma[1], xp_new, adjusted_D - dD, j))[0]
     amountsp[j] = xp[j] - y
     xp_new[j] = y
 
@@ -1538,14 +1541,14 @@ def _calc_withdraw_fixed_out(
     dD -= dD * approx_fee // 10**10 + 1
 
     # We reduce D by the withdrawn + fees.
-    D -= dD
+    adjusted_D -= dD
     # Same reasoning as before except now we're charging fees.
-    y = (staticcall MATH.get_y(A_gamma[0], A_gamma[1], xp_new, D, j))[0]
+    y = (staticcall MATH.get_y(A_gamma[0], A_gamma[1], xp_new, adjusted_D, j))[0]
     # We descale y to obtain the amount dy in balances and not scaled balances.
     dy: uint256 = (xp[j] - y) * PRECISION // price_scales[j]
     xp_new[j] = y
 
-    return dy, D, xp_new, approx_fee
+    return dy, adjusted_D, xp_new, approx_fee
 
 
 # ------------------------ ERC20 functions -----------------------------------
