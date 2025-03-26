@@ -1,33 +1,36 @@
 import boa
-import pytest
-from tests.unitary.utils import GodModePool
 from tests.utils.constants import N_COINS
+from pytest import fixture
 
 
-@pytest.fixture
-def pool(swap_with_deposit, coins):
-    return GodModePool(swap_with_deposit, coins)
+def test_cant_donate_on_empty_pool(gm_pool):
+    with boa.reverts("empty pool"):
+        gm_pool.donate([10**18, 2 * 10**18])
 
 
-def test_cant_donate_on_empty_pool(pool):
-    pass  # TODO
+@fixture()
+def gm_pool_with_liquidity(gm_pool):
+    gm_pool.add_liquidity_balanced(1000 * 10**18)
+    return gm_pool
 
 
-def test_donate(pool):
+def test_donate(gm_pool_with_liquidity):
+    pool = gm_pool_with_liquidity
     assert pool.donation_xcp() == 0, "donation xcp should be 0 before any donation has been sent"
 
-    DONATION_AMOUNTS = [10**18, 2 * 10**18]
+    HALF_DONATION_DOLLAR_VALUE = 10 * 10**18  # 20 dollars
     old_virtual_price = pool.virtual_price()
     old_balances = [pool.balances(i) for i in range(N_COINS)]
     old_xcp_profit = pool.xcp_profit()
-    pool.donate(DONATION_AMOUNTS)
+    pool.donate_balanced(HALF_DONATION_DOLLAR_VALUE)
+    donated_amounts = pool.compute_balanced_amounts(HALF_DONATION_DOLLAR_VALUE)
     assert (
         pool.virtual_price() == old_virtual_price
     ), "donations should not affect virtual price before they get absorbed"
     assert pool.xcp_profit() == old_xcp_profit, "donations should not affect xcp profit"
     for i in range(N_COINS):
         assert (
-            pool.balances(i) == old_balances[i] + DONATION_AMOUNTS[i]
+            pool.balances(i) == old_balances[i] + donated_amounts[i]
         ), "donations should increase balances"
 
     assert (
@@ -35,9 +38,12 @@ def test_donate(pool):
     ), "donation xcp should be greater than 0 after a donation has been sent"
 
 
-def test_absorption(pool):
-    DONATION_AMOUNTS = [10**18, 2 * 10**18]
-    pool.donate(DONATION_AMOUNTS)
+def test_absorption(gm_pool_with_liquidity):
+    pool = gm_pool_with_liquidity
+
+    HALF_DONATION_DOLLAR_VALUE = 10 * 10**18  # 20 dollars
+    donated_amounts = pool.compute_balanced_amounts(HALF_DONATION_DOLLAR_VALUE)
+    pool.donate(donated_amounts)
 
     assert (
         pool.donation_xcp() > 0
@@ -64,8 +70,9 @@ def test_absorption(pool):
         old_xcp_profit = pool.xcp_profit()
 
 
-def test_slippage(pool, views_contract):
-    DONATION_AMOUNT = [10**18, 2 * 10**18]
+def test_slippage(gm_pool_with_liquidity, views_contract):
+    pool = gm_pool_with_liquidity
+    DONATION_AMOUNT = pool.compute_balanced_amounts(10 * 10**18)
 
     expected_amount = views_contract.calc_token_amount(
         DONATION_AMOUNT,
@@ -79,13 +86,14 @@ def test_slippage(pool, views_contract):
         pool.donate(DONATION_AMOUNT, slippage=expected_amount)
 
     # Even a small change before donation should revert because of slippage.
-    pool.add_liquidity([10**18, 10**18])
+    pool.add_liquidity_balanced(10**18)
 
     with boa.reverts("donation slippage"):
         pool.donate(DONATION_AMOUNT, slippage=expected_amount)
 
 
-def test_donation_ratio_too_high(pool):
+def test_donation_ratio_too_high(gm_pool_with_liquidity):
+    pool = gm_pool_with_liquidity
     balances = [pool.balances(i) for i in range(N_COINS)]
     donation_amounts = [balance // 9 for balance in balances]
 
