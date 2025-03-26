@@ -1,7 +1,5 @@
 import boa
 
-from tests.utils.tokens import mint_for_testing
-
 god = boa.env.generate_address()
 
 
@@ -50,7 +48,7 @@ class GodModePool:
 
     def __premint_amounts(self, amounts):
         for c, amount in zip(self.coins, amounts):
-            mint_for_testing(c, god, amount)
+            boa.deal(c, god, amount)
 
     def __update_ema(self):
         boa.env.time_travel(seconds=86400 * 7)

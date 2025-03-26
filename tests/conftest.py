@@ -212,8 +212,8 @@ def pool(
 
 
 @fixture(scope="module")
-def gm_pool(pool, coins):
-    return GodModePool(pool, coins)
+def gm_pool(pool):
+    return GodModePool(pool)
 
 
 @fixture(scope="module")
