@@ -644,20 +644,22 @@ def add_liquidity(
         old_D = self.D
 
     D: uint256 = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
+
     adjusted_D: uint256 = D - donation_D
+    adjusted_old_D: uint256 = old_D - donation_D
 
 
     token_supply: uint256 = self.totalSupply
     d_token: uint256 = 0
     if old_D > 0:
-        d_token = token_supply * adjusted_D // old_D - token_supply
+        d_token = token_supply * adjusted_D // adjusted_old_D - token_supply
     else:
         d_token = self._xcp(adjusted_D, price_scale)  # <----- Making initial virtual price equal to 1.
 
     assert d_token > 0, "nothing minted"
 
     d_token_fee: uint256 = 0
-    if old_D > 0:
+    if adjusted_old_D > 0:
 
         d_token_fee = (
             self._calc_token_fee(amountsp, xp) * d_token // 10**10 + 1
