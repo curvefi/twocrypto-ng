@@ -514,7 +514,7 @@ def donate(amounts: uint256[N_COINS], min_amount: uint256):
     dD: uint256 = unsafe_sub(D, old_D)
 
 
-        # We convert dD in "xcp units" so that donations can be compared across rebalances.
+    # We convert dD in "xcp units" so that donations can be compared across rebalances.
     new_donation_xcp: uint256 = old_donation_xcp + self._xcp(dD, price_scale)
     self.donation_xcp = new_donation_xcp
 
