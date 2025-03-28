@@ -532,13 +532,6 @@ def donate(amounts: uint256[N_COINS], min_amount: uint256):
     assert 10_000 * donation_D // D <= self.max_donation_ratio, "ratio too high"
 
 
-
-@external
-def absorb_donation() -> uint256:
-    # TODO remove once boa fixes problem
-    return self._absorb_donation()
-
-
 @internal
 def _absorb_donation() -> uint256:
     # Note that it is very important to call this function at the beginning of any

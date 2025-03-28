@@ -55,7 +55,7 @@ def test_absorption(gm_pool_with_liquidity):
 
     for i in range(86400 * 7 // 1000):
         boa.env.time_travel(seconds=1)
-        pool.absorb_donation()
+        pool.internal._absorb_donation()
 
         assert (
             pool.donation_xcp() < old_donation_xcp
