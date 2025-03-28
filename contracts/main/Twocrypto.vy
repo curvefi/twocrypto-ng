@@ -1555,7 +1555,7 @@ def _calc_withdraw_fixed_out(
     dy: uint256 = (xp[j] - y) * PRECISION // price_scales[j]
     xp_new[j] = y
 
-    return dy, adjusted_D, xp_new, approx_fee
+    return dy, D - dD, xp_new, approx_fee
 
 
 # ------------------------ ERC20 functions -----------------------------------
