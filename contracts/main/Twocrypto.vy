@@ -830,6 +830,7 @@ def _remove_liquidity_fixed_out(
 ) -> uint256:
 
     self._claim_admin_fees()
+    self._absorb_donation()
 
     A_gamma: uint256[2] = self._A_gamma()
 
@@ -1065,7 +1066,6 @@ def tweak_price(
     xcp_profit: uint256 = 10**18
     virtual_price: uint256 = 10**18
 
-    # TODO use absorb return here
     donation_D: uint256 = self._D_from_xcp(self.donation_xcp, price_scale)
 
     # `totalSupply` will not change during this function call.
@@ -1220,7 +1220,6 @@ def _claim_admin_fees():
     D: uint256 = self.D
     vprice: uint256 = self.virtual_price
     price_scale: uint256 = self.cached_price_scale
-    # TODO use absorb return here
     donation_D: uint256 = self._D_from_xcp(self.donation_xcp, price_scale)
     adjusted_D: uint256 = D - donation_D
     fee_receiver: address = staticcall factory.fee_receiver()
