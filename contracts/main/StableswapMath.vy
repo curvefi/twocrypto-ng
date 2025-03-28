@@ -26,19 +26,13 @@ version: public(constant(String[8])) = "v0.1.0"
 @pure
 def get_y(
     A: uint256,
-    _gamma: uint256,
+    _gamma: uint256, # unused, present for compatibility with twocrypto
     xp: uint256[N_COINS],
     D: uint256,
     i: uint256
-) -> uint256[2]:
+) -> uint256[2]: # returns [y, 0] (0 is unused, present for compatibility with twocrypto)
     """
-    Calculate x[i] if one reduces D from being calculated for xp to D
-
-    Done by solving quadratic equation iteratively.
-    x_1**2 + x_1 * (sum' - (A*n**n - 1) * D / (A * n**n)) = D ** (n + 1) / (n ** (2 * n) * prod' * A)
-    x_1**2 + b*x_1 = c
-
-    x_1 = (x_1**2 + c) / (2*x_1 + b)
+    Calculate x[i] for given x[j] (j != i) and D.
     """
     # x in the input is converted to the same price/precision
 
@@ -77,16 +71,13 @@ def get_y(
 
 @external
 @view
-def newton_D(_amp: uint256, gamma: uint256, _xp: uint256[N_COINS], K0_prev: uint256 = 0) -> uint256:
+def newton_D(_amp: uint256,
+    gamma: uint256, # unused, present for compatibility with twocrypto
+    _xp: uint256[N_COINS],
+    K0_prev: uint256 = 0 # unused, present for compatibility with twocrypto
+) -> uint256:
     """
-    Finding the invariant using Newton method.
-    D invariant calculation in non-overflowing integer operations
-    iteratively
-
-    A * sum(x_i) * n**n + D = A * D * n**n + D**(n+1) // (n**n * prod(x_i))
-
-    Converging solution:
-    D[j+1] = (A * n**n * sum(x_i) - D[j]**(n+1) // (n**n prod(x_i))) // (A * n**n - 1)
+    Find D for given x[i] and A.
     """
     # gamma and K0_prev are ignored
     # _amp is already multiplied by a [higher] A_MULTIPLIER
