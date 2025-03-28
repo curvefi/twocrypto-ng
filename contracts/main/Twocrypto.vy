@@ -1156,7 +1156,8 @@ def tweak_price(
 
             # ------------------------------------- Convert xp to real prices.
 
-            xcp: uint256 = self._xcp(new_D - donation_D, p_new)
+            new_donation_D: uint256 = self._D_from_xcp(self.donation_xcp, p_new)
+            xcp: uint256 = self._xcp(new_D - new_donation_D, p_new)
 
             # unsafe_div because we did safediv before (if vp>1e18)
             new_virtual_price: uint256 = unsafe_div(
