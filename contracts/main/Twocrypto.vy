@@ -123,6 +123,12 @@ event ClaimAdminFee:
     admin: indexed(address)
     tokens: uint256[N_COINS]
 
+event SetDonationDuration:
+    duration: uint256
+
+event SetMaxDonationRatio:
+    ratio: uint256
+
 
 # ----------------------- Storage/State Variables ----------------------------
 
@@ -255,7 +261,6 @@ def __init__(
     self.last_timestamp = block.timestamp
     self.xcp_profit_a = 10**18
 
-    # TODO add setters etc
     self.donation_duration = 7 * 86400
     self.max_donation_ratio = 1_000 # Max is 10_000 bps
 
@@ -2095,3 +2100,17 @@ def apply_new_parameters(
         adjustment_step=new_adjustment_step,
         ma_time=new_ma_time
     )
+
+@external
+def set_donation_duration(duration: uint256):
+    assert msg.sender == staticcall factory.admin(), "only owner"
+
+    self.donation_duration = duration
+    log SetDonationDuration(duration=duration)
+
+@external
+def set_max_donation_ratio(ratio: uint256):
+    assert msg.sender == staticcall factory.admin(), "only owner"
+
+    self.max_donation_ratio = ratio
+    log SetMaxDonationRatio(ratio=ratio)
