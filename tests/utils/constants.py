@@ -10,7 +10,7 @@ are consistent across different contracts.
 
 import boa
 
-MATH_DEPLOYER = boa.load_partial("contracts/main/TwocryptoMath.vy")
+MATH_DEPLOYER = boa.load_partial("contracts/main/StableswapMath.vy")
 VIEW_DEPLOYER = boa.load_partial("contracts/main/TwocryptoView.vy")
 FACTORY_DEPLOYER = boa.load_partial("contracts/main/TwocryptoFactory.vy")
 POOL_DEPLOYER = boa.load_partial("contracts/main/Twocrypto.vy")
@@ -26,19 +26,19 @@ assert (
 
 N_COINS = POOL_DEPLOYER._constants.N_COINS
 
-assert (
-    POOL_DEPLOYER._constants.MIN_GAMMA == MATH_DEPLOYER._constants.MIN_GAMMA
-), "MIN_GAMMA mismatch"
+# assert (
+#     POOL_DEPLOYER._constants.MIN_GAMMA == MATH_DEPLOYER._constants.MIN_GAMMA
+# ), "MIN_GAMMA mismatch"
 
 MIN_GAMMA = POOL_DEPLOYER._constants.MIN_GAMMA
 
-assert (
-    POOL_DEPLOYER._constants.MAX_GAMMA == MATH_DEPLOYER._constants.MAX_GAMMA
-), "MAX_GAMMA mismatch"
+# assert (
+#     POOL_DEPLOYER._constants.MAX_GAMMA == MATH_DEPLOYER._constants.MAX_GAMMA
+# ), "MAX_GAMMA mismatch"
 
 MAX_GAMMA = POOL_DEPLOYER._constants.MAX_GAMMA
 
-MAX_GAMMA_SMALL = MATH_DEPLOYER._constants.MAX_GAMMA_SMALL
+# MAX_GAMMA_SMALL = MATH_DEPLOYER._constants.MAX_GAMMA_SMALL
 
 assert (
     POOL_DEPLOYER._constants.A_MULTIPLIER
