@@ -453,6 +453,15 @@ def donate(amounts: uint256[N_COINS], min_amount: uint256):
             an `add_liquidity` operation. Can be computed from `calc_token_amount`,
             by passing `donation=True`.
     """
+    # If `donation_xcp` contains some donations BEFORE calling this function,
+    # then we need to absorb them to update the donation clock and avoid
+    # manipulations. If we don't do this, given the `donation_xcp == 0` an
+    # attacker could call `donate` with a small amount of coins, then if a
+    # long enough time passes, the time elapsed will be the one from the
+    # small donation and the elapsed time will be counted incorrectly leading
+    # to a bigger amount of donation_xcp to be absorbed. If an absorption is
+    # not required then this function will just early return.
+    self._absorb_donation()
 
     # This function intentionally doesn't update virtual price because it gets slowly
     # increased by the _absorb_donation function. This allows not to spend the whole donation
