@@ -1,6 +1,7 @@
 import boa
 from tests.utils.constants import N_COINS
 from pytest import fixture
+import pytest
 
 
 def test_cant_donate_on_empty_pool(gm_pool):
@@ -106,3 +107,42 @@ def test_donation_ratio_too_high(gm_pool_with_liquidity):
 
     with boa.reverts("ratio too high"):
         pool.donate(donation_amounts)
+
+
+@pytest.mark.parametrize("time_elapsed", [1, 86400, 86400 * 7, 86400 * 30])
+def test_reset_elapsed_time(gm_pool_with_liquidity, time_elapsed):
+    pool = gm_pool_with_liquidity
+
+    assert (
+        pool.last_donation_absorb_timestamp() == 0
+    ), "absorb timestamp should be zero if donations never occurred"
+
+    boa.env.time_travel(seconds=time_elapsed)
+    pool.donate_balanced(10 * 10**15)
+
+    atomic_double_donation_xcp = None
+    with boa.env.anchor():
+        pool.donate_balanced(10 * 10**15)
+        atomic_double_donation_xcp = pool.donation_xcp()
+
+    assert (
+        pool.last_donation_absorb_timestamp() == boa.env.timestamp
+    ), "absorb timestamp should be updated, donation occurred for the first time"
+
+    # this is the logic in the code to computed the absorbed amount
+    absorbed_amount = min(
+        pool.donation_xcp(), pool.donation_xcp() * time_elapsed // pool.donation_duration()
+    )
+
+    boa.env.time_travel(seconds=time_elapsed)
+    pool.donate_balanced(10 * 10**15)
+
+    assert (
+        pool.last_donation_absorb_timestamp() == boa.env.timestamp
+    ), "absorb timestamp should be updated, donation occurred for the second time"
+
+    # this test makes sure that given a double donation, a part of the first
+    # donation has been absorbed and the rest is still in the donation buffer.
+    assert (
+        pool.donation_xcp() == atomic_double_donation_xcp - absorbed_amount
+    ), "donation xcp should be less than atomic double donation"
