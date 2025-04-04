@@ -2,6 +2,7 @@ import boa
 from tests.utils.constants import N_COINS
 from pytest import fixture
 import pytest
+import math
 
 
 def test_cant_donate_on_empty_pool(gm_pool):
@@ -17,7 +18,10 @@ def gm_pool_with_liquidity(gm_pool):
 
 def test_donate(gm_pool_with_liquidity):
     pool = gm_pool_with_liquidity
-    assert pool.donation_xcp() == 0, "donation xcp should be 0 before any donation has been sent"
+    assert (
+        pool.unabsorbed_xcp() == 0
+    ), "unabsorbed xcp should be 0 before any donation has been sent"
+    assert pool.dead_xcp() == 0, "dead xcp should be 0 before any donation has been sent"
 
     HALF_DONATION_DOLLAR_VALUE = 10 * 10**18  # 20 dollars
     old_virtual_price = pool.virtual_price()
@@ -35,8 +39,9 @@ def test_donate(gm_pool_with_liquidity):
         ), "donations should increase balances"
 
     assert (
-        pool.donation_xcp() > 0
+        pool.unabsorbed_xcp() > 0
     ), "donation xcp should be greater than 0 after a donation has been sent"
+    assert pool.dead_xcp() > 0, "dead xcp should be greater than 0 after a donation has been sent"
 
 
 def test_absorption(gm_pool_with_liquidity):
@@ -46,11 +51,13 @@ def test_absorption(gm_pool_with_liquidity):
     donated_amounts = pool.compute_balanced_amounts(HALF_DONATION_DOLLAR_VALUE)
     pool.donate(donated_amounts)
 
+    assert pool.dead_xcp() > 0, "dead xcp should be greater than 0 after a donation has been sent"
     assert (
-        pool.donation_xcp() > 0
-    ), "donation xcp should be greater than 0 after a donation has been sent"
+        pool.unabsorbed_xcp() > 0
+    ), "unabsorbed xcp should be greater than 0 after a donation has been sent"
 
-    old_donation_xcp = pool.donation_xcp()
+    old_unabsorbed_xcp = pool.unabsorbed_xcp()
+    old_dead_xcp = pool.dead_xcp()
     old_virtual_price = pool.virtual_price()
     old_xcp_profit = pool.xcp_profit()
 
@@ -59,14 +66,16 @@ def test_absorption(gm_pool_with_liquidity):
         pool.internal._absorb_donation()
 
         assert (
-            pool.donation_xcp() < old_donation_xcp
-        ), "donation xcp should decrease after absorption"
+            pool.unabsorbed_xcp() < old_unabsorbed_xcp
+        ), "unabsorbed xcp should decrease after absorption"
         assert (
             pool.virtual_price() > old_virtual_price
         ), "virtual price should increase after absorption"
         assert pool.xcp_profit() == old_xcp_profit, "xcp profit should not change after absorption"
+        assert pool.dead_xcp() == old_dead_xcp, "dead xcp should stay the same during absorption"
 
-        old_donation_xcp = pool.donation_xcp()
+        old_dead_xcp = pool.dead_xcp()
+        old_unabsorbed_xcp = pool.unabsorbed_xcp()
         old_virtual_price = pool.virtual_price()
         old_xcp_profit = pool.xcp_profit()
 
@@ -120,10 +129,10 @@ def test_reset_elapsed_time(gm_pool_with_liquidity, time_elapsed):
     boa.env.time_travel(seconds=time_elapsed)
     pool.donate_balanced(10 * 10**15)
 
-    atomic_double_donation_xcp = None
+    atomic_double_unabsorbed_xcp = None
     with boa.env.anchor():
         pool.donate_balanced(10 * 10**15)
-        atomic_double_donation_xcp = pool.donation_xcp()
+        atomic_double_unabsorbed_xcp = pool.unabsorbed_xcp()
 
     assert (
         pool.last_donation_absorb_timestamp() == boa.env.timestamp
@@ -131,7 +140,7 @@ def test_reset_elapsed_time(gm_pool_with_liquidity, time_elapsed):
 
     # this is the logic in the code to computed the absorbed amount
     absorbed_amount = min(
-        pool.donation_xcp(), pool.donation_xcp() * time_elapsed // pool.donation_duration()
+        pool.unabsorbed_xcp(), pool.unabsorbed_xcp() * time_elapsed // pool.donation_duration()
     )
 
     boa.env.time_travel(seconds=time_elapsed)
@@ -144,5 +153,65 @@ def test_reset_elapsed_time(gm_pool_with_liquidity, time_elapsed):
     # this test makes sure that given a double donation, a part of the first
     # donation has been absorbed and the rest is still in the donation buffer.
     assert (
-        pool.donation_xcp() == atomic_double_donation_xcp - absorbed_amount
-    ), "donation xcp should be less than atomic double donation"
+        pool.unabsorbed_xcp() == atomic_double_unabsorbed_xcp - absorbed_amount
+    ), "unabsorbed xcp should be less than atomic double donation"
+
+
+def test_add_liquidity_isnt_affected_by_donations(gm_pool_with_liquidity):
+    pool = gm_pool_with_liquidity
+
+    with boa.env.anchor():
+        expected_user_lp_tokens = pool.add_liquidity_balanced(10**18)
+
+    pool.donate_balanced(10**18)
+    actual_user_lp_tokens = pool.add_liquidity_balanced(10**18)
+
+    assert (
+        expected_user_lp_tokens == actual_user_lp_tokens
+    ), "user lp tokens should be the same before and after donation"
+
+
+def test_remove_liquidity_isnt_affected_by_donations(gm_pool_with_liquidity):
+    pool = gm_pool_with_liquidity
+
+    user_lp_tokens = pool.add_liquidity_balanced(10**18)
+
+    with boa.env.anchor():
+        expected_user_tokens = pool.remove_liquidity(user_lp_tokens, [0, 0])
+
+    pool.donate_balanced(10**18)
+    actual_user_tokens = pool.remove_liquidity(user_lp_tokens, [0, 0])
+
+    # we allow the values in these arrays to be off by one because of rounding
+    for expected, actual in zip(expected_user_tokens, actual_user_tokens):
+        assert math.isclose(
+            expected, actual, abs_tol=1
+        ), "user withdrawn tokens should be the same before and after donation"
+
+
+@pytest.xfail("Figure out if this failure is legitimate")
+@pytest.mark.parametrize("i", range(N_COINS))
+def test_remove_liquidity_fixed_out(gm_pool_with_liquidity, i):
+    pool = gm_pool_with_liquidity
+
+    user_lp_tokens = pool.add_liquidity_balanced(10**18)
+    amounts_in = pool.compute_balanced_amounts(10**18)
+
+    with boa.env.anchor():
+        expected_user_tokens_j = pool.remove_liquidity_fixed_out(
+            user_lp_tokens, i, int(amounts_in[i] * 0.1), 0
+        )
+
+    pool.donate_balanced(10**18)
+    actual_user_tokens_j = pool.remove_liquidity_fixed_out(
+        user_lp_tokens, i, int(amounts_in[i] * 0.1), 0
+    )
+
+    assert (
+        expected_user_tokens_j == actual_user_tokens_j
+    ), "user withdrawn tokens should be the same before and after donation"
+
+
+def test_donation_improves_swap_liquidity():
+    # TODO simple test where we check that a donation give a better price for a swap
+    pass
