@@ -1,0 +1,609 @@
+# Events
+
+event AddLiquidity:
+    provider: indexed(address)
+    token_amounts: uint256[2]
+    fee: uint256
+    token_supply: uint256
+    price_scale: uint256
+
+
+event RemoveLiquidity:
+    provider: indexed(address)
+    token_amounts: uint256[2]
+    token_supply: uint256
+
+
+event Transfer:
+    sender: address
+    receiver: address
+    value: uint256
+
+
+event Approval:
+    owner: address
+    spender: address
+    value: uint256
+
+
+event TokenExchange:
+    buyer: address
+    sold_id: uint256
+    tokens_sold: uint256
+    bought_id: uint256
+    tokens_bought: uint256
+    fee: uint256
+    price_scale: uint256
+
+
+event ClaimAdminFee:
+    admin: address
+    tokens: uint256[2]
+
+
+event RemoveLiquidityImbalance:
+    provider: address
+    lp_token_amount: uint256
+    token_amounts: uint256[2]
+    approx_fee: uint256
+    price_scale: uint256
+
+
+event RampAgamma:
+    initial_A: uint256
+    future_A: uint256
+    initial_gamma: uint256
+    future_gamma: uint256
+    initial_time: uint256
+    future_time: uint256
+
+
+event StopRampA:
+    current_A: uint256
+    current_gamma: uint256
+    time: uint256
+
+
+event NewParameters:
+    mid_fee: uint256
+    out_fee: uint256
+    fee_gamma: uint256
+    allowed_extra_profit: uint256
+    adjustment_step: uint256
+    ma_time: uint256
+
+
+# Functions
+
+@external
+def transfer(to: address, amount: uint256) -> bool:
+    ...
+
+
+@external
+def transferFrom(owner: address, to: address, amount: uint256) -> bool:
+    ...
+
+
+@external
+def approve(spender: address, amount: uint256) -> bool:
+    ...
+
+
+@view
+@external
+def balanceOf(arg0: address) -> uint256:
+    ...
+
+
+@view
+@external
+def allowance(arg0: address, arg1: address) -> uint256:
+    ...
+
+
+@view
+@external
+def totalSupply() -> uint256:
+    ...
+
+
+@view
+@external
+def name() -> String[64]:
+    ...
+
+
+@view
+@external
+def symbol() -> String[32]:
+    ...
+
+
+@view
+@external
+def decimals() -> uint8:
+    ...
+
+@external
+def add_liquidity(amounts: uint256[2], min_mint_amount: uint256, receiver: address) -> uint256:
+    """
+    @notice Adds liquidity into the pool.
+    @param amounts Amounts of each coin to add.
+    @param min_mint_amount Minimum amount of LP to mint.
+    @param receiver Address to send the LP tokens to. Default is msg.sender
+    @return uint256 Amount of LP tokens received by the `receiver
+    """
+    ...
+
+@external
+def remove_liquidity(amount: uint256, min_amounts: uint256[2], receiver: address) -> uint256[2]:
+    """
+    @notice This withdrawal method is very safe, does no complex math since
+            tokens are withdrawn in balanced proportions. No fees are charged.
+    @param amount Amount of LP tokens to burn
+    @param min_amounts Minimum amounts of tokens to withdraw
+    @param receiver Address to send the withdrawn tokens to
+    @return uint256[3] Amount of pool tokens received by the `receiver`
+    """
+    ...
+
+
+@external
+def exchange(i: uint256, j: uint256, dx: uint256, min_dy: uint256, receiver: address) -> uint256:
+    """
+    @notice Exchange using wrapped native token by default
+    @param i Index value for the input coin
+    @param j Index value for the output coin
+    @param dx Amount of input coin being swapped in
+    @param min_dy Minimum amount of output coin to receive
+    @param receiver Address to send the output coin to. Default is msg.sender
+    @return uint256 Amount of tokens at index j received by the `receiver
+    """
+    ...
+
+
+@external
+def exchange_received(i: uint256, j: uint256, dx: uint256, min_dy: uint256, receiver: address) -> uint256:
+    """
+    @notice Exchange: but user must transfer dx amount of coin[i] tokens to pool first.
+            Pool will not call transferFrom and will only check if a surplus of
+            coins[i] is greater than or equal to `dx`.
+    @dev Use-case is to reduce the number of redundant ERC20 token
+         transfers in zaps. Primarily for dex-aggregators/arbitrageurs/searchers.
+         Note for users: please transfer + exchange_received in 1 tx.
+    @param i Index value for the input coin
+    @param j Index value for the output coin
+    @param dx Amount of input coin being swapped in
+    @param min_dy Minimum amount of output coin to receive
+    @param receiver Address to send the output coin to
+    @return uint256 Amount of tokens at index j received by the `receiver`
+    """
+    ...
+
+
+@external
+def remove_liquidity_fixed_out(token_amount: uint256, i: uint256, amount_i: uint256, min_amount_j: uint256, receiver: address) -> uint256:
+    """
+    @notice Withdrawal where amount of token i is specified
+    @param token_amount LP Token amount to burn
+    @param i Index of the coin to withdraw
+    @param amount_i exact amount of token i which will be withdrawn
+    @param min_amount_j Minimum amount of token j=1-i to withdraw.
+    @param receiver Address to send the withdrawn tokens to
+    @return Amount of tokens at index j=1-i received by the `receiver`
+    """
+    ...
+
+@external
+def remove_liquidity_one_coin(
+    lp_token_amount: uint256,
+    i: uint256,
+    min_amount: uint256,
+    receiver: address = msg.sender
+) -> uint256:
+    """
+    @notice Withdraw liquidity in a single coin.
+    @param lp_token_amount Amount of LP tokens to burn.
+    @param i Index of the coin to withdraw.
+    @param min_amount Minimum amount of coin[i] to withdraw.
+    @param receiver Address to send the withdrawn tokens to
+    @return Amount of coin[i] tokens received by the `receiver`
+    """
+    ...
+
+
+@view
+@external
+def calc_withdraw_fixed_out(lp_token_amount: uint256, i: uint256, amount_i: uint256) -> uint256:
+    """
+    @notice Calculate the amounts of coin[1-i] that will be received for burning the lp
+    tokens while specifying the amount of coin[i] to be withdrawn.
+    @param lp_token_amount LP Token amount to burn.
+    @param i index of the token for which the withdrawal amount is specified.
+    @param amount_i exact amount of token i which will be withdrawn.
+    @return uint256 Amount of token 1-i received for burning token_amount LP tokens.
+    """
+    ...
+
+
+@view
+@external
+def calc_withdraw_one_coin(lp_token_amount: uint256, i: uint256) -> uint256:
+    """
+    @notice Calculate how much of coin[i] will be received when withdrawing liquidity in a single coin.
+    @dev This function uses the logic from _calc_withdraw_fixed_out by setting amount_i to 0.
+        This forces the withdrawal to be entirely in the other coin.
+    @param lp_token_amount LP Token amount to burn.
+    @param i index of the token to be withdrawn
+    @return uint256 Amount of coin[i] tokens received for burning token_amount LP tokens.
+    """
+    ...
+
+
+@view
+@external
+def fee_receiver() -> address:
+    """
+    @notice Returns the address of the admin fee receiver.
+    @return address Fee receiver.
+    """
+    ...
+
+
+@view
+@external
+def admin() -> address:
+    """
+    @notice Returns the address of the pool's admin.
+    @return address Admin.
+    """
+    ...
+
+
+@view
+@external
+def calc_token_amount(amounts: uint256[2], deposit: bool) -> uint256:
+    """
+    @notice Calculate LP tokens minted or to be burned for depositing or
+            removing `amounts` of coins
+    @dev Includes fee.
+    @param amounts Amounts of tokens being deposited or withdrawn
+    @param deposit True if it is a deposit action, False if withdrawn.
+    @return uint256 Amount of LP tokens deposited or withdrawn.
+    """
+    ...
+
+
+@view
+@external
+def get_dy(i: uint256, j: uint256, dx: uint256) -> uint256:
+    """
+    @notice Get amount of coin[j] tokens received for swapping in dx amount of coin[i]
+    @dev Includes fee.
+    @param i index of input token. Check pool.coins(i) to get coin address at ith index
+    @param j index of output token
+    @param dx amount of input coin[i] tokens
+    @return uint256 Exact amount of output j tokens for dx amount of i input tokens.
+    """
+    ...
+
+
+@view
+@external
+def get_dx(i: uint256, j: uint256, dy: uint256) -> uint256:
+    """
+    @notice Get amount of coin[i] tokens to input for swapping out dy amount
+            of coin[j]
+    @dev This is an approximate method, and returns estimates close to the input
+         amount. Expensive to call on-chain.
+    @param i index of input token. Check pool.coins(i) to get coin address at
+           ith index
+    @param j index of output token
+    @param dy amount of input coin[j] tokens received
+    @return uint256 Approximate amount of input i tokens to get dy amount of j tokens.
+    """
+    ...
+
+
+@view
+@external
+def lp_price() -> uint256:
+    """
+    @notice Calculates the current price of the LP token w.r.t coin at the
+            0th index
+    @return uint256 LP price.
+    """
+    ...
+
+
+@view
+@external
+def get_virtual_price() -> uint256:
+    """
+    @notice Calculates the current virtual price of the pool LP token.
+    @dev Not to be confused with `self.virtual_price` which is a cached
+         virtual price.
+    @return uint256 Virtual Price.
+    """
+    ...
+
+
+@view
+@external
+def price_oracle() -> uint256:
+    """
+    @notice Returns the oracle price of the coin at index `k` w.r.t the coin
+            at index 0.
+    @dev The oracle is an exponential moving average, with a periodicity
+         determined by `self.ma_time`. The aggregated prices are cached state
+         prices (dy/dx) calculated AFTER the latest trade.
+    @return uint256 Price oracle value of kth coin.
+    """
+    ...
+
+
+@view
+@external
+def price_scale() -> uint256:
+    """
+    @notice Returns the price scale of the coin at index `k` w.r.t the coin
+            at index 0.
+    @dev Price scale determines the price band around which liquidity is
+         concentrated.
+    @return uint256 Price scale of coin.
+    """
+    ...
+
+
+@view
+@external
+def fee() -> uint256:
+    """
+    @notice Returns the fee charged by the pool at current state.
+    @dev Not to be confused with the fee charged at liquidity action, since
+         there the fee is calculated on `xp` AFTER liquidity is added or
+         removed.
+    @return uint256 fee bps.
+    """
+    ...
+
+
+@view
+@external
+def calc_token_fee(amounts: uint256[2], xp: uint256[2]) -> uint256:
+    """
+    @notice Returns the fee charged on the given amounts for add_liquidity.
+    @param amounts The amounts of coins being added to the pool.
+    @param xp The current balances of the pool multiplied by coin precisions.
+    @return uint256 Fee charged.
+    """
+    ...
+
+
+@view
+@external
+def A() -> uint256:
+    """
+    @notice Returns the current pool amplification parameter.
+    @return uint256 A param.
+    """
+    ...
+
+
+@view
+@external
+def gamma() -> uint256:
+    """
+    @notice Returns the current pool gamma parameter.
+    @return uint256 gamma param.
+    """
+    ...
+
+
+@view
+@external
+def mid_fee() -> uint256:
+    """
+    @notice Returns the current mid fee
+    @return uint256 mid_fee value.
+    """
+    ...
+
+
+@view
+@external
+def out_fee() -> uint256:
+    """
+    @notice Returns the current out fee
+    @return uint256 out_fee value.
+    """
+    ...
+
+
+@view
+@external
+def fee_gamma() -> uint256:
+    """
+    @notice Returns the current fee gamma
+    @return uint256 fee_gamma value.
+    """
+    ...
+
+
+@view
+@external
+def allowed_extra_profit() -> uint256:
+    """
+    @notice Returns the current allowed extra profit
+    @return uint256 allowed_extra_profit value.
+    """
+    ...
+
+
+@view
+@external
+def adjustment_step() -> uint256:
+    """
+    @notice Returns the current adjustment step
+    @return uint256 adjustment_step value.
+    """
+    ...
+
+
+@view
+@external
+def ma_time() -> uint256:
+    """
+    @notice Returns the current moving average time in seconds
+    @dev To get time in seconds, the parameter is multipled by ln(2)
+         One can expect off-by-one errors here.
+    @return uint256 ma_time value.
+    """
+    ...
+
+
+@view
+@external
+def precisions() -> uint256[2]:
+    """
+    @notice Returns the precisions of each coin in the pool.
+    @return uint256[2] precisions of coins.
+    """
+    ...
+
+
+@view
+@external
+def fee_calc(xp: uint256[2]) -> uint256:
+    """
+    @notice Returns the fee charged by the pool at current state.
+    @param xp The current balances of the pool multiplied by coin precisions.
+    @return uint256 Fee value.
+    """
+    ...
+
+
+@external
+def ramp_A_gamma(future_A: uint256, future_gamma: uint256, future_time: uint256):
+    ...
+
+
+@external
+def stop_ramp_A_gamma():
+    ...
+
+
+@external
+def apply_new_parameters(_new_mid_fee: uint256, _new_out_fee: uint256, _new_fee_gamma: uint256, _new_allowed_extra_profit: uint256, _new_adjustment_step: uint256, _new_ma_time: uint256):
+    ...
+
+
+# TODO fix this
+# @view
+# @external
+# def MATH() -> Math:
+    # ...
+
+
+@view
+@external
+def coins(arg0: uint256) -> address:
+    ...
+
+
+# TODO fix this
+# @view
+# @external
+# def factory() -> address:
+    # ...
+
+
+@view
+@external
+def last_prices() -> uint256:
+    ...
+
+
+@view
+@external
+def last_timestamp() -> uint256:
+    ...
+
+
+@view
+@external
+def initial_A_gamma() -> uint256:
+    ...
+
+
+@view
+@external
+def initial_A_gamma_time() -> uint256:
+    ...
+
+
+@view
+@external
+def future_A_gamma() -> uint256:
+    ...
+
+
+@view
+@external
+def future_A_gamma_time() -> uint256:
+    ...
+
+
+@view
+@external
+def balances(arg0: uint256) -> uint256:
+    ...
+
+
+@view
+@external
+def D() -> uint256:
+    ...
+
+
+@view
+@external
+def xcp_profit() -> uint256:
+    ...
+
+
+@view
+@external
+def xcp_profit_a() -> uint256:
+    ...
+
+
+@view
+@external
+def virtual_price() -> uint256:
+    ...
+
+
+@view
+@external
+def packed_rebalancing_params() -> uint256:
+    ...
+
+
+@view
+@external
+def packed_fee_params() -> uint256:
+    ...
+
+
+@view
+@external
+def ADMIN_FEE() -> uint256:
+    ...
+
+
+@view
+@external
+def version() -> String[8]:
+    ...

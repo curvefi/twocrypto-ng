@@ -1,0 +1,208 @@
+# Structs
+
+struct PoolArray:
+    liquidity_gauge: address
+    coins: address[2]
+    decimals: uint256[2]
+    implementation: address
+
+
+# Events
+
+event TwocryptoPoolDeployed:
+    pool: address
+    name: String[64]
+    symbol: String[32]
+    coins: address[2]
+    math: address
+    salt: bytes32
+    precisions: uint256[2]
+    packed_A_gamma: uint256
+    packed_fee_params: uint256
+    packed_rebalancing_params: uint256
+    packed_prices: uint256
+    deployer: address
+
+
+event LiquidityGaugeDeployed:
+    pool: address
+    gauge: address
+
+
+event UpdateFeeReceiver:
+    old_fee_receiver: address
+    new_fee_receiver: address
+
+
+event UpdatePoolImplementation:
+    implementation_id: uint256
+    old_pool_implementation: address
+    new_pool_implementation: address
+
+
+event UpdateGaugeImplementation:
+    old_gauge_implementation: address
+    new_gauge_implementation: address
+
+
+event UpdateMathImplementation:
+    old_math_implementation: address
+    new_math_implementation: address
+
+
+event UpdateViewsImplementation:
+    old_views_implementation: address
+    new_views_implementation: address
+
+
+event TransferOwnership:
+    old_owner: address
+    new_owner: address
+
+
+# Functions
+
+@external
+def initialise_ownership(_fee_receiver: address, _admin: address):
+    ...
+
+
+@external
+def deploy_pool(_name: String[64], _symbol: String[32], _coins: address[2], implementation_id: uint256, A: uint256, gamma: uint256, mid_fee: uint256, out_fee: uint256, fee_gamma: uint256, allowed_extra_profit: uint256, adjustment_step: uint256, ma_exp_time: uint256, initial_price: uint256) -> address:
+    ...
+
+
+@external
+def deploy_gauge(_pool: address) -> address:
+    ...
+
+
+@external
+def set_fee_receiver(_fee_receiver: address):
+    ...
+
+
+@external
+def set_pool_implementation(_pool_implementation: address, _implementation_index: uint256):
+    ...
+
+
+@external
+def set_gauge_implementation(_gauge_implementation: address):
+    ...
+
+
+@external
+def set_views_implementation(_views_implementation: address):
+    ...
+
+
+@external
+def set_math_implementation(_math_implementation: address):
+    ...
+
+
+@external
+def commit_transfer_ownership(_addr: address):
+    ...
+
+
+@external
+def accept_transfer_ownership():
+    ...
+
+
+@view
+@external
+def find_pool_for_coins(_from: address, _to: address, i: uint256) -> address:
+    ...
+
+
+@view
+@external
+def pool_count() -> uint256:
+    ...
+
+
+@view
+@external
+def get_coins(_pool: address) -> address[2]:
+    ...
+
+
+@view
+@external
+def get_decimals(_pool: address) -> uint256[2]:
+    ...
+
+
+@view
+@external
+def get_balances(_pool: address) -> uint256[2]:
+    ...
+
+
+@view
+@external
+def get_coin_indices(_pool: address, _from: address, _to: address) -> (uint256, uint256):
+    ...
+
+
+@view
+@external
+def get_gauge(_pool: address) -> address:
+    ...
+
+
+@view
+@external
+def get_market_counts(coin_a: address, coin_b: address) -> uint256:
+    ...
+
+
+@view
+@external
+def admin() -> address:
+    ...
+
+
+@view
+@external
+def future_admin() -> address:
+    ...
+
+
+@view
+@external
+def fee_receiver() -> address:
+    ...
+
+
+@view
+@external
+def pool_implementations(arg0: uint256) -> address:
+    ...
+
+
+@view
+@external
+def gauge_implementation() -> address:
+    ...
+
+
+@view
+@external
+def views_implementation() -> address:
+    ...
+
+
+@view
+@external
+def math_implementation() -> address:
+    ...
+
+
+@view
+@external
+def pool_list(arg0: uint256) -> address:
+    ...

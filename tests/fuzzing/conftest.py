@@ -1,7 +1,7 @@
 import boa
 import pytest
 
-from tests.utils.constants import MATH_DEPLOYER
+from tests.utils.deployers import MATH_DEPLOYER
 
 
 @pytest.fixture(scope="module")

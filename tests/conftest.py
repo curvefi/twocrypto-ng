@@ -1,6 +1,6 @@
 from pytest import fixture
 from tests.utils.god_mode import GodModePool
-from tests.utils.constants import (
+from tests.utils.deployers import (
     MATH_DEPLOYER,
     GAUGE_DEPLOYER,
     POOL_DEPLOYER,
