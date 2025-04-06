@@ -7,8 +7,29 @@
 @dev All prices in the AMM are with respect to the first token in the pool.
 """
 
+# The AMM contract is also the LP token.
 from ethereum.ercs import IERC20
-implements: IERC20  # <--------------------- AMM contract is also the LP token.
+implements: IERC20  
+
+from ethereum.ercs import IERC20Detailed
+implements: IERC20Detailed
+
+import lp_token
+initializes: lp_token
+exports: (
+    lp_token.transfer,
+    lp_token.transferFrom,
+    lp_token.approve,
+    lp_token.balanceOf,
+    lp_token.allowance,
+    lp_token.totalSupply,
+    lp_token.name,
+    lp_token.symbol,
+    lp_token.decimals,
+)
+
+from snekmate.tokens import erc20
+uses: erc20 # erc20 is initialized by the lp_token module.
 
 # --------------------------------- Interfaces -------------------------------
 
@@ -51,16 +72,6 @@ interface Views:
 
 
 # ------------------------------- Events -------------------------------------
-
-event Transfer:
-    sender: indexed(address)
-    receiver: indexed(address)
-    value: uint256
-
-event Approval:
-    owner: indexed(address)
-    spender: indexed(address)
-    value: uint256
 
 event TokenExchange:
     buyer: indexed(address)
@@ -186,16 +197,7 @@ MAX_A_CHANGE: constant(uint256) = 10
 MIN_GAMMA: constant(uint256) = 10**10
 MAX_GAMMA: constant(uint256) = 199 * 10**15 # 1.99 * 10**17
 
-# ----------------------- ERC20 Specific vars --------------------------------
-
-name: public(immutable(String[64]))
-symbol: public(immutable(String[32]))
-decimals: public(constant(uint8)) = 18
 version: public(constant(String[8])) = "v2.1.0"
-
-balanceOf: public(HashMap[address, uint256])
-allowance: public(HashMap[address, HashMap[address, uint256]])
-totalSupply: public(uint256)
 
 # ----------------------- Contract -------------------------------------------
 
@@ -216,8 +218,7 @@ def __init__(
     MATH = Math(_math)
 
     factory = Factory(msg.sender)
-    name = _name
-    symbol = _symbol
+    lp_token.__init__(_name, _symbol)
     coins = _coins
 
     PRECISIONS = self._unpack_2(packed_precisions)  # <-- Precisions of coins.
@@ -248,7 +249,7 @@ def __init__(
     self.last_timestamp = block.timestamp
     self.xcp_profit_a = 10**18
 
-    log Transfer(sender=empty(address), receiver=self, value=0)  # <------- Fire empty transfer from
+    log IERC20.Transfer(sender=empty(address), receiver=self, value=0)  # <------- Fire empty transfer from
     #                                       0x0 to self for indexers to catch.
 
 
@@ -484,7 +485,7 @@ def add_liquidity(
 
     D: uint256 = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
 
-    token_supply: uint256 = self.totalSupply
+    token_supply: uint256 = erc20.totalSupply
     d_token: uint256 = 0
     if old_D > 0:
         d_token = token_supply * D // old_D - token_supply
@@ -502,7 +503,7 @@ def add_liquidity(
 
         d_token -= d_token_fee
         token_supply += d_token
-        self.mint(receiver, d_token)
+        erc20._mint(receiver, d_token)
         self.admin_lp_virtual_balance += unsafe_div(ADMIN_FEE * d_token_fee, 10**10)
 
         price_scale = self.tweak_price(A_gamma, xp, D)
@@ -516,7 +517,7 @@ def add_liquidity(
         self.xcp_profit = 10**18
         self.xcp_profit_a = 10**18
 
-        self.mint(receiver, d_token)
+        erc20._mint(receiver, d_token)
 
     assert d_token >= min_mint_amount, "slippage"
 
@@ -553,8 +554,8 @@ def remove_liquidity(
 
     # We cache the total supply to avoid multiple SLOADs. It is important to do
     # this before the burnFrom call, as the burnFrom call will reduce the supply.
-    total_supply: uint256 = self.totalSupply
-    self.burnFrom(msg.sender, amount)
+    total_supply: uint256 = erc20.totalSupply
+    erc20._burn(msg.sender, amount)
 
     # There are two cases for withdrawing tokens from the pool.
     #   Case 1. Withdrawal does not empty the pool.
@@ -687,7 +688,7 @@ def _remove_liquidity_fixed_out(
 
     # ---------------------------- State Updates -----------------------------
 
-    self.burnFrom(msg.sender, token_amount)
+    erc20._burn(msg.sender, token_amount)
 
     price_scale: uint256 = self.tweak_price(A_gamma, xp, D)
 
@@ -897,7 +898,7 @@ def tweak_price(
     virtual_price: uint256 = 10**18
 
     # `totalSupply` will not change during this function call.
-    total_supply: uint256 = self.totalSupply
+    total_supply: uint256 = erc20.totalSupply
     old_virtual_price: uint256 = self.virtual_price
     if old_virtual_price > 0:
         xcp: uint256 = self._xcp(D, price_scale)
@@ -1031,7 +1032,7 @@ def _claim_admin_fees():
 
     xcp_profit: uint256 = self.xcp_profit  # <---------- Current pool profits.
     xcp_profit_a: uint256 = self.xcp_profit_a  # <- Profits at previous claim.
-    current_lp_token_supply: uint256 = self.totalSupply
+    current_lp_token_supply: uint256 = erc20.totalSupply
 
     # Do not claim admin fees if:
     # 1. insufficient profits accrued since last claim, and
@@ -1304,7 +1305,7 @@ def _calc_withdraw_fixed_out(
     Withdraws specified number of LP tokens while amount of coin `i` is also specified
     """
 
-    token_supply: uint256 = self.totalSupply
+    token_supply: uint256 = erc20.totalSupply
     assert lp_token_amount <= token_supply, "withdraw > supply"
 
     # Since N_COINS = 2, we don't need to check if i < N_COINS
@@ -1361,102 +1362,6 @@ def _calc_withdraw_fixed_out(
     xp_new[j] = y
 
     return dy, D, xp_new, approx_fee
-
-
-# ------------------------ ERC20 functions -----------------------------------
-
-
-@internal
-def _approve(_owner: address, _spender: address, _value: uint256):
-    self.allowance[_owner][_spender] = _value
-
-    log Approval(owner=_owner, spender=_spender, value=_value)
-
-
-@internal
-def _transfer(_from: address, _to: address, _value: uint256):
-    assert _to not in [self, empty(address)], "invalid receiver"
-
-    self.balanceOf[_from] -= _value
-    self.balanceOf[_to] += _value
-
-    log Transfer(sender=_from, receiver=_to, value=_value)
-
-
-@external
-def transferFrom(_from: address, _to: address, _value: uint256) -> bool:
-    """
-    @dev Transfer tokens from one address to another.
-    @param _from address The address which you want to send tokens from
-    @param _to address The address which you want to transfer to
-    @param _value uint256 the amount of tokens to be transferred
-    @return bool True on successul transfer. Reverts otherwise.
-    """
-    _allowance: uint256 = self.allowance[_from][msg.sender]
-    if _allowance != max_value(uint256):
-        self._approve(_from, msg.sender, _allowance - _value)
-
-    self._transfer(_from, _to, _value)
-    return True
-
-
-@external
-def transfer(_to: address, _value: uint256) -> bool:
-    """
-    @dev Transfer token for a specified address
-    @param _to The address to transfer to.
-    @param _value The amount to be transferred.
-    @return bool True on successful transfer. Reverts otherwise.
-    """
-    self._transfer(msg.sender, _to, _value)
-    return True
-
-
-@external
-def approve(_spender: address, _value: uint256) -> bool:
-    """
-    @notice Allow `_spender` to transfer up to `_value` amount
-            of tokens from the caller's account.
-    @param _spender The account permitted to spend up to `_value` amount of
-                    caller's funds.
-    @param _value The amount of tokens `_spender` is allowed to spend.
-    @return bool Success
-    """
-    self._approve(msg.sender, _spender, _value)
-    return True
-
-
-@internal
-def mint(_to: address, _value: uint256) -> bool:
-    """
-    @dev Mint an amount of the token and assigns it to an account.
-         This encapsulates the modification of balances such that the
-         proper events are emitted.
-    @param _to The account that will receive the created tokens.
-    @param _value The amount that will be created.
-    @return bool Success.
-    """
-    self.totalSupply += _value
-    self.balanceOf[_to] += _value
-
-    log Transfer(sender=empty(address), receiver=_to, value=_value)
-    return True
-
-
-@internal
-def burnFrom(_to: address, _value: uint256) -> bool:
-    """
-    @dev Burn an amount of the token from a given account.
-    @param _to The account whose tokens will be burned.
-    @param _value The amount that will be burned.
-    @return bool Success.
-    """
-    self.totalSupply -= _value
-    self.balanceOf[_to] -= _value
-
-    log Transfer(sender=_to, receiver=empty(address), value=_value)
-    return True
-
 
 # ------------------------- AMM View Functions -------------------------------
 
@@ -1588,7 +1493,7 @@ def get_virtual_price() -> uint256:
          virtual price.
     @return uint256 Virtual Price.
     """
-    return 10**18 * self._xcp(self.D, self.cached_price_scale) // self.totalSupply
+    return 10**18 * self._xcp(self.D, self.cached_price_scale) // erc20.totalSupply
 
 
 @external
