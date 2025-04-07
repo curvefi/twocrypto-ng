@@ -31,6 +31,8 @@ exports: (
 from snekmate.tokens import erc20
 uses: erc20 # erc20 is initialized by the lp_token module.
 
+import packing_utils as utils
+
 # --------------------------------- Interfaces -------------------------------
 
 interface Math:
@@ -221,10 +223,10 @@ def __init__(
     lp_token.__init__(_name, _symbol)
     coins = _coins
 
-    PRECISIONS = self._unpack_2(packed_precisions)  # <-- Precisions of coins.
+    PRECISIONS = utils.unpack_2(packed_precisions)  # <-- Precisions of coins.
 
     # --------------- Validate A and gamma parameters here and not in factory.
-    gamma_A: uint256[2] = self._unpack_2(packed_gamma_A)  # gamma is at idx 0.
+    gamma_A: uint256[2] = utils.unpack_2(packed_gamma_A)  # gamma is at idx 0.
 
     assert gamma_A[0] > MIN_GAMMA-1, "gamma<MIN"
     assert gamma_A[0] < MAX_GAMMA+1, "gamma>MAX"
@@ -710,48 +712,6 @@ def _remove_liquidity_fixed_out(
     return dy
 
 
-# -------------------------- Packing functions -------------------------------
-
-
-@internal
-@pure
-def _pack_3(x: uint256[3]) -> uint256:
-    """
-    @notice Packs 3 integers with values <= 10**18 into a uint256
-    @param x The uint256[3] to pack
-    @return uint256 Integer with packed values
-    """
-    return (x[0] << 128) | (x[1] << 64) | x[2]
-
-
-@internal
-@pure
-def _unpack_3(_packed: uint256) -> uint256[3]:
-    """
-    @notice Unpacks a uint256 into 3 integers (values must be <= 10**18)
-    @param val The uint256 to unpack
-    @return uint256[3] A list of length 3 with unpacked integers
-    """
-    return [
-        (_packed >> 128) & 18446744073709551615,
-        (_packed >> 64) & 18446744073709551615,
-        _packed & 18446744073709551615,
-    ]
-
-
-@pure
-@internal
-def _pack_2(p1: uint256, p2: uint256) -> uint256:
-    return p1 | (p2 << 128)
-
-
-@pure
-@internal
-def _unpack_2(packed: uint256) -> uint256[2]:
-    return [packed & (2**128 - 1), packed >> 128]
-
-
-
 @internal
 def _exchange(
     i: uint256,
@@ -842,7 +802,7 @@ def tweak_price(
     price_oracle: uint256 = self.cached_price_oracle
     last_prices: uint256 = self.last_prices
     price_scale: uint256 = self.cached_price_scale
-    rebalancing_params: uint256[3] = self._unpack_3(self.packed_rebalancing_params)
+    rebalancing_params: uint256[3] = utils.unpack_3(self.packed_rebalancing_params)
     # Contains: allowed_extra_profit, adjustment_step, ma_time. -----^
 
     # ------------------ Update Price Oracle if needed -----------------------
@@ -1180,7 +1140,7 @@ def _A_gamma() -> uint256[2]:
 def _fee(xp: uint256[N_COINS]) -> uint256:
 
     # unpack mid_fee, out_fee, fee_gamma
-    fee_params: uint256[3] = self._unpack_3(self.packed_fee_params)
+    fee_params: uint256[3] = utils.unpack_3(self.packed_fee_params)
 
     # warm up variable with sum of balances
     B: uint256 = xp[0] + xp[1]
@@ -1386,7 +1346,7 @@ def internal_price_oracle() -> uint256:
         #                                                   average if needed.
 
         last_prices: uint256 = self.last_prices
-        ma_time: uint256 = self._unpack_3(self.packed_rebalancing_params)[2]
+        ma_time: uint256 = utils.unpack_3(self.packed_rebalancing_params)[2]
         alpha: uint256 = staticcall MATH.wad_exp(
             -convert(
                 unsafe_sub(block.timestamp, last_prices_timestamp) * 10**18 // ma_time,
@@ -1581,7 +1541,7 @@ def mid_fee() -> uint256:
     @notice Returns the current mid fee
     @return uint256 mid_fee value.
     """
-    return self._unpack_3(self.packed_fee_params)[0]
+    return utils.unpack_3(self.packed_fee_params)[0]
 
 
 @view
@@ -1591,7 +1551,7 @@ def out_fee() -> uint256:
     @notice Returns the current out fee
     @return uint256 out_fee value.
     """
-    return self._unpack_3(self.packed_fee_params)[1]
+    return utils.unpack_3(self.packed_fee_params)[1]
 
 
 @view
@@ -1601,7 +1561,7 @@ def fee_gamma() -> uint256:
     @notice Returns the current fee gamma
     @return uint256 fee_gamma value.
     """
-    return self._unpack_3(self.packed_fee_params)[2]
+    return utils.unpack_3(self.packed_fee_params)[2]
 
 
 @view
@@ -1611,7 +1571,7 @@ def allowed_extra_profit() -> uint256:
     @notice Returns the current allowed extra profit
     @return uint256 allowed_extra_profit value.
     """
-    return self._unpack_3(self.packed_rebalancing_params)[0]
+    return utils.unpack_3(self.packed_rebalancing_params)[0]
 
 
 @view
@@ -1621,7 +1581,7 @@ def adjustment_step() -> uint256:
     @notice Returns the current adjustment step
     @return uint256 adjustment_step value.
     """
-    return self._unpack_3(self.packed_rebalancing_params)[1]
+    return utils.unpack_3(self.packed_rebalancing_params)[1]
 
 
 @view
@@ -1633,7 +1593,7 @@ def ma_time() -> uint256:
          One can expect off-by-one errors here.
     @return uint256 ma_time value.
     """
-    return self._unpack_3(self.packed_rebalancing_params)[2] * 694 // 1000
+    return utils.unpack_3(self.packed_rebalancing_params)[2] * 694 // 1000
 
 
 @view
@@ -1759,7 +1719,7 @@ def apply_new_parameters(
     new_out_fee: uint256 = _new_out_fee
     new_fee_gamma: uint256 = _new_fee_gamma
 
-    current_fee_params: uint256[3] = self._unpack_3(self.packed_fee_params)
+    current_fee_params: uint256[3] = utils.unpack_3(self.packed_fee_params)
 
     if new_out_fee < MAX_FEE + 1:
         assert new_out_fee > MIN_FEE - 1, "fee is out of range"
@@ -1775,7 +1735,7 @@ def apply_new_parameters(
     else:
         new_fee_gamma = current_fee_params[2]
 
-    self.packed_fee_params = self._pack_3([new_mid_fee, new_out_fee, new_fee_gamma])
+    self.packed_fee_params = utils.pack_3([new_mid_fee, new_out_fee, new_fee_gamma])
 
     # ----------------- Set liquidity rebalancing parameters -----------------
 
@@ -1783,7 +1743,7 @@ def apply_new_parameters(
     new_adjustment_step: uint256 = _new_adjustment_step
     new_ma_time: uint256 = _new_ma_time
 
-    current_rebalancing_params: uint256[3] = self._unpack_3(self.packed_rebalancing_params)
+    current_rebalancing_params: uint256[3] = utils.unpack_3(self.packed_rebalancing_params)
 
     if new_allowed_extra_profit > 10**18:
         new_allowed_extra_profit = current_rebalancing_params[0]
@@ -1796,7 +1756,7 @@ def apply_new_parameters(
     else:
         new_ma_time = current_rebalancing_params[2]
 
-    self.packed_rebalancing_params = self._pack_3(
+    self.packed_rebalancing_params = utils.pack_3(
         [new_allowed_extra_profit, new_adjustment_step, new_ma_time]
     )
 
