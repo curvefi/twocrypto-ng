@@ -8,7 +8,7 @@
 @pure
 def pack_3(x: uint256[3]) -> uint256:
     """
-    @notice Packs 3 integers with values <= 10**18 into a uint256
+    @notice Packs 3 integers with values <= 2**64-1 into a uint256
     @param x The uint256[3] to pack
     @return uint256 Integer with packed values
     """
@@ -19,8 +19,8 @@ def pack_3(x: uint256[3]) -> uint256:
 @pure
 def unpack_3(_packed: uint256) -> uint256[3]:
     """
-    @notice Unpacks a uint256 into 3 integers (values must be <= 10**18)
-    @param val The uint256 to unpack
+    @notice Unpacks a uint256 into 3 integers
+    @param _packed The uint256 to unpack
     @return uint256[3] A list of length 3 with unpacked integers
     """
     return [
@@ -33,10 +33,21 @@ def unpack_3(_packed: uint256) -> uint256[3]:
 @pure
 @internal
 def pack_2(p1: uint256, p2: uint256) -> uint256:
+    """
+    @notice Packs 2 integers with values <= 2**128-1 into a uint256
+    @param p1 The first integer to pack
+    @param p2 The second integer to pack
+    @return uint256 Integer with packed values
+    """
     return p1 | (p2 << 128)
 
 
 @pure
 @internal
 def unpack_2(packed: uint256) -> uint256[2]:
+    """
+    @notice Unpacks a uint256 into 2 integers
+    @param packed The uint256 to unpack
+    @return uint256[2] A list of length 2 with unpacked integers
+    """
     return [packed & (2**128 - 1), packed >> 128]
