@@ -1,0 +1,36 @@
+# Functions
+
+@pure
+@external
+def newton_y(ANN: uint256, gamma: uint256, x: uint256[2], D: uint256, i: uint256) -> uint256:
+    ...
+
+
+@pure
+@external
+def get_y(_ANN: uint256, _gamma: uint256, _x: uint256[2], _D: uint256, i: uint256) -> uint256[2]:
+    ...
+
+
+@view
+@external
+def newton_D(ANN: uint256, gamma: uint256, x_unsorted: uint256[2], K0_prev: uint256) -> uint256:
+    ...
+
+
+@view
+@external
+def get_p(_xp: uint256[2], _D: uint256, _A_gamma: uint256[2]) -> uint256:
+    ...
+
+
+@pure
+@external
+def wad_exp(x: int256) -> uint256:
+    ...
+
+
+@view
+@external
+def version() -> String[8]:
+    ...

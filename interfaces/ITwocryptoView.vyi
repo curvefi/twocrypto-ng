@@ -1,0 +1,42 @@
+# Functions
+
+@view
+@external
+def get_dy(i: uint256, j: uint256, dx: uint256, swap: address) -> uint256:
+    ...
+
+
+@view
+@external
+def get_dx(i: uint256, j: uint256, dy: uint256, swap: address) -> uint256:
+    ...
+
+
+@view
+@external
+def calc_withdraw_one_coin(token_amount: uint256, i: uint256, swap: address) -> uint256:
+    ...
+
+
+@view
+@external
+def calc_token_amount(amounts: uint256[2], deposit: bool, swap: address) -> uint256:
+    ...
+
+
+@view
+@external
+def calc_fee_get_dy(i: uint256, j: uint256, dx: uint256, swap: address) -> uint256:
+    ...
+
+
+@view
+@external
+def calc_fee_withdraw_one_coin(token_amount: uint256, i: uint256, swap: address) -> uint256:
+    ...
+
+
+@view
+@external
+def calc_fee_token_amount(amounts: uint256[2], deposit: bool, swap: address) -> uint256:
+    ...

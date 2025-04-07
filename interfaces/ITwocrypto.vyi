@@ -1,0 +1,437 @@
+from interfaces import ITwocryptoFactory as Factory
+from interfaces import ITwocryptoMath as Math
+# Events
+
+event TokenExchange:
+    buyer: address
+    sold_id: uint256
+    tokens_sold: uint256
+    bought_id: uint256
+    tokens_bought: uint256
+    fee: uint256
+    price_scale: uint256
+
+
+event AddLiquidity:
+    provider: address
+    token_amounts: uint256[2]
+    fee: uint256
+    token_supply: uint256
+    price_scale: uint256
+
+
+event RemoveLiquidity:
+    provider: address
+    token_amounts: uint256[2]
+    token_supply: uint256
+
+
+event RemoveLiquidityOne:
+    provider: address
+    token_amount: uint256
+    coin_index: uint256
+    coin_amount: uint256
+    approx_fee: uint256
+    price_scale: uint256
+
+
+event RemoveLiquidityImbalance:
+    provider: address
+    lp_token_amount: uint256
+    token_amounts: uint256[2]
+    approx_fee: uint256
+    price_scale: uint256
+
+
+event NewParameters:
+    mid_fee: uint256
+    out_fee: uint256
+    fee_gamma: uint256
+    allowed_extra_profit: uint256
+    adjustment_step: uint256
+    ma_time: uint256
+
+
+event RampAgamma:
+    initial_A: uint256
+    future_A: uint256
+    initial_gamma: uint256
+    future_gamma: uint256
+    initial_time: uint256
+    future_time: uint256
+
+
+event StopRampA:
+    current_A: uint256
+    current_gamma: uint256
+    time: uint256
+
+
+event ClaimAdminFee:
+    admin: address
+    tokens: uint256[2]
+
+
+event Transfer:
+    sender: address
+    receiver: address
+    value: uint256
+
+
+event OwnershipTransferred:
+    previous_owner: address
+    new_owner: address
+
+
+event RoleMinterChanged:
+    minter: address
+    status: bool
+
+
+event Approval:
+    owner: address
+    spender: address
+    value: uint256
+
+
+# Functions
+
+@external
+def transfer(to: address, amount: uint256) -> bool:
+    ...
+
+
+@external
+def transferFrom(owner: address, to: address, amount: uint256) -> bool:
+    ...
+
+
+@external
+def approve(spender: address, amount: uint256) -> bool:
+    ...
+
+
+@view
+@external
+def balanceOf(arg0: address) -> uint256:
+    ...
+
+
+@view
+@external
+def allowance(arg0: address, arg1: address) -> uint256:
+    ...
+
+
+@view
+@external
+def totalSupply() -> uint256:
+    ...
+
+
+@view
+@external
+def name() -> String[64]:
+    ...
+
+
+@view
+@external
+def symbol() -> String[32]:
+    ...
+
+
+@view
+@external
+def decimals() -> uint8:
+    ...
+
+
+@external
+def exchange(i: uint256, j: uint256, dx: uint256, min_dy: uint256, receiver: address) -> uint256:
+    ...
+
+
+@external
+def exchange_received(i: uint256, j: uint256, dx: uint256, min_dy: uint256, receiver: address) -> uint256:
+    ...
+
+
+@external
+def add_liquidity(amounts: uint256[2], min_mint_amount: uint256, receiver: address) -> uint256:
+    ...
+
+
+@external
+def remove_liquidity(amount: uint256, min_amounts: uint256[2], receiver: address) -> uint256[2]:
+    ...
+
+
+@external
+def remove_liquidity_fixed_out(token_amount: uint256, i: uint256, amount_i: uint256, min_amount_j: uint256, receiver: address) -> uint256:
+    ...
+
+
+@external
+def remove_liquidity_one_coin(lp_token_amount: uint256, i: uint256, min_amount: uint256, receiver: address) -> uint256:
+    ...
+
+
+@view
+@external
+def calc_withdraw_fixed_out(lp_token_amount: uint256, i: uint256, amount_i: uint256) -> uint256:
+    ...
+
+
+@view
+@external
+def calc_withdraw_one_coin(lp_token_amount: uint256, i: uint256) -> uint256:
+    ...
+
+
+@view
+@external
+def fee_receiver() -> address:
+    ...
+
+
+@view
+@external
+def admin() -> address:
+    ...
+
+
+@view
+@external
+def calc_token_amount(amounts: uint256[2], deposit: bool) -> uint256:
+    ...
+
+
+@view
+@external
+def get_dy(i: uint256, j: uint256, dx: uint256) -> uint256:
+    ...
+
+
+@view
+@external
+def get_dx(i: uint256, j: uint256, dy: uint256) -> uint256:
+    ...
+
+
+@view
+@external
+def lp_price() -> uint256:
+    ...
+
+
+@view
+@external
+def get_virtual_price() -> uint256:
+    ...
+
+
+@view
+@external
+def price_oracle() -> uint256:
+    ...
+
+
+@view
+@external
+def price_scale() -> uint256:
+    ...
+
+
+@view
+@external
+def fee() -> uint256:
+    ...
+
+
+@view
+@external
+def calc_token_fee(amounts: uint256[2], xp: uint256[2]) -> uint256:
+    ...
+
+
+@view
+@external
+def A() -> uint256:
+    ...
+
+
+@view
+@external
+def gamma() -> uint256:
+    ...
+
+
+@view
+@external
+def mid_fee() -> uint256:
+    ...
+
+
+@view
+@external
+def out_fee() -> uint256:
+    ...
+
+
+@view
+@external
+def fee_gamma() -> uint256:
+    ...
+
+
+@view
+@external
+def allowed_extra_profit() -> uint256:
+    ...
+
+
+@view
+@external
+def adjustment_step() -> uint256:
+    ...
+
+
+@view
+@external
+def ma_time() -> uint256:
+    ...
+
+
+@view
+@external
+def precisions() -> uint256[2]:
+    ...
+
+
+@view
+@external
+def fee_calc(xp: uint256[2]) -> uint256:
+    ...
+
+
+@external
+def ramp_A_gamma(future_A: uint256, future_gamma: uint256, future_time: uint256):
+    ...
+
+
+@external
+def stop_ramp_A_gamma():
+    ...
+
+
+@external
+def apply_new_parameters(_new_mid_fee: uint256, _new_out_fee: uint256, _new_fee_gamma: uint256, _new_allowed_extra_profit: uint256, _new_adjustment_step: uint256, _new_ma_time: uint256):
+    ...
+
+
+@view
+@external
+def MATH() -> Math:
+    ...
+
+
+@view
+@external
+def coins(arg0: uint256) -> address:
+    ...
+
+@view
+@external
+def factory() -> Factory:
+    ...
+
+
+@view
+@external
+def last_prices() -> uint256:
+    ...
+
+
+@view
+@external
+def last_timestamp() -> uint256:
+    ...
+
+
+@view
+@external
+def initial_A_gamma() -> uint256:
+    ...
+
+
+@view
+@external
+def initial_A_gamma_time() -> uint256:
+    ...
+
+
+@view
+@external
+def future_A_gamma() -> uint256:
+    ...
+
+
+@view
+@external
+def future_A_gamma_time() -> uint256:
+    ...
+
+
+@view
+@external
+def balances(arg0: uint256) -> uint256:
+    ...
+
+
+@view
+@external
+def D() -> uint256:
+    ...
+
+
+@view
+@external
+def xcp_profit() -> uint256:
+    ...
+
+
+@view
+@external
+def xcp_profit_a() -> uint256:
+    ...
+
+
+@view
+@external
+def virtual_price() -> uint256:
+    ...
+
+
+@view
+@external
+def packed_rebalancing_params() -> uint256:
+    ...
+
+
+@view
+@external
+def packed_fee_params() -> uint256:
+    ...
+
+
+@view
+@external
+def ADMIN_FEE() -> uint256:
+    ...
+
+
+@view
+@external
+def version() -> String[8]:
+    ...
