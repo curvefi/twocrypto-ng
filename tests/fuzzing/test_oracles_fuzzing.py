@@ -7,6 +7,8 @@ from hypothesis import given, settings
 from tests.conftest import INITIAL_PRICES
 from tests.utils.constants import UNIX_DAY
 
+from tests.utils.constants import packing_utils
+
 SETTINGS = {"max_examples": 1000, "deadline": None}
 
 
@@ -39,7 +41,7 @@ def test_ma(pool_with_deposit, coins, user, amount, i, t):
     amount = amount * 10**18 // prices1[i]
     boa.deal(coins[i], user, amount)
 
-    rebal_params = pool_with_deposit.internal._unpack_3(
+    rebal_params = packing_utils.internal.unpack_3(
         pool_with_deposit._storage.packed_rebalancing_params.get()
     )
     ma_time = rebal_params[2]
