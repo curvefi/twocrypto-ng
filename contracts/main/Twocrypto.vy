@@ -234,7 +234,7 @@ def __init__(
     assert gamma_A[1] > MIN_A-1, "A<MIN"
     assert gamma_A[1] < MAX_A+1, "A>MAX"
 
-    self.initial_A_gamma = packed_gamma_A
+    self.initial_A_gamma = packed_gamma_A # variable name is confusing here
     self.future_A_gamma = packed_gamma_A
     # ------------------------------------------------------------------------
 
@@ -1114,23 +1114,26 @@ def _is_ramping() -> bool:
 def _A_gamma() -> uint256[2]:
     t1: uint256 = self.future_A_gamma_time
 
-    A_gamma_1: uint256 = self.future_A_gamma
-    gamma1: uint256 = A_gamma_1 & 2**128 - 1
-    A1: uint256 = A_gamma_1 >> 128
+    gamma_A1: uint256[2] = utils.unpack_2(self.future_A_gamma)
+    gamma1: uint256 = gamma_A1[0]
+    A1: uint256 = gamma_A1[1]
 
     if block.timestamp < t1:
 
         # --------------- Handle ramping up and down of A --------------------
 
-        A_gamma_0: uint256 = self.initial_A_gamma
+        gamma_A0: uint256[2] = utils.unpack_2(self.initial_A_gamma) # [gamma, A]
+        gamma0: uint256 = gamma_A0[0]
+        A0: uint256 = gamma_A0[1]
+
         t0: uint256 = self.initial_A_gamma_time
 
         t1 -= t0
         t0 = block.timestamp - t0
         t2: uint256 = t1 - t0
 
-        A1 = ((A_gamma_0 >> 128) * t2 + A1 * t0) // t1
-        gamma1 = ((A_gamma_0 & 2**128 - 1) * t2 + gamma1 * t0) // t1
+        A1 = (A0 * t2 + A1 * t0) // t1
+        gamma1 = (gamma0 * t2 + gamma1 * t0) // t1
 
     return [A1, gamma1]
 
@@ -1635,30 +1638,26 @@ def ramp_A_gamma(
     assert not self._is_ramping(), "ramp undergoing"
     assert future_time > block.timestamp + MIN_RAMP_TIME - 1, "ramp time<min"
 
-    A_gamma: uint256[2] = self._A_gamma()
-    initial_A_gamma: uint256 = A_gamma[0] << 128
-    initial_A_gamma = initial_A_gamma | A_gamma[1]
+    A_gamma: uint256[2] = self._A_gamma() # [A, gamma]
 
     assert future_A > MIN_A - 1, "A<min"
     assert future_A < MAX_A + 1, "A>max"
     assert future_gamma > MIN_GAMMA - 1, "gamma<min"
     assert future_gamma < MAX_GAMMA + 1, "gamme>max"
 
-    ratio: uint256 = 10**18 * future_A // A_gamma[0]
+    ratio: uint256 = 10**18 * future_A // A_gamma[0] # A
     assert ratio < 10**18 * MAX_A_CHANGE + 1, "A change too high"
     assert ratio > 10**18 // MAX_A_CHANGE - 1, "A change too low"
 
-    ratio = 10**18 * future_gamma // A_gamma[1]
+    ratio = 10**18 * future_gamma // A_gamma[1] # gamma
     assert ratio < 10**18 * MAX_A_CHANGE + 1, "gamma change too high"
     assert ratio > 10**18 // MAX_A_CHANGE - 1, "gamma change too low"
 
-    self.initial_A_gamma = initial_A_gamma
+    self.initial_A_gamma = utils.pack_2(A_gamma[1], A_gamma[0]) # [gamma, A]
     self.initial_A_gamma_time = block.timestamp
 
-    future_A_gamma: uint256 = future_A << 128
-    future_A_gamma = future_A_gamma | future_gamma
+    self.future_A_gamma = utils.pack_2(future_gamma, future_A) # [gamma, A]
     self.future_A_gamma_time = future_time
-    self.future_A_gamma = future_A_gamma
 
     log RampAgamma(
         initial_A=A_gamma[0],
@@ -1679,10 +1678,9 @@ def stop_ramp_A_gamma():
     assert msg.sender == staticcall factory.admin(), "only owner"
 
     A_gamma: uint256[2] = self._A_gamma()
-    current_A_gamma: uint256 = A_gamma[0] << 128
-    current_A_gamma = current_A_gamma | A_gamma[1]
-    self.initial_A_gamma = current_A_gamma
-    self.future_A_gamma = current_A_gamma
+    packed_gamma_A: uint256 = utils.pack_2(A_gamma[1], A_gamma[0]) # [gamma, A]
+    self.initial_A_gamma = packed_gamma_A 
+    self.future_A_gamma = packed_gamma_A
     self.initial_A_gamma_time = block.timestamp
     self.future_A_gamma_time = block.timestamp
 
