@@ -4,8 +4,11 @@ import boa
 import pytest
 
 from tests.conftest import INITIAL_PRICES
+
+# TODO approx should be replaced with math.isclose
 from tests.utils import approx
 from tests.utils.constants import UNIX_DAY
+from tests.utils.constants import packing_utils
 
 SETTINGS = {"max_examples": 1000, "deadline": None}
 
@@ -48,7 +51,7 @@ def test_price_scale_change(pool_with_deposit, i, coins, users):
     pool_with_deposit.exchange(0, 1, coins[0].balanceOf(user), 0, sender=user)
 
     price_oracle = pool_with_deposit.price_oracle()
-    rebal_params = pool_with_deposit.internal._unpack_3(
+    rebal_params = packing_utils.internal.unpack_3(
         pool_with_deposit._storage.packed_rebalancing_params.get()
     )
     _norm = norm(price_oracle, price_scale_1)
