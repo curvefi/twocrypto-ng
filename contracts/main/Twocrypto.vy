@@ -19,6 +19,37 @@ implements: IERC20
 from ethereum.ercs import IERC20Detailed
 implements: IERC20Detailed
 
+import params
+initializes: params
+exports: (
+    # Admin params and functions
+    params.factory,
+    params.admin,
+    params.fee_receiver,
+    params.apply_new_parameters,
+    # Affect the shape of the bonding curve
+    params.A,
+    params.gamma,
+    # Change A and gamma over time
+    params.ramp_A_gamma,
+    params.stop_ramp_A_gamma,
+    params.initial_A_gamma,
+    params.initial_A_gamma_time,
+    params.future_A_gamma,
+    params.future_A_gamma_time,
+    # Affect the rebalancing of the pool
+    params.packed_rebalancing_params,
+    params.adjustment_step,
+    params.allowed_extra_profit,
+    params.ma_time,
+    # Affect the fee structure of the pool
+    params.packed_fee_params,
+    params.fee_gamma,
+    params.mid_fee,
+    params.out_fee,
+)
+
+
 import lp_token
 initializes: lp_token
 exports: (
@@ -46,24 +77,12 @@ PRECISIONS: immutable(uint256[N_COINS])
 
 MATH: public(immutable(ITwocryptoMath))
 coins: public(immutable(address[N_COINS]))
-factory: public(immutable(ITwocryptoFactory))
 
 cached_price_scale: uint256  # <------------------------ Internal price scale.
 cached_price_oracle: uint256  # <------- Price target given by moving average.
 
 last_prices: public(uint256)
 last_timestamp: public(uint256)    # idx 0 is for prices, idx 1 is for xcp.
-
-initial_A_gamma: public(uint256)
-initial_A_gamma_time: public(uint256)
-
-future_A_gamma: public(uint256)
-future_A_gamma_time: public(uint256)  # <------ Time when ramping is finished.
-#         This value is 0 (default) when pool is first deployed, and only gets
-#        populated by block.timestamp + future_time in `ramp_A_gamma` when the
-#                      ramping process is initiated. After ramping is finished
-#      (i.e. self.future_A_gamma_time < block.timestamp), the variable is left
-#                                                            and not set to 0.
 
 balances: public(uint256[N_COINS])
 D: public(uint256)
@@ -73,16 +92,7 @@ xcp_profit_a: public(uint256)  # <--- Full profit at last claim of admin fees.
 virtual_price: public(uint256)  # <------ Cached (fast to read) virtual price.
 #                          The cached `virtual_price` is also used internally.
 
-# Params that affect how price_scale get adjusted :
-packed_rebalancing_params: public(uint256)  # <---------- Contains rebalancing
-#               parameters allowed_extra_profit, adjustment_step, and ma_time.
-
-# Fee params that determine dynamic fees:
-packed_fee_params: public(uint256)  # <---- Packs mid_fee, out_fee, fee_gamma.
-
 ADMIN_FEE: public(constant(uint256)) = 5 * 10**9  # <----- 50% of earned fees.
-MIN_FEE: constant(uint256) = 5 * 10**5  # <-------------------------- 0.5 BPS.
-MAX_FEE: constant(uint256) = 10 * 10**9
 NOISE_FEE: constant(uint256) = 10**5  # <---------------------------- 0.1 BPS.
 
 # ----------------------- Admin params ---------------------------------------
@@ -90,15 +100,8 @@ NOISE_FEE: constant(uint256) = 10**5  # <---------------------------- 0.1 BPS.
 last_admin_fee_claim_timestamp: uint256
 admin_lp_virtual_balance: uint256
 
-MIN_RAMP_TIME: constant(uint256) = 86400
 MIN_ADMIN_FEE_CLAIM_INTERVAL: constant(uint256) = 86400
 
-A_MULTIPLIER: constant(uint256) = 10000
-MIN_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER // 10
-MAX_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER * 1000
-MAX_A_CHANGE: constant(uint256) = 10
-MIN_GAMMA: constant(uint256) = 10**10
-MAX_GAMMA: constant(uint256) = 199 * 10**15 # 1.99 * 10**17
 
 version: public(constant(String[8])) = "v2.1.0"
 
@@ -120,31 +123,19 @@ def __init__(
 
     MATH = ITwocryptoMath(_math)
 
-    factory = ITwocryptoFactory(msg.sender)
+    params.__init__(
+        msg.sender,
+        packed_gamma_A,
+        packed_fee_params,
+        packed_rebalancing_params,
+    )
+
     lp_token.__init__(_name, _symbol)
     coins = _coins
 
     PRECISIONS = utils.unpack_2(packed_precisions)  # <-- Precisions of coins.
 
-    # --------------- Validate A and gamma parameters here and not in factory.
-    gamma_A: uint256[2] = utils.unpack_2(packed_gamma_A)  # gamma is at idx 0.
-
-    assert gamma_A[0] > MIN_GAMMA-1, "gamma<MIN"
-    assert gamma_A[0] < MAX_GAMMA+1, "gamma>MAX"
-
-    assert gamma_A[1] > MIN_A-1, "A<MIN"
-    assert gamma_A[1] < MAX_A+1, "A>MAX"
-
-    self.initial_A_gamma = packed_gamma_A # variable name is reversed (legacy reasons)
-    self.future_A_gamma = packed_gamma_A
     # ------------------------------------------------------------------------
-
-    self.packed_rebalancing_params = packed_rebalancing_params  # <-- Contains
-    #               rebalancing params: allowed_extra_profit, adjustment_step,
-    #                                                         and ma_exp_time.
-
-    self.packed_fee_params = packed_fee_params  # <-------------- Contains Fee
-    #                                  params: mid_fee, out_fee and fee_gamma.
 
     self.cached_price_scale = initial_price
     self.cached_price_oracle = initial_price
@@ -376,10 +367,10 @@ def add_liquidity(
             amountsp[i] = xp[i] - old_xp[i]
     # -------------------- Calculate LP tokens to mint -----------------------
 
-    A_gamma: uint256[2] = self._A_gamma()
+    A_gamma: uint256[2] = params._A_gamma()
 
     old_D: uint256 = 0
-    if self._is_ramping():
+    if params._is_ramping():
         # Recalculate D if A and/or gamma are ramping because the shape of
         # the bonding curve is changing.
         old_D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], old_xp, 0)
@@ -568,7 +559,7 @@ def _remove_liquidity_fixed_out(
 
     self._claim_admin_fees()
 
-    A_gamma: uint256[2] = self._A_gamma()
+    A_gamma: uint256[2] = params._A_gamma()
 
     # Amount of coin[j] withdrawn.
     dy: uint256 = 0
@@ -624,7 +615,7 @@ def _exchange(
     assert i != j, "same coin"
     assert dx_received > 0, "zero dx"
 
-    A_gamma: uint256[2] = self._A_gamma()
+    A_gamma: uint256[2] = params._A_gamma()
     balances: uint256[N_COINS] = self.balances
     dy: uint256 = 0
 
@@ -636,7 +627,7 @@ def _exchange(
 
     # ----------- Update invariant if A, gamma are undergoing ramps ---------
 
-    if self._is_ramping():
+    if params._is_ramping():
 
         x0 *= PRECISIONS[i]
 
@@ -703,7 +694,7 @@ def tweak_price(
     price_oracle: uint256 = self.cached_price_oracle
     last_prices: uint256 = self.last_prices
     price_scale: uint256 = self.cached_price_scale
-    rebalancing_params: uint256[3] = utils.unpack_3(self.packed_rebalancing_params)
+    rebalancing_params: uint256[3] = utils.unpack_3(params.packed_rebalancing_params)
     # Contains: allowed_extra_profit, adjustment_step, ma_time. -----^
 
     # ------------------ Update Price Oracle if needed -----------------------
@@ -783,7 +774,7 @@ def tweak_price(
         if not (virtual_price > old_virtual_price):
             # If A and gamma are being ramped, we allow the virtual price to decrease,
             # as changing the shape of the bonding curve causes losses in the pool.
-            assert self._is_ramping(), "virtual price decreased"
+            assert params._is_ramping(), "virtual price decreased"
 
     self.xcp_profit = xcp_profit
 
@@ -887,7 +878,7 @@ def _claim_admin_fees():
     last_claim_time: uint256 = self.last_admin_fee_claim_timestamp
     if (
         unsafe_sub(block.timestamp, last_claim_time) < MIN_ADMIN_FEE_CLAIM_INTERVAL or
-        self._is_ramping()
+        params._is_ramping()
     ):
         return
 
@@ -905,11 +896,11 @@ def _claim_admin_fees():
 
     # ---------- Conditions met to claim admin fees: compute state. ----------
 
-    A_gamma: uint256[2] = self._A_gamma()
+    A_gamma: uint256[2] = params._A_gamma()
     D: uint256 = self.D
     vprice: uint256 = self.virtual_price
     price_scale: uint256 = self.cached_price_scale
-    fee_receiver: address = staticcall factory.fee_receiver()
+    fee_receiver: address = params._fee_receiver()
     balances: uint256[N_COINS] = self.balances
 
     #  Admin fees are calculated as follows.
@@ -1003,48 +994,10 @@ def _xp(
 
 @internal
 @view
-def _is_ramping() -> bool:
-    """
-    @notice Checks if A and gamma are ramping.
-    @return bool True if A and/or gamma are ramping, False otherwise.
-    """
-    return self.future_A_gamma_time > block.timestamp
-
-@view
-@internal
-def _A_gamma() -> uint256[2]:
-    t1: uint256 = self.future_A_gamma_time
-
-    gamma_A1: uint256[2] = utils.unpack_2(self.future_A_gamma)
-    gamma1: uint256 = gamma_A1[0]
-    A1: uint256 = gamma_A1[1]
-
-    if block.timestamp < t1:
-
-        # --------------- Handle ramping up and down of A --------------------
-
-        gamma_A0: uint256[2] = utils.unpack_2(self.initial_A_gamma) # [gamma, A]
-        gamma0: uint256 = gamma_A0[0]
-        A0: uint256 = gamma_A0[1]
-
-        t0: uint256 = self.initial_A_gamma_time
-
-        t1 -= t0
-        t0 = block.timestamp - t0
-        t2: uint256 = t1 - t0
-
-        A1 = (A0 * t2 + A1 * t0) // t1
-        gamma1 = (gamma0 * t2 + gamma1 * t0) // t1
-
-    return [A1, gamma1]
-
-
-@internal
-@view
 def _fee(xp: uint256[N_COINS]) -> uint256:
 
     # unpack mid_fee, out_fee, fee_gamma
-    fee_params: uint256[3] = utils.unpack_3(self.packed_fee_params)
+    fee_params: uint256[3] = utils.unpack_3(params.packed_fee_params)
 
     # warm up variable with sum of balances
     B: uint256 = xp[0] + xp[1]
@@ -1133,7 +1086,7 @@ def calc_withdraw_fixed_out(lp_token_amount: uint256, i: uint256, amount_i: uint
     @return uint256 Amount of token 1-i received for burning token_amount LP tokens.
     """
     return self._calc_withdraw_fixed_out(
-        self._A_gamma(),
+        params._A_gamma(),
         lp_token_amount,
         i,
         amount_i,
@@ -1151,7 +1104,7 @@ def calc_withdraw_one_coin(lp_token_amount: uint256, i: uint256) -> uint256:
     @return uint256 Amount of coin[i] tokens received for burning token_amount LP tokens.
     """
     return self._calc_withdraw_fixed_out(
-        self._A_gamma(),
+        params._A_gamma(),
         lp_token_amount,
         1 - i, # Here we flip i because we want to constrain the other coin to be zero.
         0, # We set the amount of coin[1 - i] to be withdrawn to 0.
@@ -1184,7 +1137,7 @@ def _calc_withdraw_fixed_out(
     xp: uint256[N_COINS] = self._xp(balances, price_scale)
 
     D: uint256 = 0
-    if self._is_ramping():
+    if params._is_ramping():
         D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
     else:
         D = self.D
@@ -1250,7 +1203,7 @@ def internal_price_oracle() -> uint256:
         #                                                   average if needed.
 
         last_prices: uint256 = self.last_prices
-        ma_time: uint256 = utils.unpack_3(self.packed_rebalancing_params)[2]
+        ma_time: uint256 = params._ma_time()
         alpha: uint256 = staticcall MATH.wad_exp(
             -convert(
                 unsafe_sub(block.timestamp, last_prices_timestamp) * 10**18 // ma_time,
@@ -1269,26 +1222,6 @@ def internal_price_oracle() -> uint256:
 
 @external
 @view
-def fee_receiver() -> address:
-    """
-    @notice Returns the address of the admin fee receiver.
-    @return address Fee receiver.
-    """
-    return staticcall factory.fee_receiver()
-
-
-@external
-@view
-def admin() -> address:
-    """
-    @notice Returns the address of the pool's admin.
-    @return address Admin.
-    """
-    return staticcall factory.admin()
-
-
-@external
-@view
 def calc_token_amount(amounts: uint256[N_COINS], deposit: bool) -> uint256:
     """
     @notice Calculate LP tokens minted or to be burned for depositing or
@@ -1298,8 +1231,8 @@ def calc_token_amount(amounts: uint256[N_COINS], deposit: bool) -> uint256:
     @param deposit True if it is a deposit action, False if withdrawn.
     @return uint256 Amount of LP tokens deposited or withdrawn.
     """
-    view_contract: address = staticcall factory.views_implementation()
-    return staticcall ITwocryptoView(view_contract).calc_token_amount(amounts, deposit, self)
+    view_contract: ITwocryptoView = params._views_implementation()
+    return staticcall view_contract.calc_token_amount(amounts, deposit, self)
 
 
 @external
@@ -1313,8 +1246,8 @@ def get_dy(i: uint256, j: uint256, dx: uint256) -> uint256:
     @param dx amount of input coin[i] tokens
     @return uint256 Exact amount of output j tokens for dx amount of i input tokens.
     """
-    view_contract: address = staticcall factory.views_implementation()
-    return staticcall ITwocryptoView(view_contract).get_dy(i, j, dx, self)
+    view_contract: ITwocryptoView = params._views_implementation()
+    return staticcall view_contract.get_dy(i, j, dx, self)
 
 
 @external
@@ -1331,8 +1264,8 @@ def get_dx(i: uint256, j: uint256, dy: uint256) -> uint256:
     @param dy amount of input coin[j] tokens received
     @return uint256 Approximate amount of input i tokens to get dy amount of j tokens.
     """
-    view_contract: address = staticcall factory.views_implementation()
-    return staticcall ITwocryptoView(view_contract).get_dx(i, j, dy, self)
+    view_contract: ITwocryptoView = params._views_implementation()
+    return staticcall view_contract.get_dx(i, j, dy, self)
 
 
 @external
@@ -1420,88 +1353,6 @@ def calc_token_fee(
 
 @view
 @external
-def A() -> uint256:
-    """
-    @notice Returns the current pool amplification parameter.
-    @return uint256 A param.
-    """
-    return self._A_gamma()[0]
-
-
-@view
-@external
-def gamma() -> uint256:
-    """
-    @notice Returns the current pool gamma parameter.
-    @return uint256 gamma param.
-    """
-    return self._A_gamma()[1]
-
-
-@view
-@external
-def mid_fee() -> uint256:
-    """
-    @notice Returns the current mid fee
-    @return uint256 mid_fee value.
-    """
-    return utils.unpack_3(self.packed_fee_params)[0]
-
-
-@view
-@external
-def out_fee() -> uint256:
-    """
-    @notice Returns the current out fee
-    @return uint256 out_fee value.
-    """
-    return utils.unpack_3(self.packed_fee_params)[1]
-
-
-@view
-@external
-def fee_gamma() -> uint256:
-    """
-    @notice Returns the current fee gamma
-    @return uint256 fee_gamma value.
-    """
-    return utils.unpack_3(self.packed_fee_params)[2]
-
-
-@view
-@external
-def allowed_extra_profit() -> uint256:
-    """
-    @notice Returns the current allowed extra profit
-    @return uint256 allowed_extra_profit value.
-    """
-    return utils.unpack_3(self.packed_rebalancing_params)[0]
-
-
-@view
-@external
-def adjustment_step() -> uint256:
-    """
-    @notice Returns the current adjustment step
-    @return uint256 adjustment_step value.
-    """
-    return utils.unpack_3(self.packed_rebalancing_params)[1]
-
-
-@view
-@external
-def ma_time() -> uint256:
-    """
-    @notice Returns the current moving average time in seconds
-    @dev To get time in seconds, the parameter is multipled by ln(2)
-         One can expect off-by-one errors here.
-    @return uint256 ma_time value.
-    """
-    return utils.unpack_3(self.packed_rebalancing_params)[2] * 694 // 1000
-
-
-@view
-@external
 def precisions() -> uint256[N_COINS]:  # <-------------- For by view contract.
     """
     @notice Returns the precisions of each coin in the pool.
@@ -1519,153 +1370,3 @@ def fee_calc(xp: uint256[N_COINS]) -> uint256:  # <----- For by view contract.
     @return uint256 Fee value.
     """
     return self._fee(xp)
-
-
-# ------------------------- AMM Admin Functions ------------------------------
-
-
-@external
-def ramp_A_gamma(
-    future_A: uint256, future_gamma: uint256, future_time: uint256
-):
-    """
-    @notice Initialise Ramping A and gamma parameter values linearly.
-    @dev Only accessible by factory admin, and only
-    @param future_A The future A value.
-    @param future_gamma The future gamma value.
-    @param future_time The timestamp at which the ramping will end.
-    """
-    assert msg.sender == staticcall factory.admin(), "only owner"
-    assert not self._is_ramping(), "ramp undergoing"
-    assert future_time > block.timestamp + MIN_RAMP_TIME - 1, "ramp time<min"
-
-    A_gamma: uint256[2] = self._A_gamma() # [A, gamma]
-
-    assert future_A > MIN_A - 1, "A<min"
-    assert future_A < MAX_A + 1, "A>max"
-    assert future_gamma > MIN_GAMMA - 1, "gamma<min"
-    assert future_gamma < MAX_GAMMA + 1, "gamme>max"
-
-    ratio: uint256 = 10**18 * future_A // A_gamma[0] # A
-    assert ratio < 10**18 * MAX_A_CHANGE + 1, "A change too high"
-    assert ratio > 10**18 // MAX_A_CHANGE - 1, "A change too low"
-
-    ratio = 10**18 * future_gamma // A_gamma[1] # gamma
-    assert ratio < 10**18 * MAX_A_CHANGE + 1, "gamma change too high"
-    assert ratio > 10**18 // MAX_A_CHANGE - 1, "gamma change too low"
-
-    self.initial_A_gamma = utils.pack_2(A_gamma[1], A_gamma[0]) # [gamma, A]
-    self.initial_A_gamma_time = block.timestamp
-
-    self.future_A_gamma = utils.pack_2(future_gamma, future_A) # [gamma, A]
-    self.future_A_gamma_time = future_time
-
-    log ITwocrypto.RampAgamma(
-        initial_A=A_gamma[0],
-        future_A=future_A,
-        initial_gamma=A_gamma[1],
-        future_gamma=future_gamma,
-        initial_time=block.timestamp,
-        future_time=future_time
-    )
-
-
-@external
-def stop_ramp_A_gamma():
-    """
-    @notice Stop Ramping A and gamma parameters immediately.
-    @dev Only accessible by factory admin.
-    """
-    assert msg.sender == staticcall factory.admin(), "only owner"
-
-    A_gamma: uint256[2] = self._A_gamma()
-    packed_gamma_A: uint256 = utils.pack_2(A_gamma[1], A_gamma[0]) # [gamma, A]
-    self.initial_A_gamma = packed_gamma_A
-    self.future_A_gamma = packed_gamma_A
-    self.initial_A_gamma_time = block.timestamp
-    self.future_A_gamma_time = block.timestamp
-
-    # ------ Now (block.timestamp < t1) is always False, so we return saved A.
-
-    log ITwocrypto.StopRampA(current_A=A_gamma[0], current_gamma=A_gamma[1], time=block.timestamp)
-
-
-@external
-@nonreentrant
-def apply_new_parameters(
-    _new_mid_fee: uint256,
-    _new_out_fee: uint256,
-    _new_fee_gamma: uint256,
-    _new_allowed_extra_profit: uint256,
-    _new_adjustment_step: uint256,
-    _new_ma_time: uint256,
-):
-    """
-    @notice Commit new parameters.
-    @dev Only accessible by factory admin.
-    @param _new_mid_fee The new mid fee.
-    @param _new_out_fee The new out fee.
-    @param _new_fee_gamma The new fee gamma.
-    @param _new_allowed_extra_profit The new allowed extra profit.
-    @param _new_adjustment_step The new adjustment step.
-    @param _new_ma_time The new ma time. ma_time is time_in_seconds/ln(2).
-    """
-    assert msg.sender == staticcall factory.admin(), "only owner"
-
-    # ----------------------------- Set fee params ---------------------------
-
-    new_mid_fee: uint256 = _new_mid_fee
-    new_out_fee: uint256 = _new_out_fee
-    new_fee_gamma: uint256 = _new_fee_gamma
-
-    current_fee_params: uint256[3] = utils.unpack_3(self.packed_fee_params)
-
-    if new_out_fee < MAX_FEE + 1:
-        assert new_out_fee > MIN_FEE - 1, "fee is out of range"
-    else:
-        new_out_fee = current_fee_params[1]
-
-    if new_mid_fee > MAX_FEE:
-        new_mid_fee = current_fee_params[0]
-    assert new_mid_fee <= new_out_fee, "mid-fee is too high"
-
-    if new_fee_gamma < 10**18:
-        assert new_fee_gamma > 0, "fee_gamma out of range [1 .. 10**18]"
-    else:
-        new_fee_gamma = current_fee_params[2]
-
-    self.packed_fee_params = utils.pack_3([new_mid_fee, new_out_fee, new_fee_gamma])
-
-    # ----------------- Set liquidity rebalancing parameters -----------------
-
-    new_allowed_extra_profit: uint256 = _new_allowed_extra_profit
-    new_adjustment_step: uint256 = _new_adjustment_step
-    new_ma_time: uint256 = _new_ma_time
-
-    current_rebalancing_params: uint256[3] = utils.unpack_3(self.packed_rebalancing_params)
-
-    if new_allowed_extra_profit > 10**18:
-        new_allowed_extra_profit = current_rebalancing_params[0]
-
-    if new_adjustment_step > 10**18:
-        new_adjustment_step = current_rebalancing_params[1]
-
-    if new_ma_time < 872542:  # <----- Calculated as: 7 * 24 * 60 * 60 / ln(2)
-        assert new_ma_time > 86, "MA time should be longer than 60/ln(2)"
-    else:
-        new_ma_time = current_rebalancing_params[2]
-
-    self.packed_rebalancing_params = utils.pack_3(
-        [new_allowed_extra_profit, new_adjustment_step, new_ma_time]
-    )
-
-    # ---------------------------------- LOG ---------------------------------
-
-    log ITwocrypto.NewParameters(
-        mid_fee=new_mid_fee,
-        out_fee=new_out_fee,
-        fee_gamma=new_fee_gamma,
-        allowed_extra_profit=new_allowed_extra_profit,
-        adjustment_step=new_adjustment_step,
-        ma_time=new_ma_time
-    )
