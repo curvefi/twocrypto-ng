@@ -10,6 +10,10 @@ from tests.utils.constants import (
 )
 import boa
 
+from hypothesis import Phase, settings
+
+settings.register_profile("no-shrink", settings(phases=list(Phase)[:4]))
+
 # Constants
 INITIAL_PRICES = [10**18, 1500 * 10**18]  # price relative to coin_id = 0
 
