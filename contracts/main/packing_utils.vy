@@ -4,11 +4,14 @@
 @notice A stateless module to pack and unpack integers into a single uint256.
 """
 
+MAX_UINT64: constant(uint256) = 2**64-1
+MAX_UINT128: constant(uint256) = 2**128-1
+
 @internal
 @pure
 def pack_3(x: uint256[3]) -> uint256:
     """
-    @notice Packs 3 integers with values <= 2**64-1 into a uint256
+    @notice Packs 3 integers with values <= 2**64-1 (~1.84e19) into a uint256
     @param x The uint256[3] to pack
     @return uint256 Integer with packed values
     """
@@ -24,9 +27,9 @@ def unpack_3(_packed: uint256) -> uint256[3]:
     @return uint256[3] A list of length 3 with unpacked integers
     """
     return [
-        (_packed >> 128) & 18446744073709551615,
-        (_packed >> 64) & 18446744073709551615,
-        _packed & 18446744073709551615,
+        (_packed >> 128) & MAX_UINT64,
+        (_packed >> 64) & MAX_UINT64,
+        _packed & MAX_UINT64,
     ]
 
 
@@ -50,4 +53,4 @@ def unpack_2(packed: uint256) -> uint256[2]:
     @param packed The uint256 to unpack
     @return uint256[2] A list of length 2 with unpacked integers
     """
-    return [packed & (2**128 - 1), packed >> 128]
+    return [packed & MAX_UINT128, packed >> 128]
