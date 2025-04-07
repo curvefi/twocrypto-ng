@@ -9,7 +9,7 @@
 
 # The AMM contract is also the LP token.
 from ethereum.ercs import IERC20
-implements: IERC20  
+implements: IERC20
 
 from ethereum.ercs import IERC20Detailed
 implements: IERC20Detailed

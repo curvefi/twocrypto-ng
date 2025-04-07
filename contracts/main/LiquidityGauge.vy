@@ -369,7 +369,6 @@ def _update_liquidity_limit(addr: address, l: uint256, L: uint256):
     _working_supply: uint256 = self.working_supply + lim - old_bal
     self.working_supply = _working_supply
 
-    log UpdateLiquidityLimit(addr, l, L, lim, _working_supply)
 
 
 @internal
@@ -395,7 +394,6 @@ def _transfer(_from: address, _to: address, _value: uint256):
         self.balanceOf[_to] = new_balance
         self._update_liquidity_limit(_to, new_balance, total_supply)
 
-    log Transfer(_from, _to, _value)
 
 
 # External User Facing Functions
@@ -428,8 +426,6 @@ def deposit(_value: uint256, _addr: address = msg.sender, _claim_rewards: bool =
 
         extcall IERC20(lp_token).transferFrom(msg.sender, self, _value)
 
-        log Deposit(_addr, _value)
-        log Transfer(empty(address), _addr, _value)
 
 
 @external
@@ -457,8 +453,6 @@ def withdraw(_value: uint256, _claim_rewards: bool = False):
 
         extcall IERC20(lp_token).transfer(msg.sender, _value)
 
-    log Withdraw(msg.sender, _value)
-    log Transfer(msg.sender, empty(address), _value)
 
 
 @external
@@ -490,7 +484,6 @@ def transferFrom(_from: address, _to: address, _value: uint256) -> bool:
     if _allowance != max_value(uint256):
         _new_allowance: uint256 = _allowance - _value
         self.allowance[_from][msg.sender] = _new_allowance
-        log Approval(_from, msg.sender, _new_allowance)
 
     self._transfer(_from, _to, _value)
 
@@ -526,10 +519,7 @@ def approve(_spender : address, _value : uint256) -> bool:
     @return bool success
     """
     self.allowance[msg.sender][_spender] = _value
-    log Approval(msg.sender, _spender, _value)
-
     return True
-
 
 @external
 def permit(
@@ -576,7 +566,6 @@ def permit(
     self.allowance[_owner][_spender] = _value
     self.nonces[_owner] = unsafe_add(nonce, 1)
 
-    log Approval(_owner, _spender, _value)
     return True
 
 
@@ -593,7 +582,6 @@ def increaseAllowance(_spender: address, _added_value: uint256) -> bool:
     allowance: uint256 = self.allowance[msg.sender][_spender] + _added_value
     self.allowance[msg.sender][_spender] = allowance
 
-    log Approval(msg.sender, _spender, allowance)
 
     return True
 
@@ -611,7 +599,6 @@ def decreaseAllowance(_spender: address, _subtracted_value: uint256) -> bool:
     allowance: uint256 = self.allowance[msg.sender][_spender] - _subtracted_value
     self.allowance[msg.sender][_spender] = allowance
 
-    log Approval(msg.sender, _spender, allowance)
 
     return True
 
@@ -674,7 +661,6 @@ def set_gauge_manager(_gauge_manager: address):
     assert msg.sender in [self.manager, staticcall Factory(factory).admin()]  # dev: only manager or factory admin
 
     self.manager = _gauge_manager
-    log SetGaugeManager(_gauge_manager)
 
 
 @external
