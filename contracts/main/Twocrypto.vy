@@ -234,7 +234,7 @@ def __init__(
     assert gamma_A[1] > MIN_A-1, "A<MIN"
     assert gamma_A[1] < MAX_A+1, "A>MAX"
 
-    self.initial_A_gamma = packed_gamma_A # variable name is confusing here
+    self.initial_A_gamma = packed_gamma_A # variable name is reversed (legacy reasons)
     self.future_A_gamma = packed_gamma_A
     # ------------------------------------------------------------------------
 
@@ -1679,7 +1679,7 @@ def stop_ramp_A_gamma():
 
     A_gamma: uint256[2] = self._A_gamma()
     packed_gamma_A: uint256 = utils.pack_2(A_gamma[1], A_gamma[0]) # [gamma, A]
-    self.initial_A_gamma = packed_gamma_A 
+    self.initial_A_gamma = packed_gamma_A
     self.future_A_gamma = packed_gamma_A
     self.initial_A_gamma_time = block.timestamp
     self.future_A_gamma_time = block.timestamp
