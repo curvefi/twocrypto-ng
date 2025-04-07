@@ -8,54 +8,9 @@
 
 from ethereum.ercs import IERC20Detailed as IERC20
 
-interface TwocryptoPool:
-    def balances(i: uint256) -> uint256: view
-
-
-event TwocryptoPoolDeployed:
-    pool: address
-    name: String[64]
-    symbol: String[32]
-    coins: address[N_COINS]
-    math: address
-    salt: bytes32
-    precisions: uint256[N_COINS]
-    packed_A_gamma: uint256
-    packed_fee_params: uint256
-    packed_rebalancing_params: uint256
-    packed_prices: uint256
-    deployer: address
-
-
-event LiquidityGaugeDeployed:
-    pool: address
-    gauge: address
-
-event UpdateFeeReceiver:
-    old_fee_receiver: address
-    new_fee_receiver: address
-
-event UpdatePoolImplementation:
-    implementation_id: uint256
-    old_pool_implementation: address
-    new_pool_implementation: address
-
-event UpdateGaugeImplementation:
-    old_gauge_implementation: address
-    new_gauge_implementation: address
-
-event UpdateMathImplementation:
-    old_math_implementation: address
-    new_math_implementation: address
-
-event UpdateViewsImplementation:
-    old_views_implementation: address
-    new_views_implementation: address
-
-event TransferOwnership:
-    old_owner: address
-    new_owner: address
-
+from interfaces import ITwocrypto
+from interfaces import ITwocryptoFactory
+implements: ITwocryptoFactory
 
 struct PoolArray:
     liquidity_gauge: address
@@ -90,6 +45,7 @@ pool_data: HashMap[address, PoolArray]
 pool_list: public(DynArray[address, 4294967296])   # master list of pools
 
 
+
 @deploy
 def __init__():
     self.deployer = tx.origin
@@ -104,8 +60,8 @@ def initialise_ownership(_fee_receiver: address, _admin: address):
     self.fee_receiver = _fee_receiver
     self.admin = _admin
 
-    log UpdateFeeReceiver(old_fee_receiver=empty(address), new_fee_receiver=_fee_receiver)
-    log TransferOwnership(old_owner=empty(address), new_owner=_admin)
+    log ITwocryptoFactory.UpdateFeeReceiver(old_fee_receiver=empty(address), new_fee_receiver=_fee_receiver)
+    log ITwocryptoFactory.TransferOwnership(old_owner=empty(address), new_owner=_admin)
 
 
 @internal
@@ -224,7 +180,7 @@ def deploy_pool(
     # add coins to market:
     self._add_coins_to_market(_coins[0], _coins[1], pool)
 
-    log TwocryptoPoolDeployed(
+    log ITwocryptoFactory.TwocryptoPoolDeployed(
         pool=pool,
         name=_name,
         symbol=_symbol,
@@ -265,7 +221,7 @@ def deploy_gauge(_pool: address) -> address:
     gauge: address = create_from_blueprint(self.gauge_implementation, _pool, code_offset=3)
     self.pool_data[_pool].liquidity_gauge = gauge
 
-    log LiquidityGaugeDeployed(pool=_pool, gauge=gauge)
+    log ITwocryptoFactory.LiquidityGaugeDeployed(pool=_pool, gauge=gauge)
     return gauge
 
 
@@ -280,7 +236,7 @@ def set_fee_receiver(_fee_receiver: address):
     """
     assert msg.sender == self.admin, "admin only"
 
-    log UpdateFeeReceiver(old_fee_receiver=self.fee_receiver, new_fee_receiver=_fee_receiver)
+    log ITwocryptoFactory.UpdateFeeReceiver(old_fee_receiver=self.fee_receiver, new_fee_receiver=_fee_receiver)
     self.fee_receiver = _fee_receiver
 
 
@@ -296,7 +252,7 @@ def set_pool_implementation(
     """
     assert msg.sender == self.admin, "admin only"
 
-    log UpdatePoolImplementation(
+    log ITwocryptoFactory.UpdatePoolImplementation(
         implementation_id=_implementation_index,
         old_pool_implementation=self.pool_implementations[_implementation_index],
         new_pool_implementation=_pool_implementation
@@ -314,7 +270,7 @@ def set_gauge_implementation(_gauge_implementation: address):
     """
     assert msg.sender == self.admin, "admin only"
 
-    log UpdateGaugeImplementation(old_gauge_implementation=self.gauge_implementation, new_gauge_implementation=_gauge_implementation)
+    log ITwocryptoFactory.UpdateGaugeImplementation(old_gauge_implementation=self.gauge_implementation, new_gauge_implementation=_gauge_implementation)
     self.gauge_implementation = _gauge_implementation
 
 
@@ -326,7 +282,7 @@ def set_views_implementation(_views_implementation: address):
     """
     assert msg.sender == self.admin,  "admin only"
 
-    log UpdateViewsImplementation(old_views_implementation=self.views_implementation, new_views_implementation=_views_implementation)
+    log ITwocryptoFactory.UpdateViewsImplementation(old_views_implementation=self.views_implementation, new_views_implementation=_views_implementation)
     self.views_implementation = _views_implementation
 
 
@@ -338,7 +294,7 @@ def set_math_implementation(_math_implementation: address):
     """
     assert msg.sender == self.admin, "admin only"
 
-    log UpdateMathImplementation(old_math_implementation=self.math_implementation, new_math_implementation=_math_implementation)
+    log ITwocryptoFactory.UpdateMathImplementation(old_math_implementation=self.math_implementation, new_math_implementation=_math_implementation)
     self.math_implementation = _math_implementation
 
 
@@ -361,7 +317,7 @@ def accept_transfer_ownership():
     """
     assert msg.sender == self.future_admin, "future admin only"
 
-    log TransferOwnership(old_owner=self.admin, new_owner=msg.sender)
+    log ITwocryptoFactory.TransferOwnership(old_owner=self.admin, new_owner=msg.sender)
     self.admin = msg.sender
 
 
@@ -427,7 +383,7 @@ def get_balances(_pool: address) -> uint256[N_COINS]:
     @param _pool Pool address
     @return uint256 list of balances
     """
-    return [staticcall TwocryptoPool(_pool).balances(0), staticcall TwocryptoPool(_pool).balances(1)]
+    return [staticcall ITwocrypto(_pool).balances(0), staticcall ITwocrypto(_pool).balances(1)]
 
 
 @view

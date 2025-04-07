@@ -9,48 +9,9 @@
 
 from ethereum.ercs import IERC20
 
-
-interface Curve:
-    def MATH() -> Math: view
-    def A() -> uint256: view
-    def gamma() -> uint256: view
-    def price_scale() -> uint256: view
-    def price_oracle() -> uint256: view
-    def get_virtual_price() -> uint256: view
-    def balances(i: uint256) -> uint256: view
-    def D() -> uint256: view
-    def fee_calc(xp: uint256[N_COINS]) -> uint256: view
-    def calc_token_fee(
-        amounts: uint256[N_COINS], xp: uint256[N_COINS]
-    ) -> uint256: view
-    def future_A_gamma_time() -> uint256: view
-    def totalSupply() -> uint256: view
-    def precisions() -> uint256[N_COINS]: view
-    def packed_fee_params() -> uint256: view
-
-
-interface Math:
-    def newton_D(
-        ANN: uint256,
-        gamma: uint256,
-        x_unsorted: uint256[N_COINS],
-        K0_prev: uint256
-    ) -> uint256: view
-    def get_y(
-        ANN: uint256,
-        gamma: uint256,
-        x: uint256[N_COINS],
-        D: uint256,
-        i: uint256,
-    ) -> uint256[2]: view
-    def newton_y(
-        ANN: uint256,
-        gamma: uint256,
-        x: uint256[N_COINS],
-        D: uint256,
-        i: uint256,
-    ) -> uint256: view
-
+from interfaces import ITwocrypto
+from interfaces import ITwocryptoMath
+from interfaces import ITwocryptoView
 
 N_COINS: constant(uint256) = 2
 PRECISION: constant(uint256) = 10**18
@@ -67,7 +28,7 @@ def get_dy(
 
     # dy = (get_y(x + dx) - y) * (1 - fee)
     dy, xp = self._get_dy_nofee(i, j, dx, swap)
-    dy -= staticcall Curve(swap).fee_calc(xp) * dy // 10**10
+    dy -= staticcall ITwocrypto(swap).fee_calc(xp) * dy // 10**10
 
     return dy
 
@@ -86,7 +47,7 @@ def get_dx(
     # for more precise dx (but never exact), increase num loops
     for k: uint256 in range(5):
         dx, xp = self._get_dx_fee(i, j, _dy, swap)
-        fee_dy = staticcall Curve(swap).fee_calc(xp) * _dy // 10**10
+        fee_dy = staticcall ITwocrypto(swap).fee_calc(xp) * _dy // 10**10
         _dy = dy + fee_dy + 1
 
     return dx
@@ -113,7 +74,7 @@ def calc_token_amount(
 
     d_token, amountsp, xp = self._calc_dtoken_nofee(amounts, deposit, swap)
     d_token -= (
-        staticcall Curve(swap).calc_token_fee(amountsp, xp) * d_token // 10**10 + 1
+        staticcall ITwocrypto(swap).calc_token_fee(amountsp, xp) * d_token // 10**10 + 1
     )
 
     return d_token
@@ -128,7 +89,7 @@ def calc_fee_get_dy(i: uint256, j: uint256, dx: uint256, swap: address
     xp: uint256[N_COINS] = empty(uint256[N_COINS])
     dy, xp = self._get_dy_nofee(i, j, dx, swap)
 
-    return (staticcall Curve(swap).fee_calc(xp)) * dy // 10**10
+    return (staticcall ITwocrypto(swap).fee_calc(xp)) * dy // 10**10
 
 
 @external
@@ -151,7 +112,7 @@ def calc_fee_token_amount(
     xp: uint256[N_COINS] = empty(uint256[N_COINS])
     d_token, amountsp, xp = self._calc_dtoken_nofee(amounts, deposit, swap)
 
-    return (staticcall Curve(swap).calc_token_fee(amountsp, xp)) * d_token // 10**10 + 1
+    return (staticcall ITwocrypto(swap).calc_token_fee(amountsp, xp)) * d_token // 10**10 + 1
 
 
 @internal
@@ -165,9 +126,9 @@ def _calc_D_ramp(
     swap: address
 ) -> uint256:
 
-    math: Math = staticcall Curve(swap).MATH()
-    D: uint256 = staticcall Curve(swap).D()
-    if staticcall Curve(swap).future_A_gamma_time() > block.timestamp:
+    math: ITwocryptoMath = staticcall ITwocrypto(swap).MATH()
+    D: uint256 = staticcall ITwocrypto(swap).D()
+    if staticcall ITwocrypto(swap).future_A_gamma_time() > block.timestamp:
         _xp: uint256[N_COINS] = xp
         _xp[0] *= precisions[0]
         _xp[1] = _xp[1] * price_scale * precisions[1] // PRECISION
@@ -187,7 +148,7 @@ def _get_dx_fee(
     assert i != j and i < N_COINS and j < N_COINS, "coin index out of range"
     assert dy > 0, "do not exchange out 0 coins"
 
-    math: Math = staticcall Curve(swap).MATH()
+    math: ITwocryptoMath = staticcall ITwocrypto(swap).MATH()
 
     xp: uint256[N_COINS] = empty(uint256[N_COINS])
     precisions: uint256[N_COINS] = empty(uint256[N_COINS])
@@ -224,7 +185,7 @@ def _get_dy_nofee(
     assert i != j and i < N_COINS and j < N_COINS, "coin index out of range"
     assert dx > 0, "do not exchange 0 coins"
 
-    math: Math = staticcall Curve(swap).MATH()
+    math: ITwocryptoMath = staticcall ITwocrypto(swap).MATH()
 
     xp: uint256[N_COINS] = empty(uint256[N_COINS])
     precisions: uint256[N_COINS] = empty(uint256[N_COINS])
@@ -260,7 +221,7 @@ def _calc_dtoken_nofee(
     amounts: uint256[N_COINS], deposit: bool, swap: address
 ) -> (uint256, uint256[N_COINS], uint256[N_COINS]):
 
-    math: Math = staticcall Curve(swap).MATH()
+    math: ITwocryptoMath = staticcall ITwocrypto(swap).MATH()
 
     xp: uint256[N_COINS] = empty(uint256[N_COINS])
     precisions: uint256[N_COINS] = empty(uint256[N_COINS])
@@ -308,23 +269,23 @@ def _calc_withdraw_one_coin(
     swap: address
 ) -> (uint256, uint256):
 
-    token_supply: uint256 = staticcall Curve(swap).totalSupply()
+    token_supply: uint256 = staticcall ITwocrypto(swap).totalSupply()
     assert token_amount <= token_supply, "token amount more than supply"
     assert i < N_COINS, "coin out of range"
 
-    math: Math = staticcall Curve(swap).MATH()
+    math: ITwocryptoMath = staticcall ITwocrypto(swap).MATH()
 
     xx: uint256[N_COINS] = empty(uint256[N_COINS])
     for k: uint256 in range(N_COINS):
-        xx[k] = staticcall Curve(swap).balances(k)
+        xx[k] = staticcall ITwocrypto(swap).balances(k)
 
-    precisions: uint256[N_COINS] = staticcall Curve(swap).precisions()
-    A: uint256 = staticcall Curve(swap).A()
-    gamma: uint256 = staticcall Curve(swap).gamma()
+    precisions: uint256[N_COINS] = staticcall ITwocrypto(swap).precisions()
+    A: uint256 = staticcall ITwocrypto(swap).A()
+    gamma: uint256 = staticcall ITwocrypto(swap).gamma()
     D0: uint256 = 0
     p: uint256 = 0
 
-    price_scale_i: uint256 = staticcall Curve(swap).price_scale() * precisions[1]
+    price_scale_i: uint256 = staticcall ITwocrypto(swap).price_scale() * precisions[1]
     xp: uint256[N_COINS] = [
         xx[0] * precisions[0],
         unsafe_div(xx[1] * price_scale_i, PRECISION)
@@ -332,10 +293,10 @@ def _calc_withdraw_one_coin(
     if i == 0:
         price_scale_i = PRECISION * precisions[0]
 
-    if staticcall Curve(swap).future_A_gamma_time() > block.timestamp:
+    if staticcall ITwocrypto(swap).future_A_gamma_time() > block.timestamp:
         D0 = staticcall math.newton_D(A, gamma, xp, 0)
     else:
-        D0 = staticcall Curve(swap).D()
+        D0 = staticcall ITwocrypto(swap).D()
 
     D: uint256 = D0
 
@@ -358,7 +319,7 @@ def _calc_withdraw_one_coin(
 @view
 def _fee(xp: uint256[N_COINS], swap: address) -> uint256:
 
-    packed_fee_params: uint256 = staticcall Curve(swap).packed_fee_params()
+    packed_fee_params: uint256 = staticcall ITwocrypto(swap).packed_fee_params()
     fee_params: uint256[3] = self._unpack_3(packed_fee_params)
     f: uint256 = xp[0] + xp[1]
     f = fee_params[2] * 10**18 // (
@@ -381,16 +342,16 @@ def _prep_calc(swap: address) -> (
     uint256[N_COINS]
 ):
 
-    precisions: uint256[N_COINS] = staticcall Curve(swap).precisions()
-    token_supply: uint256 = staticcall Curve(swap).totalSupply()
+    precisions: uint256[N_COINS] = staticcall ITwocrypto(swap).precisions()
+    token_supply: uint256 = staticcall ITwocrypto(swap).totalSupply()
     xp: uint256[N_COINS] = empty(uint256[N_COINS])
     for k: uint256 in range(N_COINS):
-        xp[k] = staticcall Curve(swap).balances(k)
+        xp[k] = staticcall ITwocrypto(swap).balances(k)
 
-    price_scale: uint256 = staticcall Curve(swap).price_scale()
+    price_scale: uint256 = staticcall ITwocrypto(swap).price_scale()
 
-    A: uint256 = staticcall Curve(swap).A()
-    gamma: uint256 = staticcall Curve(swap).gamma()
+    A: uint256 = staticcall ITwocrypto(swap).A()
+    gamma: uint256 = staticcall ITwocrypto(swap).gamma()
     D: uint256 = self._calc_D_ramp(
         A, gamma, xp, precisions, price_scale, swap
     )
