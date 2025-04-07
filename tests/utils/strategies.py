@@ -9,6 +9,7 @@ from boa.test import strategy
 from hypothesis import assume, note
 from hypothesis.strategies import composite, integers, just, sampled_from
 
+from tests.unitary.factory.test_deploy_pool import ZERO_ADDRESS
 from tests.utils.constants import (
     MAX_A,
     MAX_FEE,
@@ -29,8 +30,7 @@ from tests.utils.pool_presets import all_presets
 
 # just a more hypothesis-like way to get an address
 # from boa's search strategy
-address = strategy("address")
-
+address = strategy("address").filter(lambda x: x != ZERO_ADDRESS)
 # ---------------- addresses ----------------
 deployer = address
 fee_receiver = address
