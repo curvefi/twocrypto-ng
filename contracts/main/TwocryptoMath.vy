@@ -10,6 +10,9 @@
 
 from snekmate.utils import math
 
+from interfaces import ITwocryptoMath
+implements: ITwocryptoMath
+
 N_COINS: constant(uint256) = 2
 A_MULTIPLIER: constant(uint256) = 10000
 
@@ -20,6 +23,7 @@ MAX_GAMMA: constant(uint256) = 199 * 10**15 # 1.99 * 10**17
 MIN_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER // 10
 MAX_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER * 1000
 
+# TODO align versions across different contracts using modules
 version: public(constant(String[8])) = "v2.1.0"
 
 
@@ -510,5 +514,5 @@ def get_p(
 
 @external
 @pure
-def wad_exp(x: int256) -> int256:
-    return math._wad_exp(x)
+def wad_exp(x: int256) -> uint256:
+    return convert(math._wad_exp(x), uint256)

@@ -1,4 +1,4 @@
-# pragma version ~=0.4.1
+# pragma version 0.4.1
 """
 @title Twocrypto
 @author Curve.Fi
@@ -6,6 +6,11 @@
 @notice A Curve AMM pool for 2 unpegged assets (e.g. WETH, USD).
 @dev All prices in the AMM are with respect to the first token in the pool.
 """
+
+from interfaces import ITwocrypto
+from interfaces import ITwocryptoMath
+from interfaces import ITwocryptoFactory
+from interfaces import ITwocryptoView
 
 # The AMM contract is also the LP token.
 from ethereum.ercs import IERC20
@@ -33,119 +38,15 @@ uses: erc20 # erc20 is initialized by the lp_token module.
 
 import packing_utils as utils
 
-# --------------------------------- Interfaces -------------------------------
-
-interface Math:
-    def wad_exp(_power: int256) -> uint256: view
-    def newton_D(
-        ANN: uint256,
-        gamma: uint256,
-        x_unsorted: uint256[N_COINS],
-        K0_prev: uint256
-    ) -> uint256: view
-    def get_y(
-        ANN: uint256,
-        gamma: uint256,
-        x: uint256[N_COINS],
-        D: uint256,
-        i: uint256,
-    ) -> uint256[2]: view
-    def get_p(
-        _xp: uint256[N_COINS],
-        _D: uint256,
-        _A_gamma: uint256[2],
-    ) -> uint256: view
-
-interface Factory:
-    def admin() -> address: view
-    def fee_receiver() -> address: view
-    def views_implementation() -> address: view
-
-interface Views:
-    def calc_token_amount(
-        amounts: uint256[N_COINS], deposit: bool, swap: address
-    ) -> uint256: view
-    def get_dy(
-        i: uint256, j: uint256, dx: uint256, swap: address
-    ) -> uint256: view
-    def get_dx(
-        i: uint256, j: uint256, dy: uint256, swap: address
-    ) -> uint256: view
-
-
-# ------------------------------- Events -------------------------------------
-
-event TokenExchange:
-    buyer: indexed(address)
-    sold_id: uint256
-    tokens_sold: uint256
-    bought_id: uint256
-    tokens_bought: uint256
-    fee: uint256
-    price_scale: uint256
-
-event AddLiquidity:
-    provider: indexed(address)
-    token_amounts: uint256[N_COINS]
-    fee: uint256
-    token_supply: uint256
-    price_scale: uint256
-
-event RemoveLiquidity:
-    provider: indexed(address)
-    token_amounts: uint256[N_COINS]
-    token_supply: uint256
-
-event RemoveLiquidityOne:
-    provider: indexed(address)
-    token_amount: uint256
-    coin_index: uint256
-    coin_amount: uint256
-    approx_fee: uint256
-    price_scale: uint256
-
-event RemoveLiquidityImbalance:
-    provider: indexed(address)
-    lp_token_amount: uint256
-    token_amounts: uint256[N_COINS]
-    approx_fee: uint256
-    price_scale: uint256
-
-event NewParameters:
-    mid_fee: uint256
-    out_fee: uint256
-    fee_gamma: uint256
-    allowed_extra_profit: uint256
-    adjustment_step: uint256
-    ma_time: uint256
-
-event RampAgamma:
-    initial_A: uint256
-    future_A: uint256
-    initial_gamma: uint256
-    future_gamma: uint256
-    initial_time: uint256
-    future_time: uint256
-
-event StopRampA:
-    current_A: uint256
-    current_gamma: uint256
-    time: uint256
-
-event ClaimAdminFee:
-    admin: indexed(address)
-    tokens: uint256[N_COINS]
-
-
 # ----------------------- Storage/State Variables ----------------------------
 
 N_COINS: constant(uint256) = 2
 PRECISION: constant(uint256) = 10**18  # <------- The precision to convert to.
 PRECISIONS: immutable(uint256[N_COINS])
 
-MATH: public(immutable(Math))
+MATH: public(immutable(ITwocryptoMath))
 coins: public(immutable(address[N_COINS]))
-factory: public(immutable(Factory))
+factory: public(immutable(ITwocryptoFactory))
 
 cached_price_scale: uint256  # <------------------------ Internal price scale.
 cached_price_oracle: uint256  # <------- Price target given by moving average.
@@ -217,9 +118,9 @@ def __init__(
     initial_price: uint256,
 ):
 
-    MATH = Math(_math)
+    MATH = ITwocryptoMath(_math)
 
-    factory = Factory(msg.sender)
+    factory = ITwocryptoFactory(msg.sender)
     lp_token.__init__(_name, _symbol)
     coins = _coins
 
@@ -372,7 +273,7 @@ def exchange(
     self._transfer_out(j, out[0], receiver)
 
     # log:
-    log TokenExchange(buyer=msg.sender, sold_id=i, tokens_sold=dx_received, bought_id=j, tokens_bought=out[0], fee=out[1], price_scale=out[2])
+    log ITwocrypto.TokenExchange(buyer=msg.sender, sold_id=i, tokens_sold=dx_received, bought_id=j, tokens_bought=out[0], fee=out[1], price_scale=out[2])
 
     return out[0]
 
@@ -421,7 +322,7 @@ def exchange_received(
     self._transfer_out(j, out[0], receiver)
 
     # log:
-    log TokenExchange(buyer=msg.sender, sold_id=i, tokens_sold=dx_received, bought_id=j, tokens_bought=out[0], fee=out[1], price_scale=out[2])
+    log ITwocrypto.TokenExchange(buyer=msg.sender, sold_id=i, tokens_sold=dx_received, bought_id=j, tokens_bought=out[0], fee=out[1], price_scale=out[2])
 
     return out[0]
 
@@ -525,7 +426,7 @@ def add_liquidity(
 
     # ---------------------------------------------- Log and claim admin fees.
 
-    log AddLiquidity(
+    log ITwocrypto.AddLiquidity(
         provider=receiver,
         token_amounts=amounts_received,
         fee=d_token_fee,
@@ -600,7 +501,7 @@ def remove_liquidity(
 
     # We intentionally use the unadjusted `amount` here as the amount of lp
     # tokens burnt is `amount`, regardless of the rounding error.
-    log RemoveLiquidity(provider=msg.sender, token_amounts=withdraw_amounts, token_supply=total_supply - amount)
+    log ITwocrypto.RemoveLiquidity(provider=msg.sender, token_amounts=withdraw_amounts, token_supply=total_supply - amount)
 
     return withdraw_amounts
 
@@ -701,7 +602,7 @@ def _remove_liquidity_fixed_out(
     token_amounts[i] = amount_i
     token_amounts[1-i] = dy
 
-    log RemoveLiquidityImbalance(
+    log ITwocrypto.RemoveLiquidityImbalance(
         provider=msg.sender,
         lp_token_amount=token_amount,
         token_amounts=token_amounts,
@@ -1086,7 +987,7 @@ def _claim_admin_fees():
             # update to self.balances occurs before external contract calls:
             self._transfer_out(i, admin_tokens[i], fee_receiver)
 
-        log ClaimAdminFee(admin=fee_receiver, tokens=admin_tokens)
+        log ITwocrypto.ClaimAdminFee(admin=fee_receiver, tokens=admin_tokens)
 
 
 @internal
@@ -1398,7 +1299,7 @@ def calc_token_amount(amounts: uint256[N_COINS], deposit: bool) -> uint256:
     @return uint256 Amount of LP tokens deposited or withdrawn.
     """
     view_contract: address = staticcall factory.views_implementation()
-    return staticcall Views(view_contract).calc_token_amount(amounts, deposit, self)
+    return staticcall ITwocryptoView(view_contract).calc_token_amount(amounts, deposit, self)
 
 
 @external
@@ -1413,7 +1314,7 @@ def get_dy(i: uint256, j: uint256, dx: uint256) -> uint256:
     @return uint256 Exact amount of output j tokens for dx amount of i input tokens.
     """
     view_contract: address = staticcall factory.views_implementation()
-    return staticcall Views(view_contract).get_dy(i, j, dx, self)
+    return staticcall ITwocryptoView(view_contract).get_dy(i, j, dx, self)
 
 
 @external
@@ -1431,7 +1332,7 @@ def get_dx(i: uint256, j: uint256, dy: uint256) -> uint256:
     @return uint256 Approximate amount of input i tokens to get dy amount of j tokens.
     """
     view_contract: address = staticcall factory.views_implementation()
-    return staticcall Views(view_contract).get_dx(i, j, dy, self)
+    return staticcall ITwocryptoView(view_contract).get_dx(i, j, dy, self)
 
 
 @external
@@ -1659,7 +1560,7 @@ def ramp_A_gamma(
     self.future_A_gamma = utils.pack_2(future_gamma, future_A) # [gamma, A]
     self.future_A_gamma_time = future_time
 
-    log RampAgamma(
+    log ITwocrypto.RampAgamma(
         initial_A=A_gamma[0],
         future_A=future_A,
         initial_gamma=A_gamma[1],
@@ -1686,7 +1587,7 @@ def stop_ramp_A_gamma():
 
     # ------ Now (block.timestamp < t1) is always False, so we return saved A.
 
-    log StopRampA(current_A=A_gamma[0], current_gamma=A_gamma[1], time=block.timestamp)
+    log ITwocrypto.StopRampA(current_A=A_gamma[0], current_gamma=A_gamma[1], time=block.timestamp)
 
 
 @external
@@ -1760,7 +1661,7 @@ def apply_new_parameters(
 
     # ---------------------------------- LOG ---------------------------------
 
-    log NewParameters(
+    log ITwocrypto.NewParameters(
         mid_fee=new_mid_fee,
         out_fee=new_out_fee,
         fee_gamma=new_fee_gamma,
