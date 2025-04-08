@@ -70,13 +70,15 @@ from snekmate.tokens import erc20
 uses: erc20 # erc20 is initialized by the lp_token module.
 
 import packing_utils as utils
+import constants as c
+
+# Trick until the compiler supports `from constants import N_COINS`
+N_COINS: constant(uint256) = c.N_COINS
+WAD: constant(uint256) = c.WAD
 
 # ----------------------- Storage/State Variables ----------------------------
 
-N_COINS: constant(uint256) = 2
-PRECISION: constant(uint256) = 10**18  # <------- The precision to convert to.
 PRECISIONS: immutable(uint256[N_COINS])
-
 _MATH: immutable(ITwocryptoMath)
 coins: public(immutable(address[N_COINS]))
 
@@ -94,8 +96,8 @@ xcp_profit_a: public(uint256)  # <--- Full profit at last claim of admin fees.
 virtual_price: public(uint256)  # <------ Cached (fast to read) virtual price.
 #                          The cached `virtual_price` is also used internally.
 
-ADMIN_FEE: public(constant(uint256)) = 5 * 10**9  # <----- 50% of earned fees.
-NOISE_FEE: constant(uint256) = 10**5  # <---------------------------- 0.1 BPS.
+# TODO admin fee shouldn't be hardcoded
+ADMIN_FEE: public(constant(uint256)) = 5 * 10**9  # 50% of the fee
 
 # ----------------------- Admin params ---------------------------------------
 
@@ -599,7 +601,7 @@ def _remove_liquidity_fixed_out(
         provider=msg.sender,
         lp_token_amount=token_amount,
         token_amounts=token_amounts,
-        approx_fee=approx_fee * token_amount // PRECISION,
+        approx_fee=approx_fee * token_amount // WAD,
         price_scale=price_scale
     )
 
@@ -634,7 +636,7 @@ def _exchange(
         x0 *= PRECISIONS[i]
 
         if i > 0:
-            x0 = unsafe_div(x0 * price_scale, PRECISION)
+            x0 = unsafe_div(x0 * price_scale, WAD)
 
         x1: uint256 = xp[i]  # <------------------ Back up old value in xp ...
         xp[i] = x0                                                         # |
@@ -650,7 +652,7 @@ def _exchange(
     dy -= 1
 
     if j > 0:
-        dy = dy * PRECISION // price_scale
+        dy = dy * WAD // price_scale
     dy //= PRECISIONS[j]
 
     fee: uint256 = unsafe_div(self._fee(xp) * dy, 10**10)
@@ -660,7 +662,7 @@ def _exchange(
 
     y *= PRECISIONS[j]
     if j > 0:
-        y = unsafe_div(y * price_scale, PRECISION)
+        y = unsafe_div(y * price_scale, WAD)
     xp[j] = y  # <------------------------------------------------- Update xp.
 
     # ------ Tweak price_scale with good initial guess for newton_D ----------
@@ -991,7 +993,7 @@ def _xp(
 ) -> uint256[N_COINS]:
     return [
         balances[0] * PRECISIONS[0],
-        unsafe_div(balances[1] * PRECISIONS[1] * price_scale, PRECISION)
+        unsafe_div(balances[1] * PRECISIONS[1] * price_scale, WAD)
     ]
 
 @internal
@@ -1006,14 +1008,14 @@ def _fee(xp: uint256[N_COINS]) -> uint256:
 
     # balance indicator that goes from 10**18 (perfect pool balance) to 0 (very imbalanced, 100:1 and worse)
     # N^N * (xp[0] * xp[1]) / (xp[0] + xp[1])**2
-    B = PRECISION * N_COINS**N_COINS * xp[0] // B * xp[1] // B
+    B = WAD * N_COINS**N_COINS * xp[0] // B * xp[1] // B
 
     # regulate slope using fee_gamma
     # fee_gamma * balance_term / (fee_gamma * balance_term + 1 - balance_term)
-    B = fee_params[2] * B // (unsafe_div(fee_params[2] * B, 10**18)  + 10**18 - B)
+    B = fee_params[2] * B // (unsafe_div(fee_params[2] * B, WAD)  + WAD - B)
 
     # mid_fee * B + out_fee * (1 - B)
-    return unsafe_div(fee_params[0] * B + fee_params[1] * (10**18 - B), 10**18)
+    return unsafe_div(fee_params[0] * B + fee_params[1] * (10**18 - B), WAD)
 
 
 @internal
@@ -1049,7 +1051,7 @@ def _xcp(D: uint256, price_scale: uint256) -> uint256:
     # In the end we take the geometric average of the scaled balances:
     # xcp = sqrt(D // (N_COINS * 1) * D // (N_COINS * price_scale))
     # this is equivalent to D // N_COINS * sqrt(price_scale).
-    return D * PRECISION // N_COINS // isqrt(PRECISION * price_scale)
+    return D * WAD // N_COINS // isqrt(WAD * price_scale)
 
 
 @view
@@ -1074,7 +1076,7 @@ def _calc_token_fee(amounts: uint256[N_COINS], xp: uint256[N_COINS]) -> uint256:
         else:
             Sdiff += unsafe_sub(avg, _x)
 
-    return fee * Sdiff // S + NOISE_FEE
+    return fee * Sdiff // S + c.NOISE_FEE
 
 @view
 @external
@@ -1149,7 +1151,7 @@ def _calc_withdraw_fixed_out(
     dD: uint256 = unsafe_div(lp_token_amount * D, token_supply)
     xp_new: uint256[N_COINS] = xp
 
-    price_scales: uint256[N_COINS] = [PRECISION * PRECISIONS[0], price_scale * PRECISIONS[1]]
+    price_scales: uint256[N_COINS] = [WAD * PRECISIONS[0], price_scale * PRECISIONS[1]]
 
     # amountsp (amounts * p) is the dx and dy amounts that the user will receive
     # after the withdrawal scaled for the price scale (p).
@@ -1157,7 +1159,7 @@ def _calc_withdraw_fixed_out(
     # This withdrawal method fixes the amount of token i to be withdrawn,
     # this is why here we don't compute amountsp[i] but we give it as a
     # constraint (after appropriate scaling).
-    amountsp[i] = unsafe_div(amount_i * price_scales[i], PRECISION)
+    amountsp[i] = unsafe_div(amount_i * price_scales[i], WAD)
     xp_new[i] -= amountsp[i]
 
     # We compute the position on the y axis after a withdrawal of dD with the constraint
@@ -1177,7 +1179,7 @@ def _calc_withdraw_fixed_out(
     # Same reasoning as before except now we're charging fees.
     y = (staticcall _MATH.get_y(A_gamma[0], A_gamma[1], xp_new, D, j))[0]
     # We descale y to obtain the amount dy in balances and not scaled balances.
-    dy: uint256 = (xp[j] - y) * PRECISION // price_scales[j]
+    dy: uint256 = (xp[j] - y) * WAD // price_scales[j]
     xp_new[j] = y
 
     return dy, D, xp_new, approx_fee

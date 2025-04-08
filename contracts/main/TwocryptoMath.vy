@@ -1,4 +1,4 @@
-# pragma version ~=0.4.1
+# pragma version 0.4.1
 """
 @title TwocryptoMath
 @author Curve.Fi
@@ -13,15 +13,9 @@ from snekmate.utils import math
 from interfaces import ITwocryptoMath
 implements: ITwocryptoMath
 
-N_COINS: constant(uint256) = 2
-A_MULTIPLIER: constant(uint256) = 10000
-
-MIN_GAMMA: constant(uint256) = 10**10
-MAX_GAMMA_SMALL: constant(uint256) = 2 * 10**16
-MAX_GAMMA: constant(uint256) = 199 * 10**15 # 1.99 * 10**17
-
-MIN_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER // 10
-MAX_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER * 1000
+import constants as c
+# Trick until the compiler supports `from constants import N_COINS`
+N_COINS: public(constant(uint256)) = c.N_COINS
 
 # TODO align versions across different contracts using modules
 version: public(constant(String[8])) = "v2.1.0"
@@ -168,7 +162,7 @@ def _newton_y(ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: 
             _g1k0 = K0 - _g1k0 + 1
 
         # D / (A * N**N) * _g1k0**2 / gamma**2
-        mul1: uint256 = 10**18 * D // gamma * _g1k0 // gamma * _g1k0 * A_MULTIPLIER // ANN
+        mul1: uint256 = 10**18 * D // gamma * _g1k0 // gamma * _g1k0 * c.A_MULTIPLIER // ANN
 
         # 2*K0 / _g1k0
         mul2: uint256 = 10**18 + (2 * 10**18) * K0 // _g1k0
@@ -210,12 +204,12 @@ def _newton_y(ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: 
 def newton_y(ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: uint256) -> uint256:
 
     # Safety checks
-    assert ANN > MIN_A - 1 and ANN < MAX_A + 1, "unsafe values A"
-    assert gamma > MIN_GAMMA - 1 and gamma < MAX_GAMMA + 1, "unsafe values gamma"
+    assert ANN > c.MIN_A - 1 and ANN < c.MAX_A + 1, "unsafe values A"
+    assert gamma > c.MIN_GAMMA - 1 and gamma < c.MAX_GAMMA + 1, "unsafe values gamma"
     assert D > 10**17 - 1 and D < 10**15 * 10**18 + 1, "unsafe values D"
     lim_mul: uint256 = 100 * 10**18  # 100.0
-    if gamma > MAX_GAMMA_SMALL:
-        lim_mul = unsafe_div(unsafe_mul(lim_mul, MAX_GAMMA_SMALL), gamma)  # smaller than 100.0
+    if gamma > c.MAX_GAMMA_SMALL:
+        lim_mul = unsafe_div(unsafe_mul(lim_mul, c.MAX_GAMMA_SMALL), gamma)  # smaller than 100.0
 
     y: uint256 = self._newton_y(ANN, gamma, x, D, i, lim_mul)
     frac: uint256 = y * 10**18 // D
@@ -235,12 +229,12 @@ def get_y(
 ) -> uint256[2]:
 
     # Safety checks
-    assert _ANN > MIN_A - 1 and _ANN < MAX_A + 1, "unsafe values A"
-    assert _gamma > MIN_GAMMA - 1 and _gamma < MAX_GAMMA + 1, "unsafe values gamma"
+    assert _ANN > c.MIN_A - 1 and _ANN < c.MAX_A + 1, "unsafe values A"
+    assert _gamma > c.MIN_GAMMA - 1 and _gamma < c.MAX_GAMMA + 1, "unsafe values gamma"
     assert _D > 10**17 - 1 and _D < 10**15 * 10**18 + 1, "unsafe values D"
     lim_mul: uint256 = 100 * 10**18  # 100.0
-    if _gamma > MAX_GAMMA_SMALL:
-        lim_mul = unsafe_div(unsafe_mul(lim_mul, MAX_GAMMA_SMALL), _gamma)  # smaller than 100.0
+    if _gamma > c.MAX_GAMMA_SMALL:
+        lim_mul = unsafe_div(unsafe_mul(lim_mul, c.MAX_GAMMA_SMALL), _gamma)  # smaller than 100.0
     lim_mul_signed: int256 = convert(lim_mul, int256)
 
     ANN: int256 = convert(_ANN, int256)
@@ -269,7 +263,7 @@ def get_y(
     )
 
     # c = 10**32*3 + 4*gamma*10**14 + gamma2/10**4 + 4*ANN*gamma2*x_j/D/10000/4/10**4 - 4*ANN*gamma2/10000/4/10**4
-    c: int256 = (
+    _c: int256 = (
         unsafe_mul(10**32, convert(3, int256))
         + unsafe_mul(unsafe_mul(4, gamma), 10**14)
         + unsafe_div(gamma2, 10**4)
@@ -281,7 +275,7 @@ def get_y(
     d: int256 = -unsafe_div(unsafe_add(10**18, gamma) ** 2, 10**4)
 
     # delta0: int256 = 3*a*c/b - b
-    delta0: int256 = 3 * a * c // b - b  # safediv by b
+    delta0: int256 = 3 * a * _c // b - b  # safediv by b
 
     # delta1: int256 = 9*a*c/b - 2*b - 27*a**2/b*d/b
     delta1: int256 = 3 * delta0 + b - 27*a**2//b*d//b
@@ -319,11 +313,11 @@ def get_y(
 
     a = unsafe_div(a, divider)
     b = unsafe_div(b, divider)
-    c = unsafe_div(c, divider)
+    _c = unsafe_div(_c, divider)
     d = unsafe_div(d, divider)
 
     # delta0 = 3*a*c/b - b: here we can do more unsafe ops now:
-    delta0 = unsafe_div(unsafe_mul(unsafe_mul(3, a), c), b) - b
+    delta0 = unsafe_div(unsafe_mul(unsafe_mul(3, a), _c), b) - b
 
     # delta1 = 9*a*c/b - 2*b - 27*a**2/b*d/b
     delta1 = 3 * delta0 + b - unsafe_div(unsafe_mul(unsafe_div(unsafe_mul(27, a**2), b), d), b)
@@ -381,8 +375,8 @@ def newton_D(ANN: uint256, gamma: uint256, x_unsorted: uint256[N_COINS], K0_prev
     """
 
     # Safety checks
-    assert ANN > MIN_A - 1 and ANN < MAX_A + 1, "unsafe values A"
-    assert gamma > MIN_GAMMA - 1 and gamma < MAX_GAMMA + 1, "unsafe values gamma"
+    assert ANN > c.MIN_A - 1 and ANN < c.MAX_A + 1, "unsafe values A"
+    assert gamma > c.MIN_GAMMA - 1 and gamma < c.MAX_GAMMA + 1, "unsafe values gamma"
 
     # Initial value of invariant D is that for constant-product invariant
     x: uint256[N_COINS] = x_unsorted
@@ -424,7 +418,7 @@ def newton_D(ANN: uint256, gamma: uint256, x_unsorted: uint256[N_COINS], K0_prev
             _g1k0 = unsafe_add(unsafe_sub(K0, _g1k0), 1)  # > 0
 
         # D / (A * N**N) * _g1k0**2 / gamma**2
-        mul1: uint256 = unsafe_div(unsafe_div(unsafe_div(10**18 * D, gamma) * _g1k0, gamma) * _g1k0 * A_MULTIPLIER, ANN)
+        mul1: uint256 = unsafe_div(unsafe_div(unsafe_div(10**18 * D, gamma) * _g1k0, gamma) * _g1k0 * c.A_MULTIPLIER, ANN)
 
         # 2*N*K0 / _g1k0
         mul2: uint256 = unsafe_div(((2 * 10**18) * N_COINS) * K0, _g1k0)
@@ -499,7 +493,7 @@ def get_p(
     )
 
     # NNAG2 = N**N * A * gamma**2
-    NNAG2: uint256 = unsafe_div(unsafe_mul(_A_gamma[0], pow_mod256(_A_gamma[1], 2)), A_MULTIPLIER)
+    NNAG2: uint256 = unsafe_div(unsafe_mul(_A_gamma[0], pow_mod256(_A_gamma[1], 2)), c.A_MULTIPLIER)
 
     # denominator = (GK0 + NNAG2 * x / D * _K0 / 10**36)
     denominator: uint256 = (GK0 + unsafe_div(unsafe_div(NNAG2 * _xp[0], _D) * K0, 10**36) )
