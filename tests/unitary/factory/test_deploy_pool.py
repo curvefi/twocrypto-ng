@@ -47,15 +47,13 @@ def test_check_packed_params_on_deployment(pool, params, coins):
         assert unpacked_precisions[i] == 10 ** (18 - coins[i].decimals())
 
     # check packed fees
-    unpacked_fees = packing_utils.internal.unpack_3(pool._storage.packed_fee_params.get())
+    unpacked_fees = packing_utils.internal.unpack_3(pool.packed_fee_params())
     assert params["mid_fee"] == unpacked_fees[0]
     assert params["out_fee"] == unpacked_fees[1]
     assert params["fee_gamma"] == unpacked_fees[2]
 
     # check packed rebalancing params
-    unpacked_rebalancing_params = packing_utils.internal.unpack_3(
-        pool._storage.packed_rebalancing_params.get()
-    )
+    unpacked_rebalancing_params = packing_utils.internal.unpack_3(pool.packed_rebalancing_params())
     assert params["allowed_extra_profit"] == unpacked_rebalancing_params[0]
     assert params["adjustment_step"] == unpacked_rebalancing_params[1]
     assert params["ma_time"] == unpacked_rebalancing_params[2]

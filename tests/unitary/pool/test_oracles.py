@@ -51,9 +51,7 @@ def test_price_scale_change(pool_with_deposit, i, coins, users):
     pool_with_deposit.exchange(0, 1, coins[0].balanceOf(user), 0, sender=user)
 
     price_oracle = pool_with_deposit.price_oracle()
-    rebal_params = packing_utils.internal.unpack_3(
-        pool_with_deposit._storage.packed_rebalancing_params.get()
-    )
+    rebal_params = packing_utils.internal.unpack_3(pool_with_deposit.packed_rebalancing_params())
     _norm = norm(price_oracle, price_scale_1)
     step = max(rebal_params[1], _norm / 5)
     price_scale_2 = pool_with_deposit.price_scale()

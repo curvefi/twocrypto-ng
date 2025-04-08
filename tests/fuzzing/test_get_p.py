@@ -49,7 +49,7 @@ def _get_dydx_vyper(pool, price_calc):
         pool.price_scale(),
     )
 
-    return price_calc.get_p(xp, pool.D(), pool.internal._A_gamma())
+    return price_calc.get_p(xp, pool.D(), pool.eval("params._A_gamma()"))
 
 
 def _get_prices_vyper(pool, price_calc):
