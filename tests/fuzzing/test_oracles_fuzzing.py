@@ -41,9 +41,7 @@ def test_ma(pool_with_deposit, coins, user, amount, i, t):
     amount = amount * 10**18 // prices1[i]
     boa.deal(coins[i], user, amount)
 
-    rebal_params = packing_utils.internal.unpack_3(
-        pool_with_deposit._storage.packed_rebalancing_params.get()
-    )
+    rebal_params = packing_utils.internal.unpack_3(pool_with_deposit.packed_rebalancing_params())
     ma_time = rebal_params[2]
 
     # here we dont mine because we're time travelling later
