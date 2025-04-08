@@ -24,15 +24,17 @@ packing_utils = boa.load("contracts/main/packing_utils.vy")
 # temporary workaround till https://github.com/vyperlang/titanoboa/issues/394 is fixed
 PARAMS_DEPLOYER = boa.load_partial("contracts/main/params.vy")
 
+c = boa.load_partial("contracts/main/constants.vy")
+
 # TODO use constants vyper module
-N_COINS = POOL_DEPLOYER._constants.N_COINS
-MIN_GAMMA = PARAMS_DEPLOYER._constants.MIN_GAMMA
-MAX_GAMMA = PARAMS_DEPLOYER._constants.MAX_GAMMA
-MAX_GAMMA_SMALL = MATH_DEPLOYER._constants.MAX_GAMMA_SMALL
-A_MULTIPLIER = PARAMS_DEPLOYER._constants.A_MULTIPLIER
-MIN_A = PARAMS_DEPLOYER._constants.MIN_A
-MAX_A = PARAMS_DEPLOYER._constants.MAX_A
+N_COINS = c._constants.N_COINS
+MIN_GAMMA = c._constants.MIN_GAMMA
+MAX_GAMMA = c._constants.MAX_GAMMA
+MAX_GAMMA_SMALL = c._constants.MAX_GAMMA_SMALL
+A_MULTIPLIER = c._constants.A_MULTIPLIER
+MIN_A = c._constants.MIN_A
+MAX_A = c._constants.MAX_A
 UNIX_DAY = 86400
-MIN_FEE = PARAMS_DEPLOYER._constants.MIN_FEE
-MAX_FEE = PARAMS_DEPLOYER._constants.MAX_FEE
-MIN_RAMP_TIME = PARAMS_DEPLOYER._constants.MIN_RAMP_TIME
+MIN_FEE = c._constants.MIN_FEE
+MAX_FEE = c._constants.MAX_FEE
+MIN_RAMP_TIME = c._constants.MIN_RAMP_TIME

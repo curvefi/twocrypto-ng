@@ -1,4 +1,4 @@
-# pragma version ~=0.4.1
+# pragma version 0.4.1
 """
 @title TwocryptoView
 @author Curve.Fi
@@ -13,9 +13,10 @@ from interfaces import ITwocrypto
 from interfaces import ITwocryptoMath
 from interfaces import ITwocryptoView
 
-N_COINS: constant(uint256) = 2
-PRECISION: constant(uint256) = 10**18
-
+import constants as c
+# Trick until the compiler supports `from constants import N_COINS`
+N_COINS: constant(uint256) = c.N_COINS
+WAD: constant(uint256) = c.WAD
 
 @external
 @view
@@ -131,7 +132,7 @@ def _calc_D_ramp(
     if staticcall ITwocrypto(swap).future_A_gamma_time() > block.timestamp:
         _xp: uint256[N_COINS] = xp
         _xp[0] *= precisions[0]
-        _xp[1] = _xp[1] * price_scale * precisions[1] // PRECISION
+        _xp[1] = _xp[1] * price_scale * precisions[1] // WAD
         D = staticcall math.newton_D(A, gamma, _xp, 0)
 
     return D
@@ -163,14 +164,14 @@ def _get_dx_fee(
     # adjust xp with output dy. dy contains fee element, which we handle later
     # (hence this internal method is called _get_dx_fee)
     xp[j] -= dy
-    xp = [xp[0] * precisions[0], xp[1] * price_scale * precisions[1] // PRECISION]
+    xp = [xp[0] * precisions[0], xp[1] * price_scale * precisions[1] // WAD]
 
     x_out: uint256[2] = staticcall math.get_y(A, gamma, xp, D, i)
     dx: uint256 = x_out[0] - xp[i]
     xp[i] = x_out[0]
 
     if i > 0:
-        dx = dx * PRECISION // price_scale
+        dx = dx * WAD // price_scale
     dx //= precisions[i]
 
     return dx, xp
@@ -201,7 +202,7 @@ def _get_dy_nofee(
     xp[i] += dx
     xp = [
         xp[0] * precisions[0],
-        xp[1] * price_scale * precisions[1] // PRECISION
+        xp[1] * price_scale * precisions[1] // WAD
     ]
 
     y_out: uint256[2] = staticcall math.get_y(A, gamma, xp, D, j)
@@ -209,7 +210,7 @@ def _get_dy_nofee(
     dy: uint256 = xp[j] - y_out[0] - 1
     xp[j] = y_out[0]
     if j > 0:
-        dy = dy * PRECISION // price_scale
+        dy = dy * WAD // price_scale
     dy //= precisions[j]
 
     return dy, xp
@@ -243,11 +244,11 @@ def _calc_dtoken_nofee(
 
     xp = [
         xp[0] * precisions[0],
-        xp[1] * price_scale * precisions[1] // PRECISION
+        xp[1] * price_scale * precisions[1] // WAD
     ]
     amountsp = [
-        amountsp[0]* precisions[0],
-        amountsp[1] * price_scale * precisions[1] // PRECISION
+        amountsp[0] * precisions[0],
+        amountsp[1] * price_scale * precisions[1] // WAD
     ]
 
     D: uint256 = staticcall math.newton_D(A, gamma, xp, 0)
@@ -288,10 +289,10 @@ def _calc_withdraw_one_coin(
     price_scale_i: uint256 = staticcall ITwocrypto(swap).price_scale() * precisions[1]
     xp: uint256[N_COINS] = [
         xx[0] * precisions[0],
-        unsafe_div(xx[1] * price_scale_i, PRECISION)
+        unsafe_div(xx[1] * price_scale_i, WAD)
     ]
     if i == 0:
-        price_scale_i = PRECISION * precisions[0]
+        price_scale_i = WAD * precisions[0]
 
     if staticcall ITwocrypto(swap).future_A_gamma_time() > block.timestamp:
         D0 = staticcall math.newton_D(A, gamma, xp, 0)
@@ -309,7 +310,7 @@ def _calc_withdraw_one_coin(
     D -= (dD - D_fee)
 
     y_out: uint256[2] = staticcall math.get_y(A, gamma, xp, D, i)
-    dy: uint256 = (xp[i] - y_out[0]) * PRECISION // price_scale_i
+    dy: uint256 = (xp[i] - y_out[0]) * WAD // price_scale_i
     xp[i] = y_out[0]
 
     return dy, approx_fee

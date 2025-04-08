@@ -5,18 +5,7 @@ from interfaces import ITwocryptoFactory
 from interfaces import ITwocryptoView
 
 import packing_utils as utils
-
-# TODO use module for shared constants
-MIN_RAMP_TIME: constant(uint256) = 86400
-N_COINS: constant(uint256) = 2
-A_MULTIPLIER: constant(uint256) = 10000
-MIN_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER // 10
-MAX_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER * 1000
-MAX_A_CHANGE: constant(uint256) = 10
-MIN_GAMMA: constant(uint256) = 10**10
-MAX_GAMMA: constant(uint256) = 199 * 10**15 # 1.99 * 10**17
-MIN_FEE: constant(uint256) = 5 * 10**5  # <-------------------------- 0.5 BPS.
-MAX_FEE: constant(uint256) = 10 * 10**9
+import constants as c
 
 factory: public(immutable(ITwocryptoFactory))
 packed_rebalancing_params: public(uint256)
@@ -39,11 +28,11 @@ def __init__(_factory: address, packed_gamma_A: uint256, packed_fee_params: uint
 
     gamma_A: uint256[2] = utils.unpack_2(packed_gamma_A)
 
-    assert gamma_A[0] > MIN_GAMMA-1, "gamma<MIN"
-    assert gamma_A[0] < MAX_GAMMA+1, "gamma>MAX"
+    assert gamma_A[0] > c.MIN_GAMMA-1, "gamma<MIN"
+    assert gamma_A[0] < c.MAX_GAMMA+1, "gamma>MAX"
 
-    assert gamma_A[1] > MIN_A-1, "A<MIN"
-    assert gamma_A[1] < MAX_A+1, "A>MAX"
+    assert gamma_A[1] > c.MIN_A-1, "A<MIN"
+    assert gamma_A[1] < c.MAX_A+1, "A>MAX"
 
     self.initial_A_gamma = packed_gamma_A
     self.future_A_gamma = packed_gamma_A
@@ -62,23 +51,23 @@ def ramp_A_gamma(
     """
     assert msg.sender == self._admin(), "only owner"
     assert not self._is_ramping(), "ramp undergoing"
-    assert future_time > block.timestamp + MIN_RAMP_TIME - 1, "ramp time<min"
+    assert future_time > block.timestamp + c.MIN_RAMP_TIME - 1, "ramp time<min"
 
     A_gamma: uint256[2] = self._A_gamma() # [A, gamma]
 
     # TODO refactor checks so that they can be shared across functions
-    assert future_A > MIN_A - 1, "A<min"
-    assert future_A < MAX_A + 1, "A>max"
-    assert future_gamma > MIN_GAMMA - 1, "gamma<min"
-    assert future_gamma < MAX_GAMMA + 1, "gamme>max"
+    assert future_A > c.MIN_A - 1, "A<min"
+    assert future_A < c.MAX_A + 1, "A>max"
+    assert future_gamma > c.MIN_GAMMA - 1, "gamma<min"
+    assert future_gamma < c.MAX_GAMMA + 1, "gamma>max"
 
     ratio: uint256 = 10**18 * future_A // A_gamma[0] # A
-    assert ratio < 10**18 * MAX_A_CHANGE + 1, "A change too high"
-    assert ratio > 10**18 // MAX_A_CHANGE - 1, "A change too low"
+    assert ratio < 10**18 * c.MAX_A_CHANGE + 1, "A change too high"
+    assert ratio > 10**18 // c.MAX_A_CHANGE - 1, "A change too low"
 
     ratio = 10**18 * future_gamma // A_gamma[1] # gamma
-    assert ratio < 10**18 * MAX_A_CHANGE + 1, "gamma change too high"
-    assert ratio > 10**18 // MAX_A_CHANGE - 1, "gamma change too low"
+    assert ratio < 10**18 * c.MAX_GAMMA_CHANGE + 1, "gamma change too high"
+    assert ratio > 10**18 // c.MAX_GAMMA_CHANGE - 1, "gamma change too low"
 
     self.initial_A_gamma = utils.pack_2(A_gamma[1], A_gamma[0]) # [gamma, A]
     self.initial_A_gamma_time = block.timestamp
@@ -146,12 +135,12 @@ def apply_new_parameters(
 
     current_fee_params: uint256[3] = utils.unpack_3(self.packed_fee_params)
 
-    if new_out_fee < MAX_FEE + 1:
-        assert new_out_fee > MIN_FEE - 1, "fee is out of range"
+    if new_out_fee < c.MAX_FEE + 1:
+        assert new_out_fee > c.MIN_FEE - 1, "fee is out of range"
     else:
         new_out_fee = current_fee_params[1]
 
-    if new_mid_fee > MAX_FEE:
+    if new_mid_fee > c.MAX_FEE:
         new_mid_fee = current_fee_params[0]
     assert new_mid_fee <= new_out_fee, "mid-fee is too high"
 
