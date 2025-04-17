@@ -93,7 +93,7 @@ if __name__ == "__main__":
         # Washtrade (move price with rebalances)
         trader.wash(
             fee_pct=0.01,
-            price_shift=0.01,
+            price_shift=0.02,
             trade_size=500_000 * 10**18,
             balance_precision=1e-7,
             max_trades=100,
@@ -127,10 +127,10 @@ if __name__ == "__main__":
         }
         logger.info(
             f"Iteration {i} complete: "
-            f"Pool value: {s4['pool']['total_value']/1e18:.4f}, "
-            f"LP value: {s4['lp_user']['total_value']/1e18:.4f}, "
-            f"Trader value: {s4['trader']['total_value']/1e18:.4f}, "
-            f"Admin value: {s4['admin']['total_value']/1e18:.4f}"
+            f"Pool value: {s4['pool']['total_value']:.4f}, "
+            f"LP value: {s4['lp_user']['total_value']:.4f}, "
+            f"Trader value: {s4['trader']['total_value']:.4f}, "
+            f"Admin value: {s4['admin']['total_value']:.4f}"
         )
         df = pd.concat([df, pd.DataFrame([flatten_dict(data)])], ignore_index=True)
     # save to current directory
