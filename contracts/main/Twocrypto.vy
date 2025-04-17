@@ -462,6 +462,9 @@ def donate(amounts: uint256[N_COINS], min_amount: uint256):
     # small donation and the elapsed time will be counted incorrectly leading
     # to a bigger amount of unabsorbed_xcp to be absorbed. If an absorption is
     # not required then this function will just early return.
+
+    # XXX this can be used for attacks to eat donations, so need to eliminate this call
+    # XXX please check if it is safe to do so
     self._absorb_donation()
 
     # This function intentionally doesn't update virtual price because it gets slowly
@@ -547,12 +550,8 @@ def donate(amounts: uint256[N_COINS], min_amount: uint256):
 
 
 @internal
-def _absorb_donation():
-    # Note that it is very important to call this function at the beginning of any
-    # `balance` changing function BEFORE any other `balance` changes are made. This is
-    # because `tweak_price` will check by how much the virtual price has increased
-    # to compute `xcp_profit` which a donation should not affect.
-
+@view
+def _calc_absorb_donation() -> (uint256, uint256, bool):
     # This function returns the amount of D that has been absorbed in the time elapsed
     # since the last time this function was called.
 
@@ -561,16 +560,13 @@ def _absorb_donation():
 
     # If there are no donations to be distributed, D does not increase.
     if unabsorbed_xcp == 0:
-        return
+        return (unabsorbed_xcp, self.virtual_price, False)
 
     elapsed: uint256 = block.timestamp - self.last_donation_absorb_timestamp
     # Early return if absorption is attempted multiple times in the same block (or
     # multiple blocks where block timestamp is the same).
     if elapsed == 0:
-        return
-
-    # Update donations clock
-    self.last_donation_absorb_timestamp = block.timestamp
+        return (unabsorbed_xcp, self.virtual_price, False)
 
     price_scale: uint256 = self.cached_price_scale
 
@@ -585,13 +581,39 @@ def _absorb_donation():
     reduced_unabsorbed_D: uint256 = self._D_from_xcp(reduced_unabsorbed_xcp, price_scale)
     D: uint256 = self.D
     if D > reduced_unabsorbed_D:  # in principle should always be bigger but let's skip if not
-        self.unabsorbed_xcp = reduced_unabsorbed_xcp
         # `D - new_p_donation_D` is the amount of D that belongs to the liquidity providers
         # after the absorption. `D - p_donation_D` is the amount of D that belongs to the
         # liquidity providers before the absorption. The absorption increases the value
         # of the numerator, which we can use to quantify the increase in value of the
         # virtual price.
-        self.virtual_price = self.virtual_price * (D - reduced_unabsorbed_xcp) // (D - unabsorbed_xcp)
+        return (
+            reduced_unabsorbed_xcp,
+            self.virtual_price * (D - reduced_unabsorbed_xcp) // (D - unabsorbed_xcp),
+            True)
+    else:
+        return (
+            unabsorbed_xcp,
+            self.virtual_price,
+            False)
+
+
+@internal
+def _absorb_donation():
+    # Note that it is very important to call this function at the beginning of any
+    # `balance` changing function BEFORE any other `balance` changes are made. This is
+    # because `tweak_price` will check by how much the virtual price has increased
+    # to compute `xcp_profit` which a donation should not affect.
+
+    reduced_unabsorbed_xcp: uint256 = 0
+    virtual_price: uint256 = 0
+    had_change: bool = False
+
+    reduced_unabsorbed_xcp, virtual_price, had_change = self._calc_absorb_donation()
+
+    if had_change:
+        self.last_donation_absorb_timestamp = block.timestamp
+        self.unabsorbed_xcp = reduced_unabsorbed_xcp
+        self.virtual_price = virtual_price
 
 
 @external
@@ -728,10 +750,6 @@ def remove_liquidity(
     @return uint256[N_COINS] Amount of pool tokens received by the `receiver`
     """
 
-    self._absorb_donation()
-
-
-
     # -------------------------------------------------------- Burn LP tokens.
 
     # We cache the total supply to avoid multiple SLOADs. It is important to do
@@ -846,7 +864,6 @@ def _remove_liquidity_fixed_out(
 ) -> uint256:
 
     self._claim_admin_fees()
-    self._absorb_donation()
 
     A_gamma: uint256[2] = self._A_gamma()
 
@@ -945,8 +962,6 @@ def _exchange(
 
     assert i != j, "same coin"
     assert dx_received > 0, "zero dx"
-
-    self._absorb_donation()
 
     A_gamma: uint256[2] = self._A_gamma()
     balances: uint256[N_COINS] = self.balances
@@ -1113,6 +1128,13 @@ def tweak_price(
 
     self.xcp_profit = xcp_profit
 
+    _unabsorbed_xcp: uint256 = 0
+    virtual_price_donation: uint256 = 0
+    do_donation: bool = False
+    _unabsorbed_xcp, virtual_price_donation, do_donation = self._calc_absorb_donation()
+    # virtual_price_donation has no idea about actions we just did, so we combine the effect of absorption
+    virtual_price_donation = virtual_price * virtual_price_donation // old_virtual_price
+
     # ------------ Rebalance liquidity if there's enough profits to adjust it:
     #
     # Mathematical basis for rebalancing condition:
@@ -1127,7 +1149,7 @@ def tweak_price(
     #
     # The allowed_extra_profit parameter prevents reverting gas-wasting rebalances
     # by ensuring sufficient profit margin
-    if (virtual_price - rebalancing_params[0])**2 > xcp_profit * 10**18:
+    if (virtual_price_donation - rebalancing_params[0])**2 > xcp_profit * 10**18:
         # allowed_extra_profit ---^
         # Calculate the vector distance between price_scale and price_oracle.
         norm: uint256 = unsafe_div(
@@ -1177,12 +1199,15 @@ def tweak_price(
             # pool by moving the price_scale closer to the oracle price.
             if (
                 new_virtual_price > 10**18 and
-                new_virtual_price ** 2 > xcp_profit * 10**18
+                (new_virtual_price * virtual_price_donation // old_virtual_price) ** 2 > xcp_profit * 10**18
             ):
 
                 self.D = new_D
                 self.virtual_price = new_virtual_price
                 self.cached_price_scale = p_new
+
+                # Now let's recalculate and perform the donation
+                self._absorb_donation()
 
                 return p_new
 
