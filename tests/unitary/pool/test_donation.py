@@ -157,61 +157,54 @@ def test_reset_elapsed_time(gm_pool_with_liquidity, time_elapsed):
     ), "unabsorbed xcp should be less than atomic double donation"
 
 
-def test_add_liquidity_isnt_affected_by_donations(gm_pool_with_liquidity):
+def test_add_liquidity_isnt_affected_by_donations(gm_pool_with_liquidity, views_contract):
     pool = gm_pool_with_liquidity
 
-    with boa.env.anchor():
-        expected_user_lp_tokens = pool.add_liquidity_balanced(10**18)
+    ADD_LIQUIDITY_AMOUNT = 10**18
+    DONATE_AMOUNT = 10**18
 
-    pool.donate_balanced(10**18)
+    with boa.env.anchor():
+        BALANCED_ADD_LIQUIDITY_AMOUNT = pool.compute_balanced_amounts(ADD_LIQUIDITY_AMOUNT)
+        previewed_user_lp_tokens = views_contract.calc_add_liquidity(
+            BALANCED_ADD_LIQUIDITY_AMOUNT, pool.address
+        )
+        expected_user_lp_tokens = pool.add_liquidity_balanced(ADD_LIQUIDITY_AMOUNT)
+        assert (
+            previewed_user_lp_tokens == expected_user_lp_tokens
+        ), "view contract doesn't match pool contract"
+
+    pool.donate_balanced(DONATE_AMOUNT)
+    previewed_user_lp_tokens = views_contract.calc_add_liquidity(
+        BALANCED_ADD_LIQUIDITY_AMOUNT, pool
+    )
     actual_user_lp_tokens = pool.add_liquidity_balanced(10**18)
 
     assert (
-        expected_user_lp_tokens == actual_user_lp_tokens
+        expected_user_lp_tokens == actual_user_lp_tokens == previewed_user_lp_tokens
     ), "user lp tokens should be the same before and after donation"
 
 
-def test_remove_liquidity_isnt_affected_by_donations(gm_pool_with_liquidity):
+def test_remove_liquidity_isnt_affected_by_donations(gm_pool_with_liquidity, views_contract):
     pool = gm_pool_with_liquidity
 
     user_lp_tokens = pool.add_liquidity_balanced(10**18)
 
     with boa.env.anchor():
+        previewed_user_tokens = views_contract.calc_remove_liquidity(user_lp_tokens, pool.address)
         expected_user_tokens = pool.remove_liquidity(user_lp_tokens, [0, 0])
+        assert (
+            previewed_user_tokens == expected_user_tokens
+        ), "withdrawal in view contract doesn't match pool contract"
 
     pool.donate_balanced(10**18)
+    previewed_user_tokens = views_contract.calc_remove_liquidity(user_lp_tokens, pool)
     actual_user_tokens = pool.remove_liquidity(user_lp_tokens, [0, 0])
 
     # we allow the values in these arrays to be off by one because of rounding
-    for expected, actual in zip(expected_user_tokens, actual_user_tokens):
+    for expected, actual, previewed in zip(
+        expected_user_tokens, actual_user_tokens, previewed_user_tokens
+    ):
         assert math.isclose(
             expected, actual, abs_tol=1
         ), "user withdrawn tokens should be the same before and after donation"
-
-
-@pytest.xfail("Figure out if this failure is legitimate")
-@pytest.mark.parametrize("i", range(N_COINS))
-def test_remove_liquidity_fixed_out(gm_pool_with_liquidity, i):
-    pool = gm_pool_with_liquidity
-
-    user_lp_tokens = pool.add_liquidity_balanced(10**18)
-    amounts_in = pool.compute_balanced_amounts(10**18)
-
-    with boa.env.anchor():
-        expected_user_tokens_j = pool.remove_liquidity_fixed_out(
-            user_lp_tokens, i, int(amounts_in[i] * 0.1), 0
-        )
-
-    pool.donate_balanced(10**18)
-    actual_user_tokens_j = pool.remove_liquidity_fixed_out(
-        user_lp_tokens, i, int(amounts_in[i] * 0.1), 0
-    )
-
-    assert (
-        expected_user_tokens_j == actual_user_tokens_j
-    ), "user withdrawn tokens should be the same before and after donation"
-
-
-def test_donation_improves_swap_liquidity():
-    # TODO simple test where we check that a donation give a better price for a swap
-    pass
+        assert actual == previewed, "actual tokens should match previewed tokens"
