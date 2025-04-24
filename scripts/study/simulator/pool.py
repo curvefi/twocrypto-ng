@@ -112,14 +112,18 @@ class Pool:
             balances=bal,
             values=values,
             total_value=sum(values),
+            D=self.D(),
             virtual_price=self.virtual_price(),
             price_scale=price_scale,
             xcp_profit=self.xcp_profit(),
             xcp_profit_a=self.xcp_profit_a(),
+            xcpx=(self.xcp_profit() + self.xcp_profit_a()) // 2,
+            xcp_half=WAD + (self.xcp_profit() - WAD) // 2,
         )
 
     def snapshot_normalized(self):
         snapshot = self.snapshot()
+        snapshot["D"] = snapshot["D"] / WAD
         snapshot["balances"] = [b / WAD for b in snapshot["balances"]]
         snapshot["values"] = [v / WAD for v in snapshot["values"]]
         snapshot["total_value"] = snapshot["total_value"] / WAD
@@ -127,4 +131,6 @@ class Pool:
         snapshot["price_scale"] = snapshot["price_scale"] / WAD
         snapshot["xcp_profit"] = snapshot["xcp_profit"] / WAD
         snapshot["xcp_profit_a"] = snapshot["xcp_profit_a"] / WAD
+        snapshot["xcpx"] = snapshot["xcpx"] / WAD
+        snapshot["xcp_half"] = snapshot["xcp_half"] / WAD
         return snapshot

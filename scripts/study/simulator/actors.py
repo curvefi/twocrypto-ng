@@ -44,16 +44,31 @@ class PoolActor:
             if amount > 0:
                 boa.deal(self.coins[i], self.address, amount)
 
+    def sim_remove_liquidity(self):
+        """Virtual method for simulating withdrawal. Override in LP."""
+        return None
+
     def snapshot(self):
         bals = self.balances()
         vals = [bals[0], bals[1] * self.pool.price_scale() // WAD]
-        return dict(balances=bals, values=vals, total_value=sum(vals))
+        lp_amt = self.instance.balanceOf(self.address)
+        lp_val = lp_amt * self.pool.lp_price() // WAD
+        if lp_amt > 0:
+            res = self.sim_remove_liquidity()
+            if res is not None:
+                bal_received, val_received = res
+                lp_val = sum(val_received)
+        return dict(
+            balances=bals, values=vals, total_value=sum(vals) + lp_val, lp_amt=lp_amt, lp_val=lp_val
+        )
 
     def snapshot_normalized(self):
         snapshot = self.snapshot()
         snapshot["balances"] = [b / WAD for b in snapshot["balances"]]
         snapshot["values"] = [v / WAD for v in snapshot["values"]]
         snapshot["total_value"] = snapshot["total_value"] / WAD
+        snapshot["lp_amt"] = snapshot["lp_amt"] / WAD
+        snapshot["lp_val"] = snapshot["lp_val"] / WAD
         return snapshot
 
 
@@ -88,6 +103,13 @@ class LP(PoolActor):
         balances_after = self.balances()
         received = [balances_after[i] - balances_before[i] for i in range(N_COINS)]
         return received
+
+    def sim_remove_liquidity(self, amount=None):
+        with boa.env.anchor():
+            bal_received = self.remove_liquidity(amount)
+        prices = [WAD, self.pool.price_scale()]
+        val_received = [bal_received[i] * prices[i] // WAD for i in range(N_COINS)]
+        return (bal_received, val_received)
 
 
 class Trader(PoolActor):
@@ -145,11 +167,6 @@ class Trader(PoolActor):
         trade_size=10_000 * 10**18,
         balance_precision=1e-7,
         max_trades=100,
-        # fee_pct: 0.1 = 10%, price_shift: 0.05 = 5%
-        # trade_size: 10_000 = 10_000 units of coin 0, balance_precision: 0.001 = 0.1%
-        # max_trades: 100 = maximum number of trades to perform
-        # balance_precision: 0.001 = 0.1% of the pool value
-        # max_trades: 100 = maximum number of trades to perform
     ):
         price_scale = self.instance.price_scale()
         pool_value_init = (
@@ -187,8 +204,7 @@ class Trader(PoolActor):
         logger.info(
             f"Fee accrual complete: {trades_count} trades, {fees_accrued/1e18:.4f} fees accrued"
         )
-        logger.info("Balancing pool...")
-        self.balance_pool(precision=0.01, update_ema=False)
+        self.balance_pool(precision=max(balance_precision, 0.01), update_ema=False)
         if abs(price_shift) > 0.0001:
             logger.info(f"Shifting price by {price_shift*100:.1f}%")
             initial_price_scale = self.instance.price_scale()
@@ -196,32 +212,39 @@ class Trader(PoolActor):
             trade_direction = 0 if price_shift > 0 else 1
             attempts = 0
             while attempts < max_trades:
-                boa.env.time_travel(seconds=86400 * 7)
-                current_price_scale = self.instance.price_scale()
-                price_diff = current_price_scale - target_price_scale
-                price_diff_pct = abs(price_diff) / target_price_scale
+                # boa.env.time_travel(seconds=86400 * 7)
+                oracle_price = self.instance.price_scale()
+                spot_price = self.instance.last_prices()
+                spot_price_diff = spot_price - target_price_scale
+                oracle_price_diff = oracle_price - target_price_scale
+                spot_price_diff_pct = abs(spot_price_diff) / target_price_scale
+                oracle_price_diff_pct = abs(oracle_price_diff) / target_price_scale
                 logger.debug(
-                    f"Current price scale: {current_price_scale/1e18:.6f}"
+                    f"Current oracle price: {oracle_price/1e18:.6f}"
+                    f", Spot price: {spot_price/1e18:.6f}"
                     f", Target price scale: {target_price_scale/1e18:.6f}"
-                    f", Price diff: {price_diff_pct:.6f}"
+                    f", Spot price diff: {spot_price_diff_pct:.6f}"
+                    f", Oracle price diff: {oracle_price_diff_pct:.6f}"
                 )
 
                 if (
-                    price_diff_pct < 0.001
-                    or (price_diff > 0 and trade_direction == 0)
-                    or (price_diff < 0 and trade_direction == 1)
+                    oracle_price_diff_pct < 0.001
+                    # or (oracle_price_diff > 0 and trade_direction == 0)
+                    # or (oracle_price_diff < 0 and trade_direction == 1)
                 ):
                     break
-
+                trade_direction = 0 if spot_price_diff < 0 else 1
                 trade_size = int(
                     min(
                         self.balances()[trade_direction],
-                        self.instance.balances(trade_direction) // 10,
+                        self.instance.balances(trade_direction) * oracle_price_diff_pct,
                     )
                 )
+                logger.debug(f"Trading {trade_direction} for {trade_size}...")
                 out = self.trade(trade_direction, trade_size, update_ema=True)
-                self.trade(1 - trade_direction, int(0.9 * out), update_ema=True)
-                self.volume_traded += trade_size + out * self.instance.price_scale() // 10**18
+                # logger.debug(f"Trading {1 - trade_direction} for {int(0.9 * out)}...")
+                # self.trade(1 - trade_direction, int(0.1 * out), update_ema=True)
+                self.volume_traded += trade_size  # + out * self.instance.price_scale() // 10**18
 
                 attempts += 1
             logger.info(

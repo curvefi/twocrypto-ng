@@ -12,6 +12,9 @@ from typing import List, Dict, Any, Tuple, Set, Optional
 import pickle
 from pathlib import Path
 
+# Load environment variables early
+load_dotenv()
+
 # Contract view functions to fetch
 # Format: (function_name, [arg1, arg2, ...])
 FUNCTIONS_TO_FETCH = [
@@ -94,7 +97,8 @@ async def fetch_missing_contract_data(
     blocks_to_functions: Dict[int, List[Tuple[str, List]]],
     cached_data: Dict[int, Dict[Tuple[str, Tuple], Any]],
     cache_dir: str,
-    batch_size: int = 1000,
+    batch_size: int = 10,
+    delay_between_batches: float = 1.0,
 ) -> Set[int]:
     """Fetch missing contract data in batches and update cache
     Returns set of completed blocks"""
@@ -105,7 +109,7 @@ async def fetch_missing_contract_data(
     all_blocks = sorted(blocks_to_functions.keys())
     completed_blocks = set()
 
-    print(f"Fetching data for {len(all_blocks)} blocks from chain...")
+    print(f"Fetching data for {len(all_blocks)} blocks from chain... (batch size: {batch_size})")
 
     # Process in batches
     for i in range(0, len(all_blocks), batch_size):
@@ -125,7 +129,7 @@ async def fetch_missing_contract_data(
 
         # Execute all calls
         results = await asyncio.gather(*[call[3] for call in batch_calls], return_exceptions=True)
-
+        print(results)
         # Update cache
         for (block, func_name, args, _), result in zip(batch_calls, results):
             if not isinstance(result, Exception):
@@ -146,11 +150,19 @@ async def fetch_missing_contract_data(
         save_cached_data(cache_dir, contract.address.lower(), cached_data)
         print(f"Progress: {len(completed_blocks)}/{len(all_blocks)} blocks completed")
 
+        # Delay to avoid overloading RPC
+        await asyncio.sleep(delay_between_batches)
+
     return completed_blocks
 
 
 async def get_contract_views(
-    w3: AsyncWeb3, contract, blocks: List[int], cache_dir: str, batch_size: int = 100
+    w3: AsyncWeb3,
+    contract,
+    blocks: List[int],
+    cache_dir: str,
+    batch_size: int = 100,
+    delay_between_batches: float = 1.0,
 ) -> Dict[str, Dict[int, Any]]:
     """Get all contract view function values for blocks, using cache when available"""
 
@@ -178,7 +190,13 @@ async def get_contract_views(
     # Fetch missing data
     if blocks_to_functions:
         await fetch_missing_contract_data(
-            w3, contract, blocks_to_functions, cached_data, cache_dir, batch_size
+            w3,
+            contract,
+            blocks_to_functions,
+            cached_data,
+            cache_dir,
+            batch_size,
+            delay_between_batches,
         )
 
     # Build result structure
@@ -195,11 +213,18 @@ async def get_contract_views(
 
 
 async def fetch_contract_data(
-    w3: AsyncWeb3, contract, blocks: List[int], cache_dir: str
+    w3: AsyncWeb3,
+    contract,
+    blocks: List[int],
+    cache_dir: str,
+    batch_size: int = 10,
+    delay_between_batches: float = 1.0,
 ) -> List[Dict]:
     """Fetch contract data for blocks and return as a list of block results"""
     # Get contract views
-    state = await get_contract_views(w3, contract, blocks, cache_dir)
+    state = await get_contract_views(
+        w3, contract, blocks, cache_dir, batch_size, delay_between_batches
+    )
 
     # Build results
     return [{"block": block, "state": {k: v[block] for k, v in state.items()}} for block in blocks]
@@ -207,10 +232,10 @@ async def fetch_contract_data(
 
 async def main():
     print("Initializing Web3 connection...")
-    load_dotenv()
 
     # Initialize Web3
     w3 = AsyncWeb3(AsyncHTTPProvider(os.getenv("ETH_RPC_URL")))
+    # w3 = AsyncWeb3(AsyncHTTPProvider('https://mainnet.chainsland.xyz'))
 
     # Get block range to analyze
     print("Fetching current block number...")
@@ -219,7 +244,9 @@ async def main():
     past = now - 86_400 * 30 // 12  # 1 year back
     blocks = np.arange(past, now, 100, dtype=int)
     print(f"Analyzing blocks {past} to {now}")
-
+    past = 12821149
+    blocks = np.arange(past, now, 10000, dtype=int)
+    blocks = blocks[2:]
     # Constants
     contract_address = "0xD51a44d3FaE010294C616388b506AcdA1bfAAE46"
     cache_dir = "scripts/study/data/state_cache"
@@ -238,7 +265,9 @@ async def main():
 
     # Fetch data
     print(f"Fetching data for {len(blocks)} blocks...")
-    results = await fetch_contract_data(w3, contract, blocks, cache_dir)
+    results = await fetch_contract_data(
+        w3, contract, blocks, cache_dir, batch_size=50, delay_between_batches=1.0
+    )
 
     # Extract data for plotting
     block_numbers = np.array([r["block"] for r in results])
