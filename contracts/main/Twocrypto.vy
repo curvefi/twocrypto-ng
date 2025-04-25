@@ -1243,10 +1243,10 @@ def _claim_admin_fees():
     #         rest remains in the pool as LP profit.
 
     root_P: uint256 = isqrt(10**18 * xcp_profit)
+    root_P_a: uint256 = isqrt(10**18 * xcp_profit_a)
     fees: uint256 = unsafe_div(
-        unsafe_sub(root_P, isqrt(10**18 * xcp_profit_a)) * self.admin_fee, 10**10
+        unsafe_sub(root_P, root_P_a) * self.admin_fee, 10**10
     )
-
     # ------------------------------ Claim admin fees by minting admin's share
     #                                                of the pool in LP tokens.
 
@@ -1288,8 +1288,7 @@ def _claim_admin_fees():
     # Instead of decrementing xcp_profit by a fixed value,
     # we reset it to a new value that preserves the rebalancing threshold.
 
-    xcp_profit = (root_P - fees)**2
-
+    xcp_profit = (root_P - fees)**2 // 10**18
     # ---------------------------- Update State ------------------------------
 
     # Set admin virtual LP balances to zero because we claimed:
