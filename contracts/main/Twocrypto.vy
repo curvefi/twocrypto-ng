@@ -1228,17 +1228,23 @@ def _claim_admin_fees():
     fee_receiver: address = staticcall factory.fee_receiver()
     balances: uint256[N_COINS] = self.balances
 
+
     #  Admin fees are calculated as follows.
     #      1. Calculate accrued profit since last claim. `xcp_profit`
     #         is the current profits. `xcp_profit_a` is the profits
     #         at the previous claim.
-    #      2. Take out admin's share, which is hardcoded at 5 * 10**9.
-    #         (50% => half of 100% => 10**10 / 2 => 5 * 10**9).
-    #      3. Since half of the profits go to rebalancing the pool, we
-    #         are left with half; so divide by 2.
+    #      2. xcp_profit grows as (1+r)^N, where r is some hypothetical growth rate
+    #         Half of theoretical growth rate belongs to LP/Admin, rest is reserved for rebalancing
+    #         LP/Admin: (1+r/2)^N ~= (1+r)^(N/2) = sqrt(1+r)^N = sqrt(xcp_profit),
+    #      3. At previous claim, LP/Admin is entitled to sqrt(xcp_profit_a)-1.
+    #         At current claim, LP/Admin is entitled to sqrt(xcp_profit)-1.
+    #      4. From previous claim, LP/Admin gained sqrt(xcp_profit) - sqrt(xcp_profit_a)
+    #      5. self.admin_fee shares of the profit goes to Admin.
+    #         rest remains in the pool as LP profit.
 
+    root_P: uint256 = isqrt(10**18 * xcp_profit)
     fees: uint256 = unsafe_div(
-        unsafe_sub(xcp_profit, xcp_profit_a) * self.admin_fee, 2 * 10**10
+        unsafe_sub(root_P, isqrt(10**18 * xcp_profit_a)) * self.admin_fee, 10**10
     )
 
     # ------------------------------ Claim admin fees by minting admin's share
@@ -1254,9 +1260,6 @@ def _claim_admin_fees():
         frac = vprice * 10**18 // (vprice - fees) - 10**18
         admin_share += current_lp_token_supply * frac // 10**18
 
-        # ------ Subtract fees from profits that will be used for rebalancing.
-        xcp_profit -= fees * 2
-
     # ------------------- Recalculate virtual_price following admin fee claim.
     total_supply_including_admin_share: uint256 = (
         current_lp_token_supply + admin_share
@@ -1269,6 +1272,23 @@ def _claim_admin_fees():
     # Do not claim fees if doing so causes virtual price to drop below 10**18.
     if vprice < 10**18:
         return
+
+    # When claiming fees, the virtual price decreases. To preserve the rebalancing condition:
+    #     vp' > sqrt(xcp_profit')
+    # we must adjust `xcp_profit` accordingly.
+
+    # Assuming `self.admin_lp_virtual_balance = 0`, we analyze the effect:
+    # Let TS = total_supply, a = admin_lp_virtual_balance (≈ 0), f = fees
+    # vp' = xcp/(TS + a + (vp/vp-f) - 1) = xcp/(TS + a + f/(vp-f)) = xcp/TS(=vp) * (...) = ...
+    # vp' = (vp-f)/[1+a(vp-f)/(TS*vp) ~= (vp-f)/(1+a/TS) ~= vp-f (if a/TS << 1)
+
+    # Thus, to maintain the condition vp' > sqrt(xcp_profit'):
+    #     sqrt(xcp_profit') := sqrt(xcp_profit) - f
+    #     xcp_profit' = (sqrt(xcp_profit) - f)**2
+    # Instead of decrementing xcp_profit by a fixed value,
+    # we reset it to a new value that preserves the rebalancing threshold.
+
+    xcp_profit = (root_P - fees)**2
 
     # ---------------------------- Update State ------------------------------
 
@@ -1404,7 +1424,7 @@ def _xcp(D: uint256, price_scale: uint256) -> uint256:
     # Here we want to treat the pool as a constant product AMM:
     # (2) xy = k (the constant product invariant).
     # (3) x^2 = k (because we are at the center of the curve where x = y).
-    # (4) x = D / 2 (because D(x, y) = 2x in (1]).
+    # (4) x = D / 2 (because D(x, y) = 2x in (1).
 
     # For xp[0] the price scale is 1 (see whitepaper) so we can obtain
     # x[0] directly from [4]
