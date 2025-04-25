@@ -14,7 +14,7 @@ def gm_pool(gm_pool):
 @pytest.mark.parametrize("i", range(N_COINS))
 @pytest.mark.parametrize("amount_i_percent", [0.25, 0.5, 0.75])
 @pytest.mark.parametrize("lp_token_percent", [0.5, 0.75])
-def test_withdraw_fixed_out(i, amount_i_percent, lp_token_percent, gm_pool):
+def test_withdraw_fixed_out(i, amount_i_percent, lp_token_percent, gm_pool, fee_receiver):
     j = 1 - i
 
     lp_tokens = gm_pool.balanceOf(boa.env.eoa)
@@ -52,10 +52,10 @@ def test_withdraw_fixed_out(i, amount_i_percent, lp_token_percent, gm_pool):
 
     # Check coin balances for pool
     assert (
-        t1["pool_coins"][i] == t0["pool_coins"][i] - amount_i
+        t1["pool_coins"][i] + gm_pool.coins[i].balanceOf(fee_receiver) == t0["pool_coins"][i] - amount_i
     ), "pool i coin balance did not decrease by the specified amount"
     assert (
-        t1["pool_coins"][j] == t0["pool_coins"][j] - expected_dy
+        t1["pool_coins"][j] + gm_pool.coins[j].balanceOf(fee_receiver) == t0["pool_coins"][j] - expected_dy
     ), "pool j coin balance did not decrease by the expected amount"
 
     # Check that the calculated and actual amounts match

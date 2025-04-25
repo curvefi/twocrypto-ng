@@ -3,7 +3,7 @@ name            = "twocrypto-ng"
 version         = "0.1.0"
 authors         = [{ name = "Curve.fi", email = "info@curve.fi" }]
 readme          = "README.md"
-requires-python = "==3.12.6"
+requires-python = ">=3.12"
 
 # Requirements
 dependencies = [
