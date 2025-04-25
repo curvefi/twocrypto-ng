@@ -242,6 +242,7 @@ class Trader:
         adjustment_step=0.003,
         ma_time=866,
     ):
+        self.t = 0
         self.price_oracle = p0[:]
         self.last_price = p0[:]
         self.curve = Curve(A, gamma, D, p=p0[:])
