@@ -189,7 +189,7 @@ def test_remove_liquidity_isnt_affected_by_donations(gm_pool_with_liquidity):
         ), "user withdrawn tokens should be the same before and after donation"
 
 
-@pytest.xfail("Figure out if this failure is legitimate")
+@pytest.mark.xfail
 @pytest.mark.parametrize("i", range(N_COINS))
 def test_remove_liquidity_fixed_out(gm_pool_with_liquidity, i):
     pool = gm_pool_with_liquidity
