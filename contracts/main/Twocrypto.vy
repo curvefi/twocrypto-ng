@@ -129,6 +129,8 @@ event SetDonationDuration:
 event SetMaxDonationRatio:
     ratio: uint256
 
+event SetAdminFee:
+    admin_fee: uint256
 
 # ----------------------- Storage/State Variables ----------------------------
 
@@ -180,7 +182,8 @@ packed_rebalancing_params: public(uint256)  # <---------- Contains rebalancing
 # Fee params that determine dynamic fees:
 packed_fee_params: public(uint256)  # <---- Packs mid_fee, out_fee, fee_gamma.
 
-ADMIN_FEE: public(constant(uint256)) = 5 * 10**9  # <----- 50% of earned fees.
+admin_fee: public(uint256)
+MAX_ADMIN_FEE: constant(uint256) = 10**10
 MIN_FEE: constant(uint256) = 5 * 10**5  # <-------------------------- 0.5 BPS.
 MAX_FEE: constant(uint256) = 10 * 10**9
 NOISE_FEE: constant(uint256) = 10**5  # <---------------------------- 0.1 BPS.
@@ -264,6 +267,8 @@ def __init__(
 
     self.donation_duration = 7 * 86400
     self.max_donation_ratio = PRECISION // 10  # (10%) of the total D.
+
+    self.admin_fee = 5 * 10**9
 
     log Transfer(sender=empty(address), receiver=self, value=0)  # <------- Fire empty transfer from
     #                                       0x0 to self for indexers to catch.
@@ -679,7 +684,7 @@ def add_liquidity(
         d_token -= d_token_fee
         token_supply += d_token
         self.mint(receiver, d_token)
-        self.admin_lp_virtual_balance += unsafe_div(ADMIN_FEE * d_token_fee, 10**10)
+        self.admin_lp_virtual_balance += unsafe_div(self.admin_fee * d_token_fee, 10**10)
 
         price_scale = self.tweak_price(A_gamma, xp, D)
 
@@ -1251,7 +1256,7 @@ def _claim_admin_fees():
     #         are left with half; so divide by 2.
 
     fees: uint256 = unsafe_div(
-        unsafe_sub(xcp_profit, xcp_profit_a) * ADMIN_FEE, 2 * 10**10
+        unsafe_sub(xcp_profit, xcp_profit_a) * self.admin_fee, 2 * 10**10
     )
 
     # ------------------------------ Claim admin fees by minting admin's share
@@ -1338,6 +1343,10 @@ def _is_ramping() -> bool:
     @return bool True if A and/or gamma are ramping, False otherwise.
     """
     return self.future_A_gamma_time > block.timestamp
+
+@internal
+def _check_admin():
+    assert msg.sender == staticcall factory.admin(), "only owner"
 
 @view
 @internal
@@ -1970,7 +1979,7 @@ def ramp_A_gamma(
     @param future_gamma The future gamma value.
     @param future_time The timestamp at which the ramping will end.
     """
-    assert msg.sender == staticcall factory.admin(), "only owner"
+    self._check_admin()
     assert not self._is_ramping(), "ramp undergoing"
     assert future_time > block.timestamp + MIN_RAMP_TIME - 1, "ramp time<min"
 
@@ -2015,7 +2024,7 @@ def stop_ramp_A_gamma():
     @notice Stop Ramping A and gamma parameters immediately.
     @dev Only accessible by factory admin.
     """
-    assert msg.sender == staticcall factory.admin(), "only owner"
+    self._check_admin()
 
     A_gamma: uint256[2] = self._A_gamma()
     current_A_gamma: uint256 = A_gamma[0] << 128
@@ -2050,7 +2059,7 @@ def apply_new_parameters(
     @param _new_adjustment_step The new adjustment step.
     @param _new_ma_time The new ma time. ma_time is time_in_seconds/ln(2).
     """
-    assert msg.sender == staticcall factory.admin(), "only owner"
+    self._check_admin()
 
     # ----------------------------- Set fee params ---------------------------
 
@@ -2112,14 +2121,29 @@ def apply_new_parameters(
 
 @external
 def set_donation_duration(duration: uint256):
-    assert msg.sender == staticcall factory.admin(), "only owner"
+    self._check_admin()
 
     self.donation_duration = duration
     log SetDonationDuration(duration=duration)
 
 @external
 def set_max_donation_ratio(ratio: uint256):
-    assert msg.sender == staticcall factory.admin(), "only owner"
+    self._check_admin()
 
     self.max_donation_ratio = ratio
     log SetMaxDonationRatio(ratio=ratio)
+
+@external
+def set_admin_fee(admin_fee: uint256):
+    """
+    @notice Set the admin fee.
+    @param admin_fee The new admin fee.
+    @dev The admin fee is a percentage of the profits that are
+         claimed by the admin. The fee is set in bps.
+    """
+
+    self._check_admin()
+    assert admin_fee <= MAX_ADMIN_FEE, "admin_fee>MAX"
+
+    self.admin_fee = admin_fee
+    log SetAdminFee(admin_fee=admin_fee)
