@@ -1100,41 +1100,36 @@ def tweak_price(
         # given virtual_price has 18 decimals, this is negligible.
         virtual_price = 10**18 * xcp // total_supply + 1
 
-        # Safe to do unsafe_div as old_virtual_price > 0.
-        old_xcp_profit: uint256 = self.xcp_profit
-        xcp_profit = unsafe_div(
-            old_xcp_profit * virtual_price,
-            old_virtual_price
-        )
-
-        # If A and gamma are not being ramped, we only allow the virtual price to
-        # to increase.
-        # This is does not imply that the virtual price will have increased at the
+        # Virtual price can decrease only if A and gamma are being ramped.
+        # This does not imply that the virtual price will have increased at the
         # end of this function: it can still decrease if the pool rebalances.
-        if not (virtual_price >= old_virtual_price):
+        if virtual_price < old_virtual_price:
             # If A and gamma are being ramped, we allow the virtual price to decrease,
             # as changing the shape of the bonding curve causes losses in the pool.
             assert self._is_ramping(), "virtual price decreased"
+
+        # xcp_profit follows growth of virtual price (and goes down on ramping)
+        old_xcp_profit: uint256 = self.xcp_profit
+        xcp_profit = old_xcp_profit + virtual_price - old_virtual_price
 
     self.xcp_profit = xcp_profit
 
     # ------------ Rebalance liquidity if there's enough profits to adjust it:
     #
     # Mathematical basis for rebalancing condition:
-    # 1. xcp_profit compounds as (1+r)^n, where r is some hypothetical growth rate
-    # 2. We reserve half of the growth for LPs: (1+r/2)^n, rest is used to rebalance the pool
-    # 3. (Using taylor expansions) (1+r/2)^n ~= (1+r)^(n/2) = sqrt((1+r)^n)
-    # 4. Therefore half-rate growth equals sqrt(xcp_profit)
-    #
+    # 1. xcp_profit grows after virtual price, total growth since launch = (xcp_profit − 1)
+    # 2. We reserve half of the growth for LPs and admin, rest is used to rebalance the pool
+
     # Rebalancing condition transformation:
-    # virtual_price > sqrt(xcp_profit) + allowed_extra_profit
-    # (virtual_price - allowed_extra_profit)^2 > xcp_profit
+    # virtual_price - 1 > (xcp_profit - 1)/2 + allowed_extra_profit
+    # virtual_price*2 -  2  > xcp_profit - 1 + 2*allowed_extra_profit
+    # virtual_price*2 - 1 > xcp_profit + 2*allowed_extra_profit
     #
     # The allowed_extra_profit parameter prevents reverting gas-wasting rebalances
     # by ensuring sufficient profit margin
-    if (virtual_price - rebalancing_params[0])**2 > xcp_profit * 10**18:
-        # allowed_extra_profit ---^
-        # Calculate the vector distance between price_scale and price_oracle.
+
+    if virtual_price * 2 - 10**18 > xcp_profit + 2 * rebalancing_params[0]:
+        #                          allowed_extra_profit --------^
         norm: uint256 = unsafe_div(
             unsafe_mul(price_oracle, 10**18), price_scale
         )
@@ -1182,7 +1177,7 @@ def tweak_price(
             # pool by moving the price_scale closer to the oracle price.
             if (
                 new_virtual_price > 10**18 and
-                new_virtual_price ** 2 > xcp_profit * 10**18
+                2 * new_virtual_price - 10**18 > xcp_profit
             ):
 
                 self.D = new_D
@@ -1226,7 +1221,6 @@ def _claim_admin_fees():
     xcp_profit: uint256 = self.xcp_profit  # <---------- Current pool profits.
     xcp_profit_a: uint256 = self.xcp_profit_a  # <- Profits at previous claim.
     current_lp_token_supply: uint256 = self.totalSupply
-
     # Do not claim admin fees if:
     # 1. insufficient profits accrued since last claim, and
     # 2. there are less than 10**18 (or 1 unit of) lp tokens, else it can lead
@@ -1250,15 +1244,13 @@ def _claim_admin_fees():
     #      1. Calculate accrued profit since last claim. `xcp_profit`
     #         is the current profits. `xcp_profit_a` is the profits
     #         at the previous claim.
-    #      2. Take out admin's share, which is hardcoded at 5 * 10**9.
-    #         (50% => half of 100% => 10**10 / 2 => 5 * 10**9).
+    #      2. Take out admin's share, stored in self.admin_fee (with 10**10 precision).
     #      3. Since half of the profits go to rebalancing the pool, we
     #         are left with half; so divide by 2.
 
     fees: uint256 = unsafe_div(
         unsafe_sub(xcp_profit, xcp_profit_a) * self.admin_fee, 2 * 10**10
     )
-
     # ------------------------------ Claim admin fees by minting admin's share
     #                                                of the pool in LP tokens.
 
@@ -1272,9 +1264,15 @@ def _claim_admin_fees():
         frac = vprice * 10**18 // (vprice - fees) - 10**18
         admin_share += current_lp_token_supply * frac // 10**18
 
-        # ------ Subtract fees from profits that will be used for rebalancing.
-        xcp_profit -= fees * 2
+        # When claiming fees, the virtual price decreases:
+        # Let TS = total_supply, a = admin_lp_virtual_balance (≈ 0), f = fees
+        # vp' = xcp/(TS + a + (vp/vp-f) - 1) = xcp/(TS + a + f/(vp-f)) = xcp/TS(=vp) * (...) = ...
+        # vp' = (vp-f)/(1+a(vp-f)/(TS*vp)) ~|if fee/vp << 1|= (vp-f)/(1+a/TS) ~|if a/TS << 1|= vp-f
 
+        # If admin_lp_virtual_balance is small and fee is small, vp' ~= vp-f
+        # Thus, to maintain the condition vp' - 1 > (xcp_profit' - 1)/2:
+        #     xcp_profit' := xcp_profit - 2 * f
+        xcp_profit -= fees * 2
     # ------------------- Recalculate virtual_price following admin fee claim.
     total_supply_including_admin_share: uint256 = (
         current_lp_token_supply + admin_share
