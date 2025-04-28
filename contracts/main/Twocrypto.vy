@@ -1339,6 +1339,10 @@ def _is_ramping() -> bool:
     """
     return self.future_A_gamma_time > block.timestamp
 
+@internal
+def _check_admin():
+    assert msg.sender == staticcall factory.admin(), "only owner"
+
 @view
 @internal
 def _A_gamma() -> uint256[2]:
@@ -1970,7 +1974,7 @@ def ramp_A_gamma(
     @param future_gamma The future gamma value.
     @param future_time The timestamp at which the ramping will end.
     """
-    assert msg.sender == staticcall factory.admin(), "only owner"
+    self._check_admin()
     assert not self._is_ramping(), "ramp undergoing"
     assert future_time > block.timestamp + MIN_RAMP_TIME - 1, "ramp time<min"
 
@@ -2015,7 +2019,7 @@ def stop_ramp_A_gamma():
     @notice Stop Ramping A and gamma parameters immediately.
     @dev Only accessible by factory admin.
     """
-    assert msg.sender == staticcall factory.admin(), "only owner"
+    self._check_admin()
 
     A_gamma: uint256[2] = self._A_gamma()
     current_A_gamma: uint256 = A_gamma[0] << 128
@@ -2050,7 +2054,7 @@ def apply_new_parameters(
     @param _new_adjustment_step The new adjustment step.
     @param _new_ma_time The new ma time. ma_time is time_in_seconds/ln(2).
     """
-    assert msg.sender == staticcall factory.admin(), "only owner"
+    self._check_admin()
 
     # ----------------------------- Set fee params ---------------------------
 
@@ -2112,14 +2116,14 @@ def apply_new_parameters(
 
 @external
 def set_donation_duration(duration: uint256):
-    assert msg.sender == staticcall factory.admin(), "only owner"
+    self._check_admin()
 
     self.donation_duration = duration
     log SetDonationDuration(duration=duration)
 
 @external
 def set_max_donation_ratio(ratio: uint256):
-    assert msg.sender == staticcall factory.admin(), "only owner"
+    self._check_admin()
 
     self.max_donation_ratio = ratio
     log SetMaxDonationRatio(ratio=ratio)
