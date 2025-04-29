@@ -1111,7 +1111,8 @@ def tweak_price(
         # xcp_profit follows growth of virtual price (and goes down on ramping)
         old_xcp_profit: uint256 = self.xcp_profit
         xcp_profit = old_xcp_profit + virtual_price - old_virtual_price
-
+        # old way, here for reference
+        # xcp_profit = unsafe_div(old_xcp_profit * virtual_price, old_virtual_price)
     self.xcp_profit = xcp_profit
 
     # ------------ Rebalance liquidity if there's enough profits to adjust it:
@@ -1265,7 +1266,7 @@ def _claim_admin_fees():
         admin_share += current_lp_token_supply * frac // 10**18
 
         # When claiming fees, the virtual price decreases:
-        # Let TS = total_supply, a = admin_lp_virtual_balance (≈ 0), f = fees
+        # Let TS = total_supply, a = admin_lp_virtual_balance, f = fees
         # vp' = xcp/(TS + a + (vp/vp-f) - 1) = xcp/(TS + a + f/(vp-f)) = xcp/TS(=vp) * (...) = ...
         # vp' = (vp-f)/(1+a(vp-f)/(TS*vp)) ~|if fee/vp << 1|= (vp-f)/(1+a/TS) ~|if a/TS << 1|= vp-f
 
