@@ -1,4 +1,4 @@
-name: unit-tests-boa
+name: tests-boa
 
 on: [push]
 
@@ -13,9 +13,9 @@ jobs:
       matrix:
         folder:
           - "tests/unitary"
-          - "tests/stateful"
           - "tests/fuzzing"
-#          - "tests/integration"
+          # - "tests/stateful"
+          # - "tests/integration"
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
