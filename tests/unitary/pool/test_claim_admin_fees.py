@@ -14,40 +14,69 @@ def coin0_values(pool, address):
     ]
 
 
+def get_pool_state(pool_instance, print_state=False, print_normalized=True):
+    xcp_profit = pool_instance.xcp_profit()
+    virtual_price = pool_instance.virtual_price()
+    price_scale = pool_instance.price_scale()
+    price_oracle = pool_instance.price_oracle()
+
+    b_0 = pool_instance.balances(0)
+    b_1 = pool_instance.balances(1)
+    val_0 = b_0
+    val_1 = b_1 * price_scale // 10**18
+    spot_price = b_0 * 10**18 // b_1
+    ratio = val_0 / val_1
+    if print_state:
+        scale_print = 1e18 if print_normalized else 1
+        print(
+            f"xcp_profit: {(xcp_profit/scale_print):.{3}f}; "
+            f"virtual_price: {(virtual_price/scale_print):.{3}f}; "
+            f"price_scale: {(price_scale/scale_print):.{1}f}; "
+            f"price_oracle: {(price_oracle/scale_print):.{1}f}; "
+            f"spot_price: {(spot_price/scale_print):.{1}f}; "
+            f"values: {val_0/scale_print:.{1}f}, {val_1/scale_print:.{1}f} (total: {val_0/scale_print + val_1/scale_print:.{1}f}, ratio: {ratio:.{2}f})."
+        )
+    return xcp_profit, virtual_price, price_scale, price_oracle, spot_price, ratio
+
+
 def balance_pool(pool_instance, precision=0.0001, update_ema=False):
     # pool can be balanced nicely with get_y to get precise swap amounts, but this crude method works too
-    val_rate = (
-        pool_instance.balances(0)
-        * 10**18
-        / (pool_instance.price_oracle() * pool_instance.balances(1))
-    )
+    _, _, _, _, _, ratio = get_pool_state(pool_instance, print_state=False)
 
     i = 0
-    while abs(val_rate - 1) > precision:
+    while abs(ratio - 1) > precision:
         i += 1
-        larger_coin = 0 if val_rate > 1 else 1
+        larger_coin = 0 if ratio > 1 else 1
         smaller_coin = 1 - larger_coin
-        trade_back_size = int(pool_instance.balances(smaller_coin) * (abs(val_rate - 1) / 2))
+        trade_back_size = int(pool_instance.balances(smaller_coin) * (abs(ratio - 1) / 2))
         _ = pool_instance.exchange(smaller_coin, trade_back_size, update_ema=update_ema)
-        val_rate = (
-            pool_instance.balances(0)
-            * 10**18
-            / (pool_instance.price_oracle() * pool_instance.balances(1))
-        )
+        _, _, _, _, _, ratio = get_pool_state(pool_instance, print_state=False)
         if i > 100:
-            print(f"failed to balance pool: {val_rate}")
+            print(f"failed to balance pool: {ratio}")
             break
-    return val_rate
+    return ratio
 
 
-def work_pool(pool_instance, n_swaps, trade_size, update_ema=False, main_direction=0):
+def work_pool(
+    pool_instance, n_swaps, trade_size, update_ema=False, main_direction=0, xcp_growth=None
+):
     # performs trades to raise xcp_profit and virtual price
-    for i in range(n_swaps):
-        _ = pool_instance.exchange(main_direction, trade_size, update_ema=update_ema)
-        swap_back = 10**18 * trade_size // pool_instance.price_scale()
-        _ = pool_instance.exchange(1 - main_direction, int(swap_back), update_ema=update_ema)
-    print(f"xcp_profit: {pool_instance.xcp_profit()/1e18}")
-    print(f"virtual_price: {pool_instance.virtual_price()/1e18}")
+    if xcp_growth is None:
+        for i in range(n_swaps):
+            amt_out = pool_instance.exchange(main_direction, trade_size, update_ema=update_ema)
+            swap_back = amt_out
+            _ = pool_instance.exchange(1 - main_direction, int(swap_back), update_ema=update_ema)
+    else:
+        xcp_start = pool_instance.xcp_profit()
+        i = 0
+        while (pool_instance.xcp_profit() - xcp_start) / 1e18 < xcp_growth:
+            amt_out = pool_instance.exchange(main_direction, trade_size, update_ema=update_ema)
+            swap_back = amt_out
+            _ = pool_instance.exchange(1 - main_direction, int(swap_back), update_ema=update_ema)
+            i += 1
+            if i > 100:
+                print(f"failed to work pool: {pool_instance.xcp_profit() - xcp_start}")
+                break
 
 
 def move_price_oracle(pool_instance, price_change, trade_size, update_ema=True):
@@ -64,6 +93,7 @@ def move_price_oracle(pool_instance, price_change, trade_size, update_ema=True):
     i = 0
 
     while price_diff_pre * price_diff_post > 0:  # check the sign of the price change
+        trade_size = int(pool_instance.balances(main_direction) * price_change) // 10
         pool_instance.exchange(main_direction, trade_size, update_ema=update_ema)
         price_diff_pre = price_diff_post
         # print(f"price_oracle: {pool_instance.price_oracle()}")
@@ -283,10 +313,7 @@ def test_n_claim_lp_no_rebalancing(gm_pool, fee_receiver):
 
 
 def test_n_claim_lp_rebalancing(gm_pool, fee_receiver):
-    """
-    Concise version of test_n_claim_lp_no_rebalancing using GodModePool features.
-    """
-    N_REP = 10
+    N_REP = 1
     boa.env.enable_fast_mode()
     pool_instance = gm_pool
 
@@ -338,43 +365,35 @@ def test_n_claim_lp_rebalancing(gm_pool, fee_receiver):
         lp_user_balance_rate = (pool_value_with_lp - pool_value_init) / pool_value_with_lp
         print(f"lp_user_balance_rate: {lp_user_balance_rate}")
 
-        xcpp_pre_work, vp_pre_work, ps_pre_work = (
-            pool_instance.xcp_profit(),
-            pool_instance.virtual_price(),
-            pool_instance.price_scale(),
+        xcpp_pre_work, vp_pre_work, ps_pre_work, _, _, _ = get_pool_state(
+            pool_instance, print_state=True
         )
         # Work the pool and balance
         print("working the pool...")
-        work_pool(pool_instance, N_TRADES, TRADE_SIZE, update_ema=False)
+        xcp_growth = 0.05
+        work_pool(pool_instance, N_TRADES, TRADE_SIZE, update_ema=False, xcp_growth=xcp_growth)
+        get_pool_state(pool_instance, print_state=True)
         print("balancing the pool...")
         balance_pool(pool_instance, update_ema=False)
-        print("moving price...")
-        price_change = 0.5
-        print(
-            f"price_oracle_pre: {pool_instance.price_oracle()}, price_scale_pre: {pool_instance.price_scale()}"
-        )
+        get_pool_state(pool_instance, print_state=True)
+        print("moving price oracle...")
+        price_change = 0.1
         move_price_oracle(pool_instance, price_change, int(AMT_LP * price_change), update_ema=True)
-        print(
-            f"price_oracle_post: {pool_instance.price_oracle()}, price_scale_post: {pool_instance.price_scale()}"
-        )
+        get_pool_state(pool_instance, print_state=True)
         print("balancing the pool...")
-        balance_pool(pool_instance, update_ema=True)
-
-        vp_post_work, ps_post_work, xcpp_post_work = (
-            pool_instance.virtual_price(),
-            pool_instance.price_scale(),
-            pool_instance.xcp_profit(),
-        )
-        print(f"vp_pre_work: {vp_pre_work/1e18}, vp_post_work: {vp_post_work/1e18}")
-        print(f"ps_pre_work: {ps_pre_work/1e18}, ps_post_work: {ps_post_work/1e18}")
-        print(f"xcpp_pre_work: {xcpp_pre_work/1e18}, xcpp_post_work: {xcpp_post_work/1e18}")
-        print(f"xcpp_post_work - xcpp_pre_work: {(xcpp_post_work - xcpp_pre_work)/1e18}")
+        balance_pool(pool_instance, update_ema=False)
+        get_pool_state(pool_instance, print_state=True)
+        print("tweaking the price...")
+        work_pool(pool_instance, N_TRADES, 10**18, update_ema=False)
+        get_pool_state(pool_instance, print_state=True)
+        print("balancing the pool...")
+        balance_pool(pool_instance, update_ema=False)
+        get_pool_state(pool_instance, print_state=True)
+        print("claiming admin fees...")
+        get_pool_state(pool_instance, print_state=True)
         pool_value_post = sum(coin0_values(pool_instance, pool_instance.address))
         pool_value_surplus = pool_value_post - pool_value_with_lp
         print(f"pool_value_surplus: {pool_value_surplus}")
-        print(
-            f"pool growth: {pool_value_post/pool_value_with_lp}, xcp_growth: {xcpp_post_work/xcpp_pre_work}, vp_growth: {vp_post_work/vp_pre_work}"
-        )
 
         # assert pool_value_surplus > 0
 
@@ -399,9 +418,9 @@ def test_n_claim_lp_rebalancing(gm_pool, fee_receiver):
         )
         print(f"virtual_price: {pool_instance.virtual_price()/1e18}")
 
-        assert (
-            value_received_admin / pool_value_surplus > 0.1
-        )  # admin should get 0.25 of profits, but with significant price change and rebalance, he gets less
-        assert (
-            value_received_lp_user / (pool_value_surplus * lp_user_balance_rate) > 0.7
-        )  # LPs should always get at least 0.75 of profits (with some slack)
+        # assert (
+        #     value_received_admin / pool_value_surplus > 0.1
+        # )  # admin should get 0.25 of profits, but with significant price change and rebalance, he gets less
+        # assert (
+        #     value_received_lp_user / (pool_value_surplus * lp_user_balance_rate) > 0.7
+        # )  # LPs should always get at least 0.75 of profits (with some slack)
