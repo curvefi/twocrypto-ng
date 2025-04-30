@@ -79,7 +79,7 @@ def work_pool(
                 break
 
 
-def move_price_oracle(pool_instance, price_change, trade_size, update_ema=True):
+def move_price_oracle(pool_instance, price_change, update_ema=True):
     current_price = pool_instance.price_oracle()
     # print(f"current_price: {current_price}")
     goal_price = current_price * (1 + price_change)
@@ -93,7 +93,7 @@ def move_price_oracle(pool_instance, price_change, trade_size, update_ema=True):
     i = 0
 
     while price_diff_pre * price_diff_post > 0:  # check the sign of the price change
-        trade_size = int(pool_instance.balances(main_direction) * price_change) // 10
+        trade_size = int(pool_instance.balances(main_direction) * abs(price_change)) // 10
         pool_instance.exchange(main_direction, trade_size, update_ema=update_ema)
         price_diff_pre = price_diff_post
         # print(f"price_oracle: {pool_instance.price_oracle()}")
@@ -105,6 +105,24 @@ def move_price_oracle(pool_instance, price_change, trade_size, update_ema=True):
             print(f"failed to move price: {price_diff_post}")
             break
     # print(f"price_oracle: {pool_instance.price_oracle()}")
+
+
+def move_price_scale(pool_instance, price_change, verbose=True):
+    move_price_oracle(pool_instance, price_change, update_ema=True)
+    if verbose:
+        get_pool_state(pool_instance, print_state=True)
+        print("balancing the pool...")
+    balance_pool(pool_instance, update_ema=False)
+    if verbose:
+        get_pool_state(pool_instance, print_state=True)
+        print("tweaking the price...")
+    work_pool(pool_instance, N_TRADES, 10**18, update_ema=False)
+    if verbose:
+        get_pool_state(pool_instance, print_state=True)
+        print("balancing the pool...")
+    balance_pool(pool_instance, update_ema=False)
+    if verbose:
+        get_pool_state(pool_instance, print_state=True)
 
 
 def test_claim_no_rebalancing(gm_pool, fee_receiver):
@@ -313,7 +331,7 @@ def test_n_claim_lp_no_rebalancing(gm_pool, fee_receiver):
 
 
 def test_n_claim_lp_rebalancing(gm_pool, fee_receiver):
-    N_REP = 1
+    N_REP = 10
     boa.env.enable_fast_mode()
     pool_instance = gm_pool
 
@@ -365,9 +383,7 @@ def test_n_claim_lp_rebalancing(gm_pool, fee_receiver):
         lp_user_balance_rate = (pool_value_with_lp - pool_value_init) / pool_value_with_lp
         print(f"lp_user_balance_rate: {lp_user_balance_rate}")
 
-        xcpp_pre_work, vp_pre_work, ps_pre_work, _, _, _ = get_pool_state(
-            pool_instance, print_state=True
-        )
+        get_pool_state(pool_instance, print_state=True)
         # Work the pool and balance
         print("working the pool...")
         xcp_growth = 0.05
@@ -376,21 +392,18 @@ def test_n_claim_lp_rebalancing(gm_pool, fee_receiver):
         print("balancing the pool...")
         balance_pool(pool_instance, update_ema=False)
         get_pool_state(pool_instance, print_state=True)
-        print("moving price oracle...")
-        price_change = 0.1
-        move_price_oracle(pool_instance, price_change, int(AMT_LP * price_change), update_ema=True)
+        price_init = pool_instance.price_scale()
+        price_change_1 = 0.1
+        print(f"price_init: {price_init/1e18}, price_change_1: {price_change_1}")
+        move_price_scale(pool_instance, price_change_1, verbose=False)
         get_pool_state(pool_instance, print_state=True)
-        print("balancing the pool...")
-        balance_pool(pool_instance, update_ema=False)
+
+        price_change_2 = price_init / pool_instance.price_scale() - 1
+        print(f"price_change_2: {price_change_2}")
+        move_price_scale(pool_instance, price_change_2, verbose=False)
         get_pool_state(pool_instance, print_state=True)
-        print("tweaking the price...")
-        work_pool(pool_instance, N_TRADES, 10**18, update_ema=False)
-        get_pool_state(pool_instance, print_state=True)
-        print("balancing the pool...")
-        balance_pool(pool_instance, update_ema=False)
-        get_pool_state(pool_instance, print_state=True)
+
         print("claiming admin fees...")
-        get_pool_state(pool_instance, print_state=True)
         pool_value_post = sum(coin0_values(pool_instance, pool_instance.address))
         pool_value_surplus = pool_value_post - pool_value_with_lp
         print(f"pool_value_surplus: {pool_value_surplus}")
@@ -399,8 +412,11 @@ def test_n_claim_lp_rebalancing(gm_pool, fee_receiver):
 
         receiver_value_init = sum(coin0_values(pool_instance, fee_receiver))
         pool_instance.internal._claim_admin_fees()
+        get_pool_state(pool_instance, print_state=True)
+
         receiver_value_post = sum(coin0_values(pool_instance, fee_receiver))
         value_received_admin = receiver_value_post - receiver_value_init
+        rate_received_admin = value_received_admin / pool_value_surplus
         print(f"value_received_admin: {value_received_admin}")
         xcpp_post_claim = pool_instance.xcp_profit()
         print(f"xcpp_post_claim: {xcpp_post_claim/1e18}")
@@ -410,17 +426,14 @@ def test_n_claim_lp_rebalancing(gm_pool, fee_receiver):
         )
         lp_user_value_post = sum(coin0_values(pool_instance, lp_user))
         value_received_lp_user = lp_user_value_post - lp_user_value_init
+        rate_received_lp_user = value_received_lp_user / (pool_value_surplus * lp_user_balance_rate)
         print(f"lp_user_value_change: {value_received_lp_user}")
-        print(f"rate_received_admin: {value_received_admin / pool_value_surplus}")
-        print(f"rate_received_lp: {value_received_lp_user / pool_value_surplus}")
-        print(
-            f"rate_received_lp_rate_adjusted: {value_received_lp_user / (pool_value_surplus * lp_user_balance_rate)}"
-        )
+        print(f"rate_received_admin: {rate_received_admin}")
+        print(f"rate_received_lp: {rate_received_lp_user}")
+        print(f"rate_received_lp_rate_adjusted: {rate_received_lp_user}")
         print(f"virtual_price: {pool_instance.virtual_price()/1e18}")
 
-        # assert (
-        #     value_received_admin / pool_value_surplus > 0.1
-        # )  # admin should get 0.25 of profits, but with significant price change and rebalance, he gets less
-        # assert (
-        #     value_received_lp_user / (pool_value_surplus * lp_user_balance_rate) > 0.7
-        # )  # LPs should always get at least 0.75 of profits (with some slack)
+        # admin should get at least 0.25 of profits (if no rebalances happened), and up to 0.5 (if all rebalance reserve is used)
+        assert 0.25 < rate_received_admin < 0.5
+        # LPs get half the profits (if all rebalance reserve is used), and more if rebalance reserve is not used
+        assert 0.5 < rate_received_lp_user < 1
