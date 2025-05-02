@@ -191,7 +191,6 @@ NOISE_FEE: constant(uint256) = 10**5  # <---------------------------- 0.1 BPS.
 # ----------------------- Admin params ---------------------------------------
 
 last_admin_fee_claim_timestamp: uint256
-admin_lp_virtual_balance: uint256
 
 MIN_RAMP_TIME: constant(uint256) = 86400
 MIN_ADMIN_FEE_CLAIM_INTERVAL: constant(uint256) = 86400
@@ -684,7 +683,6 @@ def add_liquidity(
         d_token -= d_token_fee
         token_supply += d_token
         self.mint(receiver, d_token)
-        self.admin_lp_virtual_balance += unsafe_div(self.admin_fee * d_token_fee, 10**10)
 
         price_scale = self.tweak_price(A_gamma, xp, D)
 
@@ -1255,22 +1253,19 @@ def _claim_admin_fees():
     # ------------------------------ Claim admin fees by minting admin's share
     #                                                of the pool in LP tokens.
 
-    # This is the admin fee tokens claimed in self.add_liquidity. We add it to
-    # the LP token share that the admin needs to claim:
-    admin_share: uint256 = self.admin_lp_virtual_balance
-    frac: uint256 = 0
+    admin_share: uint256 = 0
     if fee_receiver != empty(address) and fees > 0:
 
         # -------------------------------- Calculate admin share to be minted.
-        frac = vprice * 10**18 // (vprice - fees) - 10**18
+        frac: uint256 = vprice * 10**18 // (vprice - fees) - 10**18
         admin_share += current_lp_token_supply * frac // 10**18
 
         # When claiming fees, the virtual price decreases:
-        # Let TS = total_supply, a = admin_lp_virtual_balance, f = fees
-        # vp' = xcp/(TS + a + (vp/vp-f) - 1) = xcp/(TS + a + f/(vp-f)) = xcp/TS(=vp) * (...) = ...
-        # vp' = (vp-f)/(1+a(vp-f)/(TS*vp)) ~|if fee/vp << 1|= (vp-f)/(1+a/TS) ~|if a/TS << 1|= vp-f
+        # Let TS = total_supply, f = fees
+        # vp' = xcp/(TS + TS*((vp/vp-f) - 1)) = (xcp/TS) / (1 + f/(vp-f)) =
+        # = vp / (vp / (vp-f)) = (vp-f)
+        # vp' = (vp-f)
 
-        # If admin_lp_virtual_balance is small and fee is small, vp' ~= vp-f
         # Thus, to maintain the condition vp' - 1 > (xcp_profit' - 1)/2:
         #     xcp_profit' := xcp_profit - 2 * f
         xcp_profit -= fees * 2
@@ -1288,9 +1283,6 @@ def _claim_admin_fees():
         return
 
     # ---------------------------- Update State ------------------------------
-
-    # Set admin virtual LP balances to zero because we claimed:
-    self.admin_lp_virtual_balance = 0
 
     self.xcp_profit = xcp_profit
     self.last_admin_fee_claim_timestamp = block.timestamp
