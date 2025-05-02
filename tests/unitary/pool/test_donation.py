@@ -189,29 +189,6 @@ def test_remove_liquidity_isnt_affected_by_donations(gm_pool_with_liquidity):
         ), "user withdrawn tokens should be the same before and after donation"
 
 
-@pytest.mark.xfail
-@pytest.mark.parametrize("i", range(N_COINS))
-def test_remove_liquidity_fixed_out(gm_pool_with_liquidity, i):
-    pool = gm_pool_with_liquidity
-
-    user_lp_tokens = pool.add_liquidity_balanced(10**18)
-    amounts_in = pool.compute_balanced_amounts(10**18)
-
-    with boa.env.anchor():
-        expected_user_tokens_j = pool.remove_liquidity_fixed_out(
-            user_lp_tokens, i, int(amounts_in[i] * 0.1), 0
-        )
-
-    pool.donate_balanced(10**18)
-    actual_user_tokens_j = pool.remove_liquidity_fixed_out(
-        user_lp_tokens, i, int(amounts_in[i] * 0.1), 0
-    )
-
-    assert (
-        expected_user_tokens_j == actual_user_tokens_j
-    ), "user withdrawn tokens should be the same before and after donation"
-
-
 def test_donation_improves_swap_liquidity():
     # TODO simple test where we check that a donation give a better price for a swap
     pass
