@@ -40,14 +40,19 @@ class GodModePool:
 
         return self.donate(balanced_amounts, update_ema=update_ema)
 
-    def exchange(self, i, dx, update_ema=False):
+    def exchange(self, i, dx, update_ema=False, indicate_rebalance=False):
         if i == 0:
             amounts = [dx, 0]
         else:
             amounts = [0, dx]
         self.__premint_amounts(amounts)
-
+        if indicate_rebalance:
+            price_scale_pre = self.instance.price_scale()
         dy = self.instance.exchange(i, 1 - i, dx, 0, sender=god)
+        if indicate_rebalance:
+            price_scale_post = self.instance.price_scale()
+            rebalanced = price_scale_post != price_scale_pre
+            print("Rebalance!" if rebalanced else "No rebalance!")
 
         if update_ema:
             self.__update_ema()
