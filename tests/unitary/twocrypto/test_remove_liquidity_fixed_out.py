@@ -1,3 +1,4 @@
+import math
 from tests.utils.constants import N_COINS
 import pytest
 from pytest import fixture
@@ -111,3 +112,33 @@ def test_zero_amount_i(i, lp_token_percent, gm_pool):
     assert (
         actual_dy_fixed == actual_dy_one
     ), "remove_liquidity_fixed_out with amount_i=0 should equal remove_liquidity_one_coin"
+
+
+@pytest.mark.parametrize("i", range(N_COINS))
+@pytest.mark.parametrize(
+    "percentage", [0.05 + 0.15 * i for i in range(7)]
+)  # Creates values from 0.05 to 0.95
+@pytest.mark.parametrize("seeded_liquidity_i", [10 ** (18 + i) for i in range(0, 5)])
+def test_fixed_out_swap_equivalence(gm_pool, i, percentage, seeded_liquidity_i):
+    j = 1 - i
+
+    balanced_amounts = gm_pool.compute_balanced_amounts(int(seeded_liquidity_i * percentage))
+    AMOUNT_I = balanced_amounts[i]
+
+    lp_shares = gm_pool.add_liquidity_balanced(seeded_liquidity_i)
+
+    # ====  withdraw fixed_out
+    with boa.env.anchor():
+        fixed_out_amount_j = gm_pool.remove_liquidity_fixed_out(lp_shares, i, AMOUNT_I, 0)
+
+    # ==== Swap + withdraw balanced
+    with boa.env.anchor():
+        balanced_amounts = gm_pool.remove_liquidity(lp_shares, [0] * N_COINS)
+
+        excess_i = balanced_amounts[i] - AMOUNT_I
+
+        swap_amount_j = gm_pool.exchange(i, excess_i)
+
+    assert math.isclose(
+        fixed_out_amount_j, swap_amount_j + balanced_amounts[j], rel_tol=0.001
+    ), "fixed_out and swap+balanced amounts should be equal"
