@@ -84,12 +84,7 @@ def test_slippage(gm_pool_with_liquidity, views_contract):
     pool = gm_pool_with_liquidity
     DONATION_AMOUNT = pool.compute_balanced_amounts(10 * 10**18)
 
-    expected_amount = views_contract.calc_token_amount(
-        DONATION_AMOUNT,
-        True,
-        pool.address,
-        True,  # Donation mode is enabled.
-    )
+    expected_amount = views_contract.calc_donate(pool, DONATION_AMOUNT)
 
     # Donation should pass if no operation happened before.
     with boa.env.anchor():
@@ -189,7 +184,7 @@ def test_remove_liquidity_isnt_affected_by_donations(gm_pool_with_liquidity):
         ), "user withdrawn tokens should be the same before and after donation"
 
 
-@pytest.mark.xfail
+# @pytest.mark.xfail
 @pytest.mark.parametrize("i", range(N_COINS))
 def test_remove_liquidity_fixed_out(gm_pool_with_liquidity, i):
     pool = gm_pool_with_liquidity
@@ -212,6 +207,20 @@ def test_remove_liquidity_fixed_out(gm_pool_with_liquidity, i):
     ), "user withdrawn tokens should be the same before and after donation"
 
 
-def test_donation_improves_swap_liquidity():
-    # TODO simple test where we check that a donation give a better price for a swap
-    pass
+@pytest.mark.parametrize("i", range(N_COINS))
+def test_donation_improves_swap_liquidity(gm_pool_with_liquidity, i):
+    pool = gm_pool_with_liquidity
+
+    AMOUNT = 10**18
+
+    with boa.env.anchor():
+        pre_donation_dy = pool.exchange(i, AMOUNT)
+
+    pool.donate_balanced(10**18)
+
+    with boa.env.anchor():
+        post_donation_dy = pool.exchange(i, AMOUNT)
+
+    assert (
+        post_donation_dy > pre_donation_dy
+    ), "donation should improve swap liquidity, dy should increase"
