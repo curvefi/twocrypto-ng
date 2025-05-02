@@ -14,6 +14,23 @@ def coin0_values(pool, address):
     ]
 
 
+def snapshot_values(pool, actors):
+    values = {}
+    for actor in actors:
+        values[actor] = sum(coin0_values(pool, actor))
+    return values
+
+
+def snapshot_balances(pool, actors):
+    balances = {}
+    for actor in actors:
+        # actor_addy = actor.address if hasattr(actor, 'address') else actor
+        actor_addy = actor
+        bals = [pool.coins[0].balanceOf(actor_addy), pool.coins[1].balanceOf(actor_addy)]
+        balances[actor_addy] = bals
+    return balances
+
+
 def get_pool_state(pool_instance, print_state=False, print_normalized=True):
     xcp_profit = pool_instance.xcp_profit()
     virtual_price = pool_instance.virtual_price()
@@ -30,8 +47,8 @@ def get_pool_state(pool_instance, print_state=False, print_normalized=True):
     if print_state:
         scale_print = 1e18 if print_normalized else 1
         print(
-            f"xcp_profit: {(xcp_profit/scale_print):.{3}f}; "
-            f"virtual_price: {(virtual_price/scale_print):.{3}f}; "
+            f"xcp_profit: {(xcp_profit/scale_print):.{7}f}; "
+            f"virtual_price: {(virtual_price/scale_print):.{7}f}; "
             f"price_scale: {(price_scale/scale_print):.{1}f}; "
             f"price_oracle: {(price_oracle/scale_print):.{1}f}; "
             f"spot_price: {(spot_price/scale_print):.{1}f}; "
@@ -468,3 +485,124 @@ def test_n_claim_lp_rebalancing(gm_pool, fee_receiver):
         assert 0.25 < rate_received_admin < 0.5
         # LPs get half the profits (if all rebalance reserve is used), and more if rebalance reserve is not used
         assert 0.5 < rate_received_lp_user < 1
+
+
+def test_lp_deposit_fee_balanced(gm_pool, fee_receiver):
+    pool_instance = gm_pool
+    pool_fee_params = pool_instance.packed_fee_params()
+    mid_fee, out_fee, fee_gamma = pool_instance.internal._unpack_3(pool_fee_params)
+    print(f"mid_fee: {mid_fee/1e10}, out_fee: {out_fee/1e10}, fee_gamma: {fee_gamma/1e10}")
+    # Setup LP user
+    lp_user = boa.env.generate_address()
+    boa.env.set_balance(lp_user, 10**20)
+    for c in pool_instance.coins:
+        c.approve(pool_instance, 2**256 - 1, sender=lp_user)
+
+    # instantiate pool with some liquidity so that main size brings fees
+    dead_lp_user = boa.env.generate_address()
+    boa.env.set_balance(dead_lp_user, 10**20)
+    for c in pool_instance.coins:
+        c.approve(pool_instance, 2**256 - 1, sender=dead_lp_user)
+    AMT_DEAD_LP = 1 * 10**17
+    amounts_dead_lp = [AMT_DEAD_LP, AMT_DEAD_LP * 10**18 // pool_instance.price_scale()]
+    boa.deal(pool_instance.coins[0], dead_lp_user, amounts_dead_lp[0])
+    boa.deal(pool_instance.coins[1], dead_lp_user, amounts_dead_lp[1])
+
+    pool_instance.instance.add_liquidity(
+        [
+            pool_instance.coins[0].balanceOf(dead_lp_user),
+            pool_instance.coins[1].balanceOf(dead_lp_user),
+        ],
+        0,
+        sender=dead_lp_user,
+    )
+
+    AMT_LP = 1_000_000 * 10**18
+    amounts_to_add = [AMT_LP, AMT_LP * 10**18 // pool_instance.price_scale()]
+    boa.deal(pool_instance.coins[0], lp_user, amounts_to_add[0])
+    boa.deal(pool_instance.coins[1], lp_user, amounts_to_add[1])
+
+    values_pre_lp = snapshot_values(pool_instance, [pool_instance, fee_receiver, lp_user])
+    pool_instance.instance.add_liquidity(
+        [pool_instance.coins[0].balanceOf(lp_user), pool_instance.coins[1].balanceOf(lp_user)],
+        0,
+        sender=lp_user,
+    )
+    # now we claim admin fees
+    pool_instance.internal._claim_admin_fees()
+    pool_instance.instance.remove_liquidity(
+        pool_instance.balanceOf(lp_user), [0, 0], sender=lp_user
+    )
+
+    values_post_claim = snapshot_values(pool_instance, [pool_instance, fee_receiver, lp_user])
+
+    admin_rate = values_post_claim[fee_receiver] / values_pre_lp[lp_user]
+    print(f"admin_rate: {admin_rate}")
+    # in fully balanced case the balanced liq fee is almost 0
+    # it should be exactly 0, but because of rounding its slightly higher (2.5e-6)
+    assert admin_rate == pytest.approx(2.5e-6, rel=1e-8)
+
+
+def test_lp_deposit_fee_imbalanced(gm_pool, fee_receiver):
+    pool_instance = gm_pool
+    pool_fee_params = pool_instance.packed_fee_params()
+    mid_fee, out_fee, fee_gamma = pool_instance.internal._unpack_3(pool_fee_params)
+    # print(f'mid_fee: {mid_fee/1e10}, out_fee: {out_fee/1e10}, fee_gamma: {fee_gamma/1e10}')
+    # Setup LP user
+    lp_user = boa.env.generate_address()
+    boa.env.set_balance(lp_user, 10**20)
+    for c in pool_instance.coins:
+        c.approve(pool_instance, 2**256 - 1, sender=lp_user)
+
+    # instantiate pool with some liquidity so that main size brings fees
+    dead_lp_user = boa.env.generate_address()
+    boa.env.set_balance(dead_lp_user, 10**20)
+    for c in pool_instance.coins:
+        c.approve(pool_instance, 2**256 - 1, sender=dead_lp_user)
+    AMT_DEAD_LP = 1 * 10**17
+    amounts_dead_lp = [AMT_DEAD_LP, AMT_DEAD_LP * 10**18 // pool_instance.price_scale()]
+    boa.deal(pool_instance.coins[0], dead_lp_user, amounts_dead_lp[0])
+    boa.deal(pool_instance.coins[1], dead_lp_user, amounts_dead_lp[1])
+
+    pool_instance.instance.add_liquidity(
+        [
+            pool_instance.coins[0].balanceOf(dead_lp_user),
+            pool_instance.coins[1].balanceOf(dead_lp_user),
+        ],
+        0,
+        sender=dead_lp_user,
+    )
+
+    AMT_LP = 1_000_000 * 10**18
+    amounts_to_add = [AMT_LP, AMT_LP * 10**18 // pool_instance.price_scale()]
+
+    # ADD IMBALANCE
+    amounts_to_add[1] = int(0.001 * amounts_to_add[1])
+
+    boa.deal(pool_instance.coins[0], lp_user, amounts_to_add[0])
+    boa.deal(pool_instance.coins[1], lp_user, amounts_to_add[1])
+
+    values_pre_lp = snapshot_values(pool_instance, [pool_instance, fee_receiver, lp_user])
+    pool_instance.instance.add_liquidity(
+        [pool_instance.coins[0].balanceOf(lp_user), pool_instance.coins[1].balanceOf(lp_user)],
+        0,
+        sender=lp_user,
+    )
+
+    # now we claim admin fees
+    pool_instance.internal._claim_admin_fees()
+    pool_instance.instance.remove_liquidity(
+        pool_instance.balanceOf(lp_user), [0, 0], sender=lp_user
+    )
+
+    values_post_claim = snapshot_values(pool_instance, [pool_instance, fee_receiver, lp_user])
+
+    admin_rate = values_post_claim[fee_receiver] / values_pre_lp[lp_user]
+
+    # when adding such imbalanced liquidity, it's equivalent to swapping of half of amount of coin_in
+    # in claim_admin_fees we only consider half booked for admin/lp and don't touch rebalance reserve (lp can withdraw it though)
+    # so we only get half the amount of max_fee * amount_in/2
+    # also there is self.admin_fee split that gives some more to LPs.
+
+    expected_admin_rate = out_fee / 10**10 / (2 * 2) * pool_instance.admin_fee() / 10**10
+    assert admin_rate == pytest.approx(expected_admin_rate, rel=1e-2)
