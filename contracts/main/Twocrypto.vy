@@ -169,6 +169,7 @@ last_donation_absorb_timestamp: public(uint256)
 
 balances: public(uint256[N_COINS])
 D: public(uint256)
+cached_D: transient(uint256)
 xcp_profit: public(uint256)
 xcp_profit_a: public(uint256)  # <--- Full profit at last claim of admin fees.
 
@@ -480,14 +481,8 @@ def donate(amounts: uint256[N_COINS], min_amount: uint256):
 
     price_scale: uint256 = self.cached_price_scale
     A_gamma: uint256[2] = self._A_gamma()
-    old_D: uint256 = 0
-    if self._is_ramping():
-        # Recalculate D if A and/or gamma are ramping because the shape of
-        # the bonding curve is changing.
-        old_xp: uint256[N_COINS] = self._xp(balances, price_scale)
-        old_D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], old_xp, 0)
-    else:
-        old_D = self.D
+    old_xp: uint256[N_COINS] = self._xp(balances, price_scale)
+    old_D: uint256 = _get_D(A_gamma, old_xp)
 
     # TODO is this necessary?
     assert old_D > 0, "empty pool"
@@ -588,13 +583,9 @@ def _absorb_donation():
     # We convert to D units
     reduced_unabsorbed_D: uint256 = self._D_from_xcp(reduced_unabsorbed_xcp, price_scale)
 
-    D: uint256 = 0
-    if self._is_ramping():
-        # Recalculate D if A and/or gamma are ramping
-        A_gamma: uint256[2] = self._A_gamma()
-        D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], self._xp(self.balances, price_scale), 0)
-    else:
-        D = self.D
+    A_gamma: uint256[2] = self._A_gamma()
+    xp: uint256[N_COINS] = self._xp(self.balances, self.cached_price_scale)
+    D: uint256 = _get_D(A_gamma, xp)
 
     if D > reduced_unabsorbed_D:  # in principle should always be bigger but let's skip if not
         self.unabsorbed_xcp = reduced_unabsorbed_xcp
@@ -656,14 +647,7 @@ def add_liquidity(
     # -------------------- Calculate LP tokens to mint -----------------------
 
     A_gamma: uint256[2] = self._A_gamma()
-
-    old_D: uint256 = 0
-    if self._is_ramping():
-        # Recalculate D if A and/or gamma are ramping because the shape of
-        # the bonding curve is changing.
-        old_D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], old_xp, 0)
-    else:
-        old_D = self.D
+    old_D: uint256 = _get_D(A_gamma, old_xp)
 
     D: uint256 = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
 
@@ -757,7 +741,7 @@ def remove_liquidity(
     #           is reset.
 
     withdraw_amounts: uint256[N_COINS] = empty(uint256[N_COINS])
-    D: uint256 = self.D
+    D: uint256 = self.D # no ramping adjustment to preserve safety of balanced removal
     adjusted_D: uint256 = D - self._D_from_xcp(self.dead_xcp, self.cached_price_scale)
 
     if amount == total_supply:  # <----------------------------------- Case 2.
@@ -1234,14 +1218,10 @@ def _claim_admin_fees():
         return
 
     # ---------- Conditions met to claim admin fees: compute state. ----------
+    A_gamma: uint256[2] = self._A_gamma()
+    xp: uint256[N_COINS] = self._xp(self.balances, self.cached_price_scale)
+    D: uint256 = _get_D(A_gamma, xp)
 
-    D: uint256 = 0
-    # Recalculate D if A and/or gamma are ramping
-    if self._is_ramping():
-        A_gamma: uint256[2] = self._A_gamma()
-        D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], self._xp(self.balances, self.cached_price_scale), 0)
-    else:
-        D = self.D
     vprice: uint256 = self.virtual_price
     price_scale: uint256 = self.cached_price_scale
     dead_D: uint256 = self._D_from_xcp(self.dead_xcp, price_scale)
@@ -1405,6 +1385,16 @@ def _D_from_xcp(xcp: uint256, price_scale: uint256) -> uint256:
     return xcp * N_COINS * isqrt(price_scale * PRECISION) // PRECISION
 
 
+@internal
+def _get_D(A_gamma: uint256[2], xp: uint256[N_COINS]):
+    # Normally we need self.D, however, if A and/or gamma are ramping,
+    # we need to recalculate D using the current A and gamma values.
+    if self._is_ramping():
+        # ongoing ramping, recalculate D
+        return staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
+    else:
+        # not ramping, use self.D from storage
+        return self.D
 
 
 @internal
@@ -1528,12 +1518,7 @@ def _calc_withdraw_fixed_out(
 
     price_scale: uint256 = self.cached_price_scale
     xp: uint256[N_COINS] = self._xp(balances, price_scale)
-
-    D: uint256 = 0
-    if self._is_ramping():
-        D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
-    else:
-        D = self.D
+    D: uint256 = _get_D(A_gamma, xp)
 
     # We adjust D not to take into account any donated amount. Donations
     # should never be withdrawable by the LPs.
