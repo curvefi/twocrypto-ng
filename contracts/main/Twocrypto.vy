@@ -169,7 +169,6 @@ last_donation_absorb_timestamp: public(uint256)
 
 balances: public(uint256[N_COINS])
 D: public(uint256)
-cached_D: transient(uint256)
 xcp_profit: public(uint256)
 xcp_profit_a: public(uint256)  # <--- Full profit at last claim of admin fees.
 
