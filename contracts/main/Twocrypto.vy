@@ -481,7 +481,7 @@ def donate(amounts: uint256[N_COINS], min_amount: uint256):
     price_scale: uint256 = self.cached_price_scale
     A_gamma: uint256[2] = self._A_gamma()
     old_xp: uint256[N_COINS] = self._xp(balances, price_scale)
-    old_D: uint256 = _get_D(A_gamma, old_xp)
+    old_D: uint256 = self._get_D(A_gamma, old_xp)
 
     # TODO is this necessary?
     assert old_D > 0, "empty pool"
@@ -584,7 +584,7 @@ def _absorb_donation():
 
     A_gamma: uint256[2] = self._A_gamma()
     xp: uint256[N_COINS] = self._xp(self.balances, self.cached_price_scale)
-    D: uint256 = _get_D(A_gamma, xp)
+    D: uint256 = self._get_D(A_gamma, xp)
 
     if D > reduced_unabsorbed_D:  # in principle should always be bigger but let's skip if not
         self.unabsorbed_xcp = reduced_unabsorbed_xcp
@@ -646,7 +646,7 @@ def add_liquidity(
     # -------------------- Calculate LP tokens to mint -----------------------
 
     A_gamma: uint256[2] = self._A_gamma()
-    old_D: uint256 = _get_D(A_gamma, old_xp)
+    old_D: uint256 = self._get_D(A_gamma, old_xp)
 
     D: uint256 = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
 
@@ -1219,7 +1219,7 @@ def _claim_admin_fees():
     # ---------- Conditions met to claim admin fees: compute state. ----------
     A_gamma: uint256[2] = self._A_gamma()
     xp: uint256[N_COINS] = self._xp(self.balances, self.cached_price_scale)
-    D: uint256 = _get_D(A_gamma, xp)
+    D: uint256 = self._get_D(A_gamma, xp)
 
     vprice: uint256 = self.virtual_price
     price_scale: uint256 = self.cached_price_scale
@@ -1385,7 +1385,8 @@ def _D_from_xcp(xcp: uint256, price_scale: uint256) -> uint256:
 
 
 @internal
-def _get_D(A_gamma: uint256[2], xp: uint256[N_COINS]):
+@view
+def _get_D(A_gamma: uint256[2], xp: uint256[N_COINS]) -> uint256:
     # Normally we need self.D, however, if A and/or gamma are ramping,
     # we need to recalculate D using the current A and gamma values.
     if self._is_ramping():
@@ -1517,7 +1518,7 @@ def _calc_withdraw_fixed_out(
 
     price_scale: uint256 = self.cached_price_scale
     xp: uint256[N_COINS] = self._xp(balances, price_scale)
-    D: uint256 = _get_D(A_gamma, xp)
+    D: uint256 = self._get_D(A_gamma, xp)
 
     # We adjust D not to take into account any donated amount. Donations
     # should never be withdrawable by the LPs.
