@@ -587,7 +587,15 @@ def _absorb_donation():
 
     # We convert to D units
     reduced_unabsorbed_D: uint256 = self._D_from_xcp(reduced_unabsorbed_xcp, price_scale)
-    D: uint256 = self.D
+
+    D: uint256 = 0
+    if self._is_ramping():
+        # Recalculate D if A and/or gamma are ramping
+        A_gamma: uint256[2] = self._A_gamma()
+        D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], self._xp(self.balances, price_scale), 0)
+    else:
+        D = self.D
+
     if D > reduced_unabsorbed_D:  # in principle should always be bigger but let's skip if not
         self.unabsorbed_xcp = reduced_unabsorbed_xcp
         # `D - new_p_donation_D` is the amount of D that belongs to the liquidity providers
@@ -730,9 +738,6 @@ def remove_liquidity(
     @param receiver Address to send the withdrawn tokens to
     @return uint256[N_COINS] Amount of pool tokens received by the `receiver`
     """
-
-    self._absorb_donation()
-
 
 
     # -------------------------------------------------------- Burn LP tokens.
@@ -1230,8 +1235,13 @@ def _claim_admin_fees():
 
     # ---------- Conditions met to claim admin fees: compute state. ----------
 
-    A_gamma: uint256[2] = self._A_gamma()
-    D: uint256 = self.D
+    D: uint256 = 0
+    # Recalculate D if A and/or gamma are ramping
+    if self._is_ramping():
+        A_gamma: uint256[2] = self._A_gamma()
+        D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], self._xp(self.balances, self.cached_price_scale), 0)
+    else:
+        D = self.D
     vprice: uint256 = self.virtual_price
     price_scale: uint256 = self.cached_price_scale
     dead_D: uint256 = self._D_from_xcp(self.dead_xcp, price_scale)
