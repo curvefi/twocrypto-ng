@@ -1217,9 +1217,8 @@ def _claim_admin_fees():
         return
 
     # ---------- Conditions met to claim admin fees: compute state. ----------
-    A_gamma: uint256[2] = self._A_gamma()
-    xp: uint256[N_COINS] = self._xp(self.balances, self.cached_price_scale)
-    D: uint256 = self._get_D(A_gamma, xp)
+    # no _get_D() because we can't claim during ramping
+    D: uint256 = self.D
 
     vprice: uint256 = self.virtual_price
     price_scale: uint256 = self.cached_price_scale
