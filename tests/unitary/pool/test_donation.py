@@ -200,30 +200,39 @@ def test_donation_improves_rebalance(gm_pool):
     pool.add_liquidity_balanced(N_LIQ_ADD)
 
     # first swap a lot with time travel and see where the virtual_price goes
-    N_SWAPS = 100
-    R_SWAP = 0.5
+    N_SWAPS = 30
+    R_SWAP = 0.3
     n_rb = []
     ps = []
+    res_dict = {}
     for donate in [0, 1]:
         # 0 - no donation, 1 - donation
         n_rebalances = 0
         # first without donation
         with boa.env.anchor():
-            ps_old = pool.price_scale()
             for i in range(N_SWAPS):
+                print(f"ITERATION {i}")
                 if donate:
-                    pool.donate_balanced(int(0.01 * N_LIQ_ADD))
+                    ps_pre = pool.price_scale()
+                    pool.donate_balanced(int(0.08 * N_LIQ_ADD))
+                    boa.env.time_travel(seconds=86_400)
+                    ps_post = pool.price_scale()
+                    n_rebalances += 1 if ps_pre != ps_post else 0
+                ps_pre = pool.price_scale()
+                out = pool.exchange(0, int(R_SWAP * N_LIQ_ADD), update_ema=False)
+                boa.env.time_travel(seconds=86_400)
+                ps_post = pool.price_scale()
+                n_rebalances += 1 if ps_pre != ps_post else 0
 
-                out = pool.exchange(0, int(R_SWAP * N_LIQ_ADD), update_ema=True)
-                pool.exchange(1, int(0.8 * out), update_ema=True)
-
-                ps_new = pool.price_scale()
-                if ps_old != ps_new:
-                    n_rebalances += 1
-                # get_pool_state(pool, print_state=True)
-                ps_old = ps_new
+                ps_pre = pool.price_scale()
+                pool.exchange(1, int(0.9 * out), update_ema=False)
+                boa.env.time_travel(seconds=86_400)
+                ps_post = pool.price_scale()
+                n_rebalances += 1 if ps_pre != ps_post else 0
             n_rb.append(n_rebalances)
-            ps.append(ps_new)
-    print(f"No donation: {n_rb[0]} rebalances, ps: {ps[0]}")
-    print(f"With donation: {n_rb[1]} rebalances, ps: {ps[1]}")
+            ps.append(ps_post)
+        res_dict[donate] = (n_rebalances, ps_post)
+
+    for donate, (n_rebalances, ps) in res_dict.items():
+        print(f"Donation: {donate}, rebalances: {n_rebalances}, ps: {ps}")
     # assert n_rb[1] >= n_rb[0], "donation should increase the number of rebalances"

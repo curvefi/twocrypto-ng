@@ -531,7 +531,7 @@ def _unabsorbed_xcp() -> uint256:
     # `elapsed == 0` => multiple absorption attempts in the same block, return current value of `self.unabsorbed_xcp` in storage.
     # `unabsorbed_xcp == 0` => no donation has been done, or all donations have been absorbed, return 0.
     available_xcp: uint256 = min(unabsorbed_xcp, unabsorbed_xcp * elapsed // self.donation_duration)
-    
+
     # We return the reduced `unabsorbed_xcp` which contains the amount of xcp that is still unavailable to be used for rebalancing.
     return unabsorbed_xcp - available_xcp
 
@@ -1016,29 +1016,21 @@ def tweak_price(
     old_virtual_price: uint256 = self.virtual_price
     unabsorbed_xcp: uint256 = self._unabsorbed_xcp()
     if old_virtual_price > 0:
-        xcp_donation: uint256 = self._xcp(D, price_scale) - unabsorbed_xcp
 
-        # We increase the virtual price by 1 to avoid off by one rounding
-        # errors. While this can lead to a small profit overestimation,
-        # given virtual_price has 18 decimals, this is negligible.
-        virtual_price_donation: uint256 = 10**18 * xcp_donation // total_supply + 1
-
-        dead_D: uint256 = self._D_from_xcp(self.dead_xcp, price_scale)
-        xcp: uint256 = self._xcp(D - dead_D, price_scale)
+        xcp: uint256 = self._xcp(D, price_scale) - self.dead_xcp
         virtual_price = 10**18 * xcp // total_supply + 1
 
         # Virtual price can decrease only if A and gamma are being ramped.
         # This does not imply that the virtual price will have increased at the
         # end of this function: it can still decrease if the pool rebalances.
-        assert virtual_price_donation >= virtual_price, "negative donation"
         if virtual_price < old_virtual_price:
             # If A and gamma are being ramped, we allow the virtual price to decrease,
             # as changing the shape of the bonding curve causes losses in the pool.
             assert self._is_ramping(), "virtual price decreased"
 
         # xcp_profit follows growth of virtual price (and goes down on ramping)
-        
-        xcp_profit = self.xcp_profit + virtual_price_donation - old_virtual_price
+
+        xcp_profit = self.xcp_profit + virtual_price - old_virtual_price
         # old way, here for reference
         # xcp_profit = unsafe_div(old_xcp_profit * virtual_price, old_virtual_price)
     self.xcp_profit = xcp_profit
@@ -1056,8 +1048,10 @@ def tweak_price(
     #
     # The allowed_extra_profit parameter prevents reverting gas-wasting rebalances
     # by ensuring sufficient profit margin
-
-    if virtual_price_donation * 2 - 10**18 > xcp_profit + 2 * rebalancing_params[0]:
+    xcp_donation: uint256 = self._xcp(D, price_scale) - unabsorbed_xcp
+    vp_donation: uint256 = 10**18 * xcp_donation // total_supply + 1
+    assert vp_donation >= virtual_price, "negative donation"
+    if vp_donation * 2 - 10**18 > xcp_profit + 2 * rebalancing_params[0]:
         #                          allowed_extra_profit --------^
         norm: uint256 = unsafe_div(
             unsafe_mul(price_oracle, 10**18), price_scale
@@ -1095,25 +1089,25 @@ def tweak_price(
             # ------------------------------------- Convert xp to real prices.
 
             unabsorbed_D: uint256 = self._D_from_xcp(unabsorbed_xcp, p_new)
-            xcp_donation: uint256 = self._xcp(new_D - unabsorbed_D, p_new)
-            # unsafe_div because we did safediv before (if vp>1e18)
-            new_virtual_price_donation: uint256 = unsafe_div(
-                10**18 * xcp_donation, total_supply
+            new_xcp_donation: uint256 = self._xcp(new_D - unabsorbed_D, p_new)
+            new_vp_donation: uint256 = unsafe_div(
+                10**18 * new_xcp_donation, total_supply
             )
 
             dead_D: uint256 = self._D_from_xcp(self.dead_xcp, p_new)
-            xcp: uint256 = self._xcp(new_D - dead_D, p_new)
-            new_virtual_price: uint256 = 10**18 * xcp // total_supply + 1
+            new_xcp: uint256 = self._xcp(new_D - dead_D, p_new)
+            new_vp: uint256 = 10**18 * new_xcp // total_supply + 1
 
             # If we've got enough profit we rebalance the liquidity in the
             # pool by moving the price_scale closer to the oracle price.
             if (
-                new_virtual_price > 10**18 and
-                2 * new_virtual_price_donation - 10**18 > xcp_profit
+                new_vp > 10**18 and
+                # 2 * new_vp_donation - 10**18 > xcp_profit #and
+                2 * new_vp - 10**18 > xcp_profit
             ):
 
                 self.D = new_D
-                self.virtual_price = new_virtual_price_donation
+                self.virtual_price = new_vp
                 self.cached_price_scale = p_new
                 # extra donation logic
                 if unabsorbed_xcp > 0:
@@ -1125,7 +1119,7 @@ def tweak_price(
     # If we end up here price_scale was not adjusted. So we update the state
     # with the virtual price and D we calculated before attempting a rebalance.
     self.D = D
-    self.virtual_price = virtual_price_donation
+    self.virtual_price = virtual_price
 
     return price_scale
 
@@ -1733,7 +1727,8 @@ def get_virtual_price() -> uint256:
          virtual price.
     @return uint256 Virtual Price.
     """
-    return 10**18 * self._xcp(self.D, self.cached_price_scale) // self.totalSupply
+
+    return 10**18 * (self._xcp(self.D, self.cached_price_scale) - self.dead_xcp) // self.totalSupply
 
 
 @external
