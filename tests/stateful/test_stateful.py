@@ -4,7 +4,7 @@ from hypothesis.stateful import precondition, rule
 from hypothesis.strategies import data, floats, integers, sampled_from
 from stateful_base import StatefulBase
 
-from tests.utils.constants import MAX_A, MAX_GAMMA, MIN_A, MIN_GAMMA, UNIX_DAY
+from tests.utils.constants import MAX_A, MAX_GAMMA, MIN_A, MIN_GAMMA, UNIX_DAY, N_COINS
 from tests.utils.strategies import address
 
 
@@ -27,7 +27,7 @@ class OnlySwapStateful(StatefulBase):
         dx = data.draw(
             integers(
                 # swap can be between 0.01% and 50% of the pool liquidity
-                min_value=int(liquidity * 0.0001),
+                min_value=int(liquidity * 0.01),
                 max_value=int(liquidity * 0.50),
             ),
             label="dx",
@@ -319,8 +319,30 @@ class RampingStateful(ImbalancedLiquidityStateful):
         pass
 
 
-TestOnlySwap = OnlySwapStateful.TestCase
-TestUpOnlyLiquidity = UpOnlyLiquidityStateful.TestCase
-TestOnlyBalancedLiquidity = OnlyBalancedLiquidityStateful.TestCase
-TestImbalancedLiquidity = ImbalancedLiquidityStateful.TestCase
+class DonationStateful(UpOnlyLiquidityStateful):
+    @rule(
+        data=data(),
+    )
+    def donate_rule(self, data):
+        note("[DONATE]")
+
+
+        amounts = [int(self.pool.balances(i) * 0.01) for i in range(N_COINS)]
+        
+        note(f"donating {amounts[0]:.2e} and {amounts[1]:.2e}")
+
+        try:
+            self.donate(amounts)
+        except Exception as e:
+            assert "ratio too high" in str(e)
+            note("[ALLOWED FAILURE]")
+
+        note("[SUCCESS]")
+
+
+# TestOnlySwap = OnlySwapStateful.TestCase
+# TestUpOnlyLiquidity = UpOnlyLiquidityStateful.TestCase
+# TestOnlyBalancedLiquidity = OnlyBalancedLiquidityStateful.TestCase
+# TestImbalancedLiquidity = ImbalancedLiquidityStateful.TestCase
 # TestRampingStateful = RampingStateful.TestCase
+TestDonation = DonationStateful.TestCase

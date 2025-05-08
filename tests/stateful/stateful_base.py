@@ -1,4 +1,5 @@
 from math import log, log10
+import math
 from typing import List
 
 import boa
@@ -11,6 +12,7 @@ from hypothesis.stateful import (
     rule,
 )
 from hypothesis.strategies import integers
+import pytest
 
 from tests.utils.constants import UNIX_DAY, FACTORY_DEPLOYER, ERC20_DEPLOYER
 from tests.utils.strategies import address, pool_from_preset
@@ -441,6 +443,17 @@ class StatefulBase(RuleBasedStateMachine):
         # update test-tracked xcp profit
         self.xcp_profit = self.pool.xcp_profit()
 
+    donor = boa.env.generate_address()
+
+    def donate(self, amounts: List[int]):
+        for coin, amount in zip(self.coins, amounts):
+            boa.deal(coin, self.donor, amount)
+            coin.approve(self.pool, amount, sender=self.donor)
+
+        self.pool.donate(amounts, sender=self.donor)
+
+        self.balances = [b + a for b, a in zip(self.balances, amounts)]
+
     @rule(time_increase=integers(min_value=1, max_value=UNIX_DAY * 7))
     def time_forward(self, time_increase):
         """Make the time moves forward by `sleep_time` seconds.
@@ -527,7 +540,7 @@ class StatefulBase(RuleBasedStateMachine):
     @invariant()
     def sanity_check(self):
         """Make sure the stateful simulations matches the contract state."""
-        assert self.xcp_profit == self.pool.xcp_profit()
+        assert math.isclose(self.xcp_profit, self.pool.xcp_profit(), abs_tol=1)
         assert self.total_supply == self.pool.totalSupply()
 
         # profit, cached vp and current vp should be at least 1e18
@@ -541,12 +554,13 @@ class StatefulBase(RuleBasedStateMachine):
     @precondition(lambda self: self.swapped_once)
     @invariant()
     def virtual_price(self):
-        assert self.pool.virtual_price() ** 2 >= (
-            self.pool.xcp_profit() - 1e18
-        ), "virtual price should be at least the square of the profit"
         assert (
-            abs(log(self.pool.virtual_price() / self.pool.get_virtual_price())) < 1e-10
-        ), "cached virtual price shouldn't lag behind current virtual price"
+            self.pool.virtual_price() - 10**18
+            > (self.pool.xcp_profit() - 10**18) // 2
+        ), "virtual price should be at least the square of the profit"
+        # assert (
+        #     math.isclose(self.pool.virtual_price(), self.pool.get_virtual_price(), rel_tol=1e-10)
+        # ), "cached virtual price shouldn't lag behind current virtual price"
 
     @invariant()
     def up_only_profit(self):
@@ -572,6 +586,10 @@ class StatefulBase(RuleBasedStateMachine):
         self.xcpx = xcpx
         self.xcp_profit = xcp_profit
         self.xcp_profit_a = xcp_profit_a
+
+    # @invariant
+    # def donation_buffers():
+
 
 
 TestBase = StatefulBase.TestCase

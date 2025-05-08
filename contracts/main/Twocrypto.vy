@@ -445,7 +445,7 @@ def exchange_received(
 
 @external
 @nonreentrant
-def donate(amounts: uint256[N_COINS], min_amount: uint256):
+def donate(amounts: uint256[N_COINS]):
     """
     @notice Donate to the pool. The donation will directly impact D but will not
             immediately impact the virtual price. The donation will be absorbed
@@ -454,23 +454,7 @@ def donate(amounts: uint256[N_COINS], min_amount: uint256):
             the market price. Donating some coins will increase the virtual_price
             that in turn will allow the pool to rebalance more frequently.
     @param amounts Amounts of each coin to donate.
-    @param min_amount Amount of lp tokens that would be minted if the donation was
-            an `add_liquidity` operation. Can be computed from `calc_token_amount`,
-            by passing `donation=True`.
     """
-    # If `unabsorbed_xcp` contains some donations BEFORE calling this function,
-    # then we need to absorb them to update the donation clock and avoid
-    # manipulations. If we don't do this, given the `unabsorbed_xcp == 0` an
-    # attacker could call `donate` with a small amount of coins, then if a
-    # long enough time passes, the time elapsed will be the one from the
-    # small donation and the elapsed time will be counted incorrectly leading
-    # to a bigger amount of unabsorbed_xcp to be absorbed. If an absorption is
-    # not required then this function will just early return.
-    self._absorb_donation()
-
-    # This function intentionally doesn't update virtual price because it gets slowly
-    # increased by the _absorb_donation function. This allows not to spend the whole donation
-    # at once (if multiple rebalances happen in a short timeframe) but release it over time.
     assert amounts[0] + amounts[1] > 0, "no coins to donate"
 
     # We forbid donating when the pool is empty as we consider this
@@ -499,12 +483,6 @@ def donate(amounts: uint256[N_COINS], min_amount: uint256):
     D: uint256 = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
     self.D = D
 
-    # Here we do a slippage check because donations, exactly as `add_liquidity`
-    # operations can be subject to slippage or potentially sandwich attacks.
-    # Note that we're not minting any lp tokens here.
-    total_supply: uint256 = self.totalSupply
-    assert total_supply * D // old_D - total_supply >= min_amount, "donation slippage"
-
     # Donations need to be stored in a way that allows us to compare them across rebalances.
     # We store them using xcp that can be seen as a way to normalize the value of D for
     # different price scales.
@@ -526,74 +504,36 @@ def donate(amounts: uint256[N_COINS], min_amount: uint256):
     # We can do unsafe_sub here because we asserted that D > old_D.
     delta_D: uint256 = unsafe_sub(D, old_D)
 
-
     # We convert delta_D in "xcp units" so that donations can be compared across rebalances.
     delta_xcp: uint256 = self._xcp(delta_D, price_scale)
 
     # We increase both the unabsorbed donation and the dead buffer
     # (that accounts for all past donations) by delta_xcp.
-    reduced_unabsorbed_xcp: uint256 = unabsorbed_xcp + delta_xcp
-    self.unabsorbed_xcp = reduced_unabsorbed_xcp
+    self.unabsorbed_xcp += delta_xcp
     self.dead_xcp += delta_xcp
 
-    # Since this function effectively acts as a `add_liquidity` but it doesn't
-    # call `tweak_price` at the end, imbalanced liquidity deposits can push the
-    # price of the pool far away from the center of liquidity. For this reason
-    # we limit the amount of donation that can be stored to some percentage of D.
-    donation_D: uint256 = self._D_from_xcp(reduced_unabsorbed_xcp, price_scale)
-    assert PRECISION * donation_D // D <= self.max_donation_ratio, "ratio too high"
+    self.tweak_price(A_gamma, xp, D)
 
 
+@view
 @internal
-def _absorb_donation():
-    # Note that it is very important to call this function at the beginning of any
-    # `balance` changing function BEFORE any other `balance` changes are made. This is
-    # because `tweak_price` will check by how much the virtual price has increased
-    # to compute `xcp_profit` which a donation should not affect.
-
-    # This function returns the amount of D that has been absorbed in the time elapsed
-    # since the last time this function was called.
-
-    # `unabsorbed_xcp` here represents the amount of donations yet to be released.
+def _unabsorbed_xcp() -> uint256:
     unabsorbed_xcp: uint256 = self.unabsorbed_xcp
 
-    # If there are no donations to be distributed, D does not increase.
-    if unabsorbed_xcp == 0:
-        return
-
+    # Time passed since the last donation absorption.
     elapsed: uint256 = block.timestamp - self.last_donation_absorb_timestamp
-    # Early return if absorption is attempted multiple times in the same block (or
-    # multiple blocks where block timestamp is the same).
-    if elapsed == 0:
-        return
 
-    # Update donations clock
-    self.last_donation_absorb_timestamp = block.timestamp
+    # ===== absorption rate logic =====
+    # `elapsed > self.donation_duration` => absorb whatever is left in `self.unabsorbed_xcp` to avoid underflow.
+    # `elapsed < self.donation_duration` => absorb at the current rate.
 
-    price_scale: uint256 = self.cached_price_scale
-
-    # This is the amount that has been absorbed at the current rate.
-    # If more than `donation_duration` has passed, we can absorb whatever is
-    # left to avoid underflow.
-    absorbed_amount: uint256 = min(unabsorbed_xcp, unabsorbed_xcp * elapsed // self.donation_duration)
-    # We reduce the unabsorbed_xcp by the amount that has been absorbed
-    reduced_unabsorbed_xcp: uint256 = unabsorbed_xcp - absorbed_amount
-
-    # We convert to D units
-    reduced_unabsorbed_D: uint256 = self._D_from_xcp(reduced_unabsorbed_xcp, price_scale)
-
-    A_gamma: uint256[2] = self._A_gamma()
-    xp: uint256[N_COINS] = self._xp(self.balances, self.cached_price_scale)
-    D: uint256 = self._get_D(A_gamma, xp)
-
-    if D > reduced_unabsorbed_D:  # in principle should always be bigger but let's skip if not
-        self.unabsorbed_xcp = reduced_unabsorbed_xcp
-        # `D - new_p_donation_D` is the amount of D that belongs to the liquidity providers
-        # after the absorption. `D - p_donation_D` is the amount of D that belongs to the
-        # liquidity providers before the absorption. The absorption increases the value
-        # of the numerator, which we can use to quantify the increase in value of the
-        # virtual price.
-        self.virtual_price = self.virtual_price * (D - reduced_unabsorbed_xcp) // (D - unabsorbed_xcp)
+    # ===== absorption edge cases =====
+    # `elapsed == 0` => multiple absorption attempts in the same block, return current value of `self.unabsorbed_xcp` in storage.
+    # `unabsorbed_xcp == 0` => no donation has been done, or all donations have been absorbed, return 0.
+    available_xcp: uint256 = min(unabsorbed_xcp, unabsorbed_xcp * elapsed // self.donation_duration)
+    
+    # We return the reduced `unabsorbed_xcp` which contains the amount of xcp that is still unavailable to be used for rebalancing.
+    return unabsorbed_xcp - available_xcp
 
 
 @external
@@ -837,7 +777,6 @@ def _remove_liquidity_fixed_out(
 ) -> uint256:
 
     self._claim_admin_fees()
-    self._absorb_donation()
 
     A_gamma: uint256[2] = self._A_gamma()
 
@@ -936,8 +875,6 @@ def _exchange(
 
     assert i != j, "same coin"
     assert dx_received > 0, "zero dx"
-
-    self._absorb_donation()
 
     A_gamma: uint256[2] = self._A_gamma()
     balances: uint256[N_COINS] = self.balances
@@ -1073,30 +1010,35 @@ def tweak_price(
     xcp_profit: uint256 = 10**18
     virtual_price: uint256 = 10**18
 
-    dead_D: uint256 = self._D_from_xcp(self.dead_xcp, price_scale)
 
     # `totalSupply` will not change during this function call.
     total_supply: uint256 = self.totalSupply
     old_virtual_price: uint256 = self.virtual_price
+    unabsorbed_xcp: uint256 = self._unabsorbed_xcp()
     if old_virtual_price > 0:
-        xcp: uint256 = self._xcp(D - dead_D, price_scale)
+        xcp_donation: uint256 = self._xcp(D, price_scale) - unabsorbed_xcp
 
         # We increase the virtual price by 1 to avoid off by one rounding
         # errors. While this can lead to a small profit overestimation,
         # given virtual_price has 18 decimals, this is negligible.
+        virtual_price_donation: uint256 = 10**18 * xcp_donation // total_supply + 1
+
+        dead_D: uint256 = self._D_from_xcp(self.dead_xcp, price_scale)
+        xcp: uint256 = self._xcp(D - dead_D, price_scale)
         virtual_price = 10**18 * xcp // total_supply + 1
 
         # Virtual price can decrease only if A and gamma are being ramped.
         # This does not imply that the virtual price will have increased at the
         # end of this function: it can still decrease if the pool rebalances.
+        assert virtual_price_donation >= virtual_price, "negative donation"
         if virtual_price < old_virtual_price:
             # If A and gamma are being ramped, we allow the virtual price to decrease,
             # as changing the shape of the bonding curve causes losses in the pool.
             assert self._is_ramping(), "virtual price decreased"
 
         # xcp_profit follows growth of virtual price (and goes down on ramping)
-        old_xcp_profit: uint256 = self.xcp_profit
-        xcp_profit = old_xcp_profit + virtual_price - old_virtual_price
+        
+        xcp_profit = self.xcp_profit + virtual_price_donation - old_virtual_price
         # old way, here for reference
         # xcp_profit = unsafe_div(old_xcp_profit * virtual_price, old_virtual_price)
     self.xcp_profit = xcp_profit
@@ -1115,7 +1057,7 @@ def tweak_price(
     # The allowed_extra_profit parameter prevents reverting gas-wasting rebalances
     # by ensuring sufficient profit margin
 
-    if virtual_price * 2 - 10**18 > xcp_profit + 2 * rebalancing_params[0]:
+    if virtual_price_donation * 2 - 10**18 > xcp_profit + 2 * rebalancing_params[0]:
         #                          allowed_extra_profit --------^
         norm: uint256 = unsafe_div(
             unsafe_mul(price_oracle, 10**18), price_scale
@@ -1152,31 +1094,38 @@ def tweak_price(
 
             # ------------------------------------- Convert xp to real prices.
 
-            rebalanced_dead_D: uint256 = self._D_from_xcp(self.dead_xcp, p_new)
-            xcp: uint256 = self._xcp(new_D - rebalanced_dead_D, p_new)
-
+            unabsorbed_D: uint256 = self._D_from_xcp(unabsorbed_xcp, p_new)
+            xcp_donation: uint256 = self._xcp(new_D - unabsorbed_D, p_new)
             # unsafe_div because we did safediv before (if vp>1e18)
-            new_virtual_price: uint256 = unsafe_div(
-                10**18 * xcp, total_supply
+            new_virtual_price_donation: uint256 = unsafe_div(
+                10**18 * xcp_donation, total_supply
             )
+
+            dead_D: uint256 = self._D_from_xcp(self.dead_xcp, p_new)
+            xcp: uint256 = self._xcp(new_D - dead_D, p_new)
+            new_virtual_price: uint256 = 10**18 * xcp // total_supply + 1
 
             # If we've got enough profit we rebalance the liquidity in the
             # pool by moving the price_scale closer to the oracle price.
             if (
                 new_virtual_price > 10**18 and
-                2 * new_virtual_price - 10**18 > xcp_profit
+                2 * new_virtual_price_donation - 10**18 > xcp_profit
             ):
 
                 self.D = new_D
-                self.virtual_price = new_virtual_price
+                self.virtual_price = new_virtual_price_donation
                 self.cached_price_scale = p_new
+                # extra donation logic
+                if unabsorbed_xcp > 0:
+                    self.last_donation_absorb_timestamp = block.timestamp
+                    self.unabsorbed_xcp = unabsorbed_xcp
 
                 return p_new
 
     # If we end up here price_scale was not adjusted. So we update the state
     # with the virtual price and D we calculated before attempting a rebalance.
     self.D = D
-    self.virtual_price = virtual_price
+    self.virtual_price = virtual_price_donation
 
     return price_scale
 

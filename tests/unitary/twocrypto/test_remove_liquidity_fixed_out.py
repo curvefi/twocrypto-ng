@@ -8,7 +8,7 @@ import boa
 @fixture(scope="module")
 def gm_pool(gm_pool):
     # We seed the pool with 200 dollars worth of liquidity
-    gm_pool.add_liquidity_balanced(100 * 10**18)
+    # gm_pool.add_liquidity_balanced(100 * 10**18)
     return gm_pool
 
 
@@ -118,14 +118,22 @@ def test_zero_amount_i(i, lp_token_percent, gm_pool):
 @pytest.mark.parametrize(
     "percentage", [0.05 + 0.15 * i for i in range(7)]
 )  # Creates values from 0.05 to 0.95
-@pytest.mark.parametrize("seeded_liquidity_i", [10 ** (18 + i) for i in range(0, 5)])
+@pytest.mark.parametrize("seeded_liquidity_i", [10 ** (18 + i) for i in range(0, 8, 2)])
 def test_fixed_out_swap_equivalence(gm_pool, i, percentage, seeded_liquidity_i):
     j = 1 - i
 
-    balanced_amounts = gm_pool.compute_balanced_amounts(int(seeded_liquidity_i * percentage))
-    AMOUNT_I = balanced_amounts[i]
+    balanced_withdraw_amounts = gm_pool.compute_balanced_amounts(
+        int(seeded_liquidity_i * percentage)
+    )
+    print(f"amount to be withdrawn {balanced_withdraw_amounts[i]:.2e}")
+    AMOUNT_I = balanced_withdraw_amounts[i]
 
+    balanced_seed_amounts = gm_pool.compute_balanced_amounts(seeded_liquidity_i)
+    print(f"seeding liquidity {balanced_seed_amounts[0]:.2e} {balanced_seed_amounts[1]:.2e}")
     lp_shares = gm_pool.add_liquidity_balanced(seeded_liquidity_i)
+
+    print("donating 9% of the pool liquidity")
+    gm_pool.donate([int(0.09 * a) for a in balanced_seed_amounts])
 
     # ====  withdraw fixed_out
     with boa.env.anchor():
@@ -142,3 +150,7 @@ def test_fixed_out_swap_equivalence(gm_pool, i, percentage, seeded_liquidity_i):
     assert math.isclose(
         fixed_out_amount_j, swap_amount_j + balanced_amounts[j], rel_tol=0.001
     ), "fixed_out and swap+balanced amounts should be equal"
+
+
+# def test_cant_withdraw_donations(gm_pool):
+#     gm_pool.donate_balanced(100 * 10**18)

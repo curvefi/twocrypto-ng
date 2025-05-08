@@ -192,3 +192,38 @@ def test_remove_liquidity_isnt_affected_by_donations(gm_pool_with_liquidity):
 def test_donation_improves_swap_liquidity():
     # TODO simple test where we check that a donation give a better price for a swap
     pass
+
+
+def test_donation_improves_rebalance(gm_pool):
+    pool = gm_pool
+    N_LIQ_ADD = 100_000 * 10**18
+    pool.add_liquidity_balanced(N_LIQ_ADD)
+
+    # first swap a lot with time travel and see where the virtual_price goes
+    N_SWAPS = 100
+    R_SWAP = 0.5
+    n_rb = []
+    ps = []
+    for donate in [0, 1]:
+        # 0 - no donation, 1 - donation
+        n_rebalances = 0
+        # first without donation
+        with boa.env.anchor():
+            ps_old = pool.price_scale()
+            for i in range(N_SWAPS):
+                if donate:
+                    pool.donate_balanced(int(0.01 * N_LIQ_ADD))
+
+                out = pool.exchange(0, int(R_SWAP * N_LIQ_ADD), update_ema=True)
+                pool.exchange(1, int(0.8 * out), update_ema=True)
+
+                ps_new = pool.price_scale()
+                if ps_old != ps_new:
+                    n_rebalances += 1
+                # get_pool_state(pool, print_state=True)
+                ps_old = ps_new
+            n_rb.append(n_rebalances)
+            ps.append(ps_new)
+    print(f"No donation: {n_rb[0]} rebalances, ps: {ps[0]}")
+    print(f"With donation: {n_rb[1]} rebalances, ps: {ps[1]}")
+    # assert n_rb[1] >= n_rb[0], "donation should increase the number of rebalances"
