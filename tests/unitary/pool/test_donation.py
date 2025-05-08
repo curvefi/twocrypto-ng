@@ -214,7 +214,7 @@ def test_donation_improves_rebalance(gm_pool):
                 print(f"ITERATION {i}")
                 if donate:
                     ps_pre = pool.price_scale()
-                    pool.donate_balanced(int(0.08 * N_LIQ_ADD))
+                    pool.add_liquidity_balanced(int(0.1 * N_LIQ_ADD), donate=True)
                     boa.env.time_travel(seconds=86_400)
                     ps_post = pool.price_scale()
                     n_rebalances += 1 if ps_pre != ps_post else 0

@@ -59,20 +59,22 @@ class GodModePool:
 
         return dy
 
-    def add_liquidity(self, amounts, update_ema=False):
+    def add_liquidity(self, amounts, update_ema=False, donate=False):
         self.__premint_amounts(amounts)
 
-        lp_tokens_received = self.instance.add_liquidity(amounts, 0, boa.env.eoa, sender=god)
+        lp_tokens_received = self.instance.add_liquidity(
+            amounts, 0, boa.env.eoa, donate, sender=god
+        )
 
         if update_ema:
             self.__update_ema()
 
         return lp_tokens_received
 
-    def add_liquidity_balanced(self, amount, update_ema=False):
+    def add_liquidity_balanced(self, amount, update_ema=False, donate=False):
         balanced_amounts = self.compute_balanced_amounts(amount)
 
-        return self.add_liquidity(balanced_amounts, update_ema=update_ema)
+        return self.add_liquidity(balanced_amounts, update_ema=update_ema, donate=donate)
 
     def balances_snapshot(self):
         snapshot = {
