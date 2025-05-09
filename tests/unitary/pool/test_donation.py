@@ -201,7 +201,10 @@ def test_donation_improves_rebalance(gm_pool):
 
     # first swap a lot with time travel and see where the virtual_price goes
     N_SWAPS = 30
-    R_SWAP = 0.3
+    R_SWAP = 0.9
+    R_SWAP_BACK = 0.9
+    T_FWD = 86_400 * 7
+    R_DONATE = 0.01
     n_rb = []
     ps = []
     res_dict = {}
@@ -212,21 +215,20 @@ def test_donation_improves_rebalance(gm_pool):
         with boa.env.anchor():
             for i in range(N_SWAPS):
                 print(f"ITERATION {i}")
-                if donate:
-                    ps_pre = pool.price_scale()
-                    pool.add_liquidity_balanced(int(0.1 * N_LIQ_ADD), donate=True)
-                    boa.env.time_travel(seconds=86_400)
-                    ps_post = pool.price_scale()
-                    n_rebalances += 1 if ps_pre != ps_post else 0
+                ps_pre = pool.price_scale()
+                pool.add_liquidity_balanced(int(R_DONATE * N_LIQ_ADD), donate=bool(donate))
+                boa.env.time_travel(seconds=T_FWD)
+                ps_post = pool.price_scale()
+                n_rebalances += 1 if ps_pre != ps_post else 0
                 ps_pre = pool.price_scale()
                 out = pool.exchange(0, int(R_SWAP * N_LIQ_ADD), update_ema=False)
-                boa.env.time_travel(seconds=86_400)
+                boa.env.time_travel(seconds=T_FWD)
                 ps_post = pool.price_scale()
                 n_rebalances += 1 if ps_pre != ps_post else 0
 
                 ps_pre = pool.price_scale()
-                pool.exchange(1, int(0.9 * out), update_ema=False)
-                boa.env.time_travel(seconds=86_400)
+                pool.exchange(1, int(R_SWAP_BACK * out), update_ema=False)
+                boa.env.time_travel(seconds=T_FWD)
                 ps_post = pool.price_scale()
                 n_rebalances += 1 if ps_pre != ps_post else 0
             n_rb.append(n_rebalances)
