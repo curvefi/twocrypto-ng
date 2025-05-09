@@ -528,16 +528,20 @@ def add_liquidity(
     d_token_fee: uint256 = 0
     if old_D > 0:
         if donation:
-            # if we donate, we don't take a fee or mint lp tokens, but we add to the donation shares
+            # if we donate, we don't explicitly mint lp tokens, but we add to the donation shares and total supply
+            # if we don't take any fees, it may happen that new_vp < old_vp due to numerical noise in D calculations
+            d_token_fee = NOISE_FEE
+            d_token -= d_token_fee
+            token_supply += d_token
             self.totalSupply += d_token
             self.donation_shares += d_token
         else:
-            # otherwise we take fee and mint shares
             d_token_fee = (
                 self._calc_token_fee(amountsp, xp) * d_token // 10**10 + 1
             )
             d_token -= d_token_fee
             token_supply += d_token
+
             self.mint(receiver, d_token)
 
         price_scale = self.tweak_price(A_gamma, xp, D)
@@ -943,9 +947,8 @@ def tweak_price(
 
     old_virtual_price: uint256 = self.virtual_price
     xcp: uint256 = self._xcp(D, price_scale)
-
     if old_virtual_price > 0:
-        virtual_price = 10**18 * xcp // (total_supply - 1) # TS offset by 1 for numerical stability
+        virtual_price = 10**18 * xcp // total_supply
         # Virtual price can decrease only if A and gamma are being ramped.
         # This does not imply that the virtual price will have increased at the
         # end of this function: it can still decrease if the pool rebalances.
@@ -979,7 +982,7 @@ def tweak_price(
     # user_supply < total_supply => vp_boosted > virtual_price
     # by not accounting for donation shares, virtual_price is boosted leading to rebalance trigger
     # this is approximate condition that preliminary indicates readiness for rebalancing
-    vp_boosted: uint256 = 10**18 * xcp // (locked_supply - 1) # TS offset by 1 for numerical stability
+    vp_boosted: uint256 = 10**18 * xcp // locked_supply
     assert vp_boosted >= virtual_price, "negative donation"
     if vp_boosted  > threshold_vp + rebalancing_params[0]:
         #                          allowed_extra_profit --------^
@@ -1039,7 +1042,7 @@ def tweak_price(
                     donation_shares # but not more than we can burn (lp shares donation)
                 )
                 # update virtual price with the tweaked total supply
-                new_virtual_price = 10**18 * new_xcp // (total_supply - donation_shares_to_burn - 1)
+                new_virtual_price = 10**18 * new_xcp // (total_supply - donation_shares_to_burn)
 
 
             if (
