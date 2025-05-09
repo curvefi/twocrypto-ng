@@ -204,7 +204,7 @@ def test_donation_improves_rebalance(gm_pool):
     R_SWAP = 0.9
     R_SWAP_BACK = 0.9
     T_FWD = 86_400 * 7
-    R_DONATE = 0.01
+    R_DONATE = 0.001
     n_rb = []
     ps = []
     res_dict = {}
@@ -220,6 +220,7 @@ def test_donation_improves_rebalance(gm_pool):
                 boa.env.time_travel(seconds=T_FWD)
                 ps_post = pool.price_scale()
                 n_rebalances += 1 if ps_pre != ps_post else 0
+
                 ps_pre = pool.price_scale()
                 out = pool.exchange(0, int(R_SWAP * N_LIQ_ADD), update_ema=False)
                 boa.env.time_travel(seconds=T_FWD)
@@ -237,4 +238,53 @@ def test_donation_improves_rebalance(gm_pool):
 
     for donate, (n_rebalances, ps) in res_dict.items():
         print(f"Donation: {donate}, rebalances: {n_rebalances}, ps: {ps}")
-    # assert n_rb[1] >= n_rb[0], "donation should increase the number of rebalances"
+    assert n_rb[1] >= n_rb[0], "donation should increase the number of rebalances"
+
+
+def test_donation_improves_rebalance_onesided(gm_pool):
+    pool = gm_pool
+    N_LIQ_ADD = 100_000 * 10**18
+    pool.add_liquidity_balanced(N_LIQ_ADD)
+
+    # first swap a lot with time travel and see where the virtual_price goes
+    N_SWAPS = 30
+    R_SWAP = 0.9
+    R_SWAP_BACK = 0.9
+    T_FWD = 86_400
+    R_DONATE = 0.01
+    n_rb = []
+    ps = []
+    res_dict = {}
+    for donate in [0, 1]:
+        # 0 - no donation, 1 - donation
+        n_rebalances = 0
+        # first without donation
+        with boa.env.anchor():
+            for i in range(N_SWAPS):
+                print(f"ITERATION {i}")
+                ps_pre = pool.price_scale()
+                amt_donate = pool.compute_balanced_amounts(int(R_DONATE * N_LIQ_ADD))
+                amt_donate[i % 2] = 0  # flip onesided donation
+                pool.add_liquidity(amt_donate, update_ema=True, donate=bool(donate))
+                boa.env.time_travel(seconds=T_FWD)
+                ps_post = pool.price_scale()
+                n_rebalances += 1 if ps_pre != ps_post else 0
+
+                ps_pre = pool.price_scale()
+                out = pool.exchange(0, int(R_SWAP * N_LIQ_ADD), update_ema=False)
+                boa.env.time_travel(seconds=T_FWD)
+                ps_post = pool.price_scale()
+                n_rebalances += 1 if ps_pre != ps_post else 0
+
+                ps_pre = pool.price_scale()
+                pool.exchange(1, int(R_SWAP_BACK * out), update_ema=False)
+                boa.env.time_travel(seconds=T_FWD)
+                ps_post = pool.price_scale()
+                n_rebalances += 1 if ps_pre != ps_post else 0
+            n_rb.append(n_rebalances)
+            ps.append(ps_post)
+        res_dict[donate] = (n_rebalances, ps_post)
+
+    for donate, (n_rebalances, ps) in res_dict.items():
+        print(f"Donation: {donate}, rebalances: {n_rebalances}, ps: {ps}")
+    assert n_rb[1] >= n_rb[0], "donation should increase the number of rebalances"

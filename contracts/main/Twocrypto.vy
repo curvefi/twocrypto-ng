@@ -945,13 +945,15 @@ def tweak_price(
     xcp: uint256 = self._xcp(D, price_scale)
 
     if old_virtual_price > 0:
-        virtual_price = 10**18 * xcp // total_supply + 1
+        virtual_price = 10**18 * xcp // (total_supply - 1) # TS offset by 1 for numerical stability
         # Virtual price can decrease only if A and gamma are being ramped.
         # This does not imply that the virtual price will have increased at the
         # end of this function: it can still decrease if the pool rebalances.
         if virtual_price < old_virtual_price:
             # If A and gamma are being ramped, we allow the virtual price to decrease,
             # as changing the shape of the bonding curve causes losses in the pool.
+            print('old_vp', old_virtual_price)
+            print('vp', virtual_price)
             assert self._is_ramping(), "virtual price decreased"
 
         # xcp_profit follows growth of virtual price (and goes down on ramping)
@@ -977,7 +979,7 @@ def tweak_price(
     # user_supply < total_supply => vp_boosted > virtual_price
     # by not accounting for donation shares, virtual_price is boosted leading to rebalance trigger
     # this is approximate condition that preliminary indicates readiness for rebalancing
-    vp_boosted: uint256 = 10**18 * xcp // locked_supply + 1
+    vp_boosted: uint256 = 10**18 * xcp // (locked_supply - 1) # TS offset by 1 for numerical stability
     assert vp_boosted >= virtual_price, "negative donation"
     if vp_boosted  > threshold_vp + rebalancing_params[0]:
         #                          allowed_extra_profit --------^
@@ -1015,7 +1017,7 @@ def tweak_price(
             new_D: uint256 = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
             # --------------------------------------------- Calculate new xcp.
             new_xcp: uint256 = self._xcp(new_D, p_new)
-            new_virtual_price: uint256 = 10**18 * new_xcp // total_supply + 1
+            new_virtual_price: uint256 = 10**18 * new_xcp // total_supply
 
             donation_shares_to_burn: uint256 = 0
             if new_virtual_price < threshold_vp:
@@ -1037,12 +1039,12 @@ def tweak_price(
                     donation_shares # but not more than we can burn (lp shares donation)
                 )
                 # update virtual price with the tweaked total supply
-                new_virtual_price = 10**18 * new_xcp // (total_supply - donation_shares_to_burn) + 1
+                new_virtual_price = 10**18 * new_xcp // (total_supply - donation_shares_to_burn - 1)
 
 
             if (
                 new_virtual_price > 10**18 and
-                new_virtual_price > threshold_vp
+                new_virtual_price >= threshold_vp
             ):
                 self.D = new_D
                 self.virtual_price = new_virtual_price
