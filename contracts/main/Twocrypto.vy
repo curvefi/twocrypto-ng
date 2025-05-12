@@ -163,7 +163,7 @@ future_A_gamma_time: public(uint256)  # <------ Time when ramping is finished.
 # TODO pack these three into one variable
 donation_duration: public(uint256)
 max_donation_ratio: public(uint256)
-last_donation_absorb_timestamp: public(uint256)
+last_donation_release_timestamp: public(uint256)
 donation_shares: public(uint256)
 
 balances: public(uint256[N_COINS])
@@ -449,7 +449,7 @@ def _donation_shares() -> uint256:
     donation_shares: uint256 = self.donation_shares
 
     # Time passed since the last donation absorption.
-    elapsed: uint256 = block.timestamp - self.last_donation_absorb_timestamp
+    elapsed: uint256 = block.timestamp - self.last_donation_release_timestamp
 
     # ===== absorption rate logic =====
     # `elapsed > self.donation_duration` => release whatever is left in `self.donation_shares` to avoid underflow.
@@ -535,6 +535,8 @@ def add_liquidity(
             token_supply += d_token
             self.totalSupply += d_token
             self.donation_shares += d_token
+            if self.last_donation_release_timestamp == 0:
+                self.last_donation_release_timestamp = block.timestamp
         else:
             d_token_fee = (
                 self._calc_token_fee(amountsp, xp) * d_token // 10**10 + 1
@@ -556,7 +558,6 @@ def add_liquidity(
         self.xcp_profit_a = 10**18
 
         self.mint(receiver, d_token)
-
     assert d_token >= min_mint_amount, "slippage"
 
     # ---------------------------------------------- Log and claim admin fees.
@@ -1054,7 +1055,7 @@ def tweak_price(
                     # we burned some donation shares, update related state
                     self.donation_shares -= donation_shares_to_burn
                     self.totalSupply -= donation_shares_to_burn
-                    self.last_donation_absorb_timestamp = block.timestamp
+                    self.last_donation_release_timestamp = block.timestamp
                 return p_new
 
     # If we end up here price_scale was not adjusted. So we update the state
