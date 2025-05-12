@@ -319,23 +319,25 @@ class RampingStateful(ImbalancedLiquidityStateful):
         pass
 
 
-class DonationStateful(UpOnlyLiquidityStateful):
+class DonationStateful(RampingStateful):
     @rule(
         data=data(),
     )
     def donate_rule(self, data):
         note("[DONATE]")
 
-
         amounts = [int(self.pool.balances(i) * 0.01) for i in range(N_COINS)]
-        
-        note(f"donating {amounts[0]:.2e} and {amounts[1]:.2e}")
 
-        try:
-            self.donate(amounts)
-        except Exception as e:
-            assert "ratio too high" in str(e)
-            note("[ALLOWED FAILURE]")
+        note(f"donating {amounts[0]:.2e} and {amounts[1]:.2e}")
+        self.donate(amounts)
+
+        # try:
+        #     self.donate(amounts)
+        # except Exception as e:
+        #     print(e)
+        #     assert False
+        # assert "ratio too high" in str(e)
+        # note("[ALLOWED FAILURE]")
 
         note("[SUCCESS]")
 
