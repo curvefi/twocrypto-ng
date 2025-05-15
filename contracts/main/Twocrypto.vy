@@ -530,7 +530,7 @@ def add_liquidity(
         if donation:
             # if we donate, we don't explicitly mint lp tokens, but we add to the donation shares and total supply
             # if we don't take any fees, it may happen that new_vp < old_vp due to numerical noise in D calculations
-            d_token_fee = NOISE_FEE
+            d_token_fee = d_token * NOISE_FEE // 10**10
             d_token -= d_token_fee
             token_supply += d_token
             self.totalSupply += d_token
