@@ -474,6 +474,7 @@ def add_liquidity(
     @param amounts Amounts of each coin to add.
     @param min_mint_amount Minimum amount of LP to mint.
     @param receiver Address to send the LP tokens to. Default is msg.sender
+    @param donation Whether the liquidity is a donation, if True receiver is ignored.
     @return uint256 Amount of LP tokens received by the `receiver
     """
 
