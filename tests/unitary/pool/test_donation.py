@@ -36,7 +36,7 @@ def test_donate(gm_pool_with_liquidity):
 
     assert (
         pool.donation_shares() > 0
-    ), "donation xcp should be greater than 0 after a donation has been sent"
+    ), "donation shares should be greater than 0 after a donation has been sent"
 
 
 def test_absorption(gm_pool_with_liquidity):

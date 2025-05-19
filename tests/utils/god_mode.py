@@ -30,7 +30,7 @@ class GodModePool:
     def donate(self, amounts, slippage=0, update_ema=False):
         self.__premint_amounts(amounts)
 
-        self.instance.donate(amounts, slippage, sender=god)
+        self.instance.add_liquidity(amounts, slippage, boa.env.eoa, True, sender=god)
 
         if update_ema:
             self.__update_ema()
