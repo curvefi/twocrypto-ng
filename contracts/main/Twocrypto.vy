@@ -466,14 +466,14 @@ def add_liquidity(
     amounts: uint256[N_COINS],
     min_mint_amount: uint256,
     receiver: address = msg.sender,
-    donation: bool = False
+    is_donation: bool = False
 ) -> uint256:
     """
     @notice Adds liquidity into the pool.
     @param amounts Amounts of each coin to add.
     @param min_mint_amount Minimum amount of LP to mint.
     @param receiver Address to send the LP tokens to. Default is msg.sender
-    @param donation Whether the liquidity is a donation, if True receiver is ignored.
+    @param is_donation Whether the liquidity is a donation, if True receiver is ignored.
     @return uint256 Amount of LP tokens received by the `receiver
     """
 
@@ -527,23 +527,20 @@ def add_liquidity(
 
     d_token_fee: uint256 = 0
     if old_D > 0:
-        if donation:
+        d_token_fee = (
+            self._calc_token_fee(amountsp, xp, is_donation) * d_token // 10**10 + 1
+        ) # for donations - we only take NOISE_FEE (check _calc_token_fee)
+        d_token -= d_token_fee
+        token_supply += d_token
+
+        if is_donation:
             # if we donate, we don't explicitly mint lp tokens, but we add to the donation shares and total supply
-            # if we don't take any fees, it may happen that new_vp < old_vp due to numerical noise in D calculations
-            d_token_fee = d_token * NOISE_FEE // 10**10
-            d_token -= d_token_fee
-            token_supply += d_token
             self.totalSupply += d_token
             self.donation_shares += d_token
             if self.last_donation_release_timestamp == 0:
+                # first donation should initialize last_donation_release_timestamp
                 self.last_donation_release_timestamp = block.timestamp
         else:
-            d_token_fee = (
-                self._calc_token_fee(amountsp, xp) * d_token // 10**10 + 1
-            )
-            d_token -= d_token_fee
-            token_supply += d_token
-
             self.mint(receiver, d_token)
 
         price_scale = self.tweak_price(A_gamma, xp, D)
@@ -1317,7 +1314,11 @@ def _xcp(D: uint256, price_scale: uint256) -> uint256:
 
 @view
 @internal
-def _calc_token_fee(amounts: uint256[N_COINS], xp: uint256[N_COINS]) -> uint256:
+def _calc_token_fee(amounts: uint256[N_COINS], xp: uint256[N_COINS], is_donation: bool = False) -> uint256:
+    if is_donation:
+        # Donation fees are 0, but NOISE_FEE is required for numerical stability
+        return NOISE_FEE
+
     # fee = sum(amounts_i - avg(amounts)) * fee' / sum(amounts)
     fee: uint256 = unsafe_div(
         unsafe_mul(self._fee(xp), N_COINS),
@@ -1717,15 +1718,16 @@ def fee() -> uint256:
 @external
 @view
 def calc_token_fee(
-    amounts: uint256[N_COINS], xp: uint256[N_COINS]
+    amounts: uint256[N_COINS], xp: uint256[N_COINS], donation: bool = False
 ) -> uint256:
     """
     @notice Returns the fee charged on the given amounts for add_liquidity.
     @param amounts The amounts of coins being added to the pool.
     @param xp The current balances of the pool multiplied by coin precisions.
+    @param donation Whether the liquidity is a donation, if True only NOISE_FEE is charged.
     @return uint256 Fee charged.
     """
-    return self._calc_token_fee(amounts, xp)
+    return self._calc_token_fee(amounts, xp, donation)
 
 
 @view
