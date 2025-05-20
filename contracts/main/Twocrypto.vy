@@ -162,7 +162,6 @@ future_A_gamma_time: public(uint256)  # <------ Time when ramping is finished.
 # Time constant which determines donation speed
 # TODO pack these three into one variable
 donation_duration: public(uint256)
-max_donation_ratio: public(uint256)
 last_donation_release_timestamp: public(uint256)
 donation_shares: public(uint256)
 
@@ -264,7 +263,6 @@ def __init__(
     self.xcp_profit_a = 10**18
 
     self.donation_duration = 7 * 86400
-    self.max_donation_ratio = PRECISION // 10  # (10%) of the total D.
 
     self.admin_fee = 5 * 10**9
 
@@ -1986,6 +1984,7 @@ def apply_new_parameters(
         ma_time=new_ma_time
     )
 
+
 @external
 def set_donation_duration(duration: uint256):
     self._check_admin()
@@ -1993,12 +1992,6 @@ def set_donation_duration(duration: uint256):
     self.donation_duration = duration
     log SetDonationDuration(duration=duration)
 
-@external
-def set_max_donation_ratio(ratio: uint256):
-    self._check_admin()
-
-    self.max_donation_ratio = ratio
-    log SetMaxDonationRatio(ratio=ratio)
 
 @external
 def set_admin_fee(admin_fee: uint256):
