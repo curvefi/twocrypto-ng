@@ -159,10 +159,11 @@ future_A_gamma_time: public(uint256)  # <------ Time when ramping is finished.
 #      (i.e. self.future_A_gamma_time < block.timestamp), the variable is left
 #                                                            and not set to 0.
 
-# Time constant which determines donation speed
-# TODO pack these three into one variable
+# Time constant that determines donation speed
 donation_duration: public(uint256)
+# Last time donation was released
 last_donation_release_timestamp: public(uint256)
+# Donation shares balance
 donation_shares: public(uint256)
 
 balances: public(uint256[N_COINS])
