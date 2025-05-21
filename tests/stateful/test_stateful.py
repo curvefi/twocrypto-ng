@@ -318,9 +318,77 @@ class RampingStateful(ImbalancedLiquidityStateful):
         # we disable this invariant because ramping can lead to losses
         pass
 
+class DonateStateful(ImbalancedLiquidityStateful):
+    # too high liquidity can lead to overflows
+    @precondition(lambda self: self.pool.D() < 1e28)
+    @rule(
+        # we can only add liquidity up to 1e25, this was reduced
+        # from the initial deposit that can be up to 1e30 to avoid
+        # breaking newton_D
+        amount=integers(min_value=int(1e20), max_value=int(1e25)),
+        user=address,
+    )
+    def donate_balanced(self, amount: int, user: str):
+        note("[BALANCED DONATION]")
+        # figure out the amount of the second token for a balanced deposit
+        balanced_amounts = self.get_balanced_deposit_amounts(amount)
+
+        # correct amounts to the right number of decimals
+        balanced_amounts = self.correct_all_decimals(balanced_amounts)
+
+        note(
+            "increasing pool liquidity with balanced amounts: "
+            + "{:.2e} {:.2e}".format(*balanced_amounts)
+        )
+        self.add_liquidity(balanced_amounts, user, donate=True)
+        note("[SUCCESS]")
+
+    # too high imbalanced liquidity can break newton_D
+    @precondition(lambda self: self.pool.D() < 1e28)
+    @rule(
+        data=data(),
+        imbalance_ratio=floats(min_value=0, max_value=1),
+        user=address,
+    )
+    def donate_imbalanced(self, data, imbalance_ratio, user: str):
+        note("[IMBALANCED DONATION]")
+
+        jump_limit = 2
+
+        amount = data.draw(
+            integers(
+                min_value=int(1e18),
+                max_value=max(self.coins[0].balanceOf(user) * jump_limit, int(1e18)),
+            ),
+            label="amount",
+        )
+
+        balanced_amounts = self.get_balanced_deposit_amounts(amount)
+        imbalanced_amounts = [
+            int(balanced_amounts[0] * imbalance_ratio)
+            if imbalance_ratio != 1
+            else balanced_amounts[0],
+            int(balanced_amounts[1] * (1 - imbalance_ratio))
+            if imbalance_ratio != 0
+            else balanced_amounts[1],
+        ]
+
+        # we correct the decimals of the imbalanced amounts
+        imbalanced_amounts = self.correct_all_decimals(imbalanced_amounts)
+
+        note("depositing {:.2e} and {:.2e}".format(*imbalanced_amounts))
+        # we add the liquidity
+        self.add_liquidity(imbalanced_amounts, user, donate=True)
+
+        # since this is an imbalanced deposit we report the new equilibrium
+        self.report_equilibrium()
+        note("[SUCCESS]")
+
+
 
 TestOnlySwap = OnlySwapStateful.TestCase
 TestUpOnlyLiquidity = UpOnlyLiquidityStateful.TestCase
 TestOnlyBalancedLiquidity = OnlyBalancedLiquidityStateful.TestCase
 TestImbalancedLiquidity = ImbalancedLiquidityStateful.TestCase
 # TestRampingStateful = RampingStateful.TestCase
+TestDonateStateful = DonateStateful.TestCase
