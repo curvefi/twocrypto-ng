@@ -99,7 +99,7 @@ price = integers(min_value=int(1e10), max_value=int(1e26))
 
 # we put bigger values first to shrink
 # towards 18 in case of failure (instead of 2)
-token = sampled_from([18, 6, 2]).map(
+token = sampled_from([18, 9, 8, 6]).map(
     # token = just(18).map(
     lambda x: ERC20_DEPLOYER.deploy("USD", "USD", x)
 )
