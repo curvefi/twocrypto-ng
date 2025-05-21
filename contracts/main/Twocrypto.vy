@@ -1194,6 +1194,15 @@ def _xp(
         unsafe_div(balances[1] * PRECISIONS[1] * price_scale, PRECISION)
     ]
 
+@external
+@view
+def user_supply() -> uint256:
+    """
+    @notice Returns the amount of LP tokens that are not locked in donations.
+    @return uint256 Amount of LP tokens that are not locked in donations.
+    """
+    return self.totalSupply - self.donation_shares
+
 @internal
 @view
 def _is_ramping() -> bool:
