@@ -534,12 +534,13 @@ def add_liquidity(
         token_supply += d_token
 
         if is_donation:
-            # if we donate, we don't explicitly mint lp tokens, but we add to the donation shares and total supply
-            self.totalSupply += d_token
-            self.donation_shares += d_token
-            if self.last_donation_release_timestamp == 0:
+            if self.donation_shares == 0:
                 # first donation should initialize last_donation_release_timestamp
                 self.last_donation_release_timestamp = block.timestamp
+
+            # if we donate, we don't explicitly mint lp tokens, but we add to the donation shares and total supply
+            self.donation_shares += d_token
+            self.totalSupply += d_token
         else:
             self.mint(receiver, d_token)
 
