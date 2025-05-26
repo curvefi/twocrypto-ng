@@ -543,7 +543,7 @@ def add_liquidity(
                 effective_elapsed: uint256 = self._donation_shares() * self.donation_duration // new_donation_shares
                 self.last_donation_release_ts = block.timestamp - effective_elapsed
 
-            # Credit donation. We don't explicitly mint lp tokens, but increase total supply
+            # Credit donation: we don't explicitly mint lp tokens, but increase total supply
             self.donation_shares = new_donation_shares
             self.totalSupply += d_token
 
