@@ -444,12 +444,18 @@ def exchange_received(
 @view
 @internal
 def _donation_shares() -> uint256:
-    """
-    Linear donations drip: shares * elapsed / duration.
-    """
-    elapsed: uint256 = block.timestamp - self.last_donation_release_ts
-    unlocked: uint256 = self.donation_shares * elapsed // self.donation_duration
-    return min(unlocked, self.donation_shares)
+    donation_shares: uint256 = self.donation_shares
+    # Time passed since the last donation absorption.
+    elapsed: uint256 = block.timestamp - self.last_donation_release_timestamp
+
+    # ===== absorption rate logic =====
+    # `elapsed > self.donation_duration` => release whatever is left in `self.donation_shares` to avoid underflow.
+    # `elapsed < self.donation_duration` => release at the current rate.
+
+    # ===== absorption edge cases =====
+    # `elapsed == 0` => multiple absorption attempts in the same block, return current value of `self.donation_shares` in storage.
+    # `donation_shares == 0` => no donation has been done, or all donations have been absorbed, return 0.
+    return min(donation_shares, donation_shares * elapsed // self.donation_duration)
 
 
 @external
