@@ -446,7 +446,7 @@ def exchange_received(
 def _donation_shares() -> uint256:
     donation_shares: uint256 = self.donation_shares
     # Time passed since the last donation absorption.
-    elapsed: uint256 = block.timestamp - self.last_donation_release_timestamp
+    elapsed: uint256 = block.timestamp - self.last_donation_release_ts
 
     # ===== absorption rate logic =====
     # `elapsed > self.donation_duration` => release whatever is left in `self.donation_shares` to avoid underflow.
