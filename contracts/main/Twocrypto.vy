@@ -533,6 +533,7 @@ def add_liquidity(
 
         if donation:
             new_donation_shares: uint256 = self.donation_shares + d_token
+
             # back-date existing checkpoint to preserve currently available donation
             # if self.donation_shares = 0, then last_ts = block.timestamp (initializate donation)
 
