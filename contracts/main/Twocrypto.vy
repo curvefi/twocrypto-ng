@@ -533,15 +533,12 @@ def add_liquidity(
 
         if donation:
             new_donation_shares: uint256 = self.donation_shares + d_token
-            # update donation release timestamp
-            if self.donation_shares == 0:
-                # no previous donation, start new emission
-                self.last_donation_release_ts = block.timestamp
-            else:
-                # back-date existing checkpoint to preserve currently available donation
-                # unlocked = new_pool * t / D  =>  t = unlocked * D / new_pool
-                effective_elapsed: uint256 = self._donation_shares() * self.donation_duration // new_donation_shares
-                self.last_donation_release_ts = block.timestamp - effective_elapsed
+            # back-date existing checkpoint to preserve currently available donation
+            # if self.donation_shares = 0, then last_ts = block.timestamp (initializate donation)
+
+            # unlocked = new_pool * t / D  =>  t = unlocked * D / new_pool
+            effective_elapsed: uint256 = self._donation_shares() * self.donation_duration // new_donation_shares
+            self.last_donation_release_ts = block.timestamp - effective_elapsed
 
             # Credit donation: we don't explicitly mint lp tokens, but increase total supply
             self.donation_shares = new_donation_shares
