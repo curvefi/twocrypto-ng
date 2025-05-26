@@ -1,6 +1,6 @@
 import boa
 from tests.utils.constants import N_COINS
-from pytest import fixture
+from pytest import fixture, approx
 
 
 def test_cant_donate_on_empty_pool(gm_pool):
@@ -71,6 +71,40 @@ def test_absorption(gm_pool_with_liquidity):
         old_virtual_price = pool.virtual_price()
         old_xcp_profit = pool.xcp_profit()
         old_donation_shares = pool.internal._donation_shares()
+
+
+def test_multiple_donations_linear_vesting(gm_pool_with_liquidity):
+    pool = gm_pool_with_liquidity
+
+    D = gm_pool_with_liquidity.donation_duration()
+    DONATION_USD = 10 * 10**18
+
+    # First donation
+    minted1 = pool.donate_balanced(DONATION_USD)
+    assert pool.donation_shares() == minted1
+    # immediately, nothing is unlocked
+    assert pool.internal._donation_shares() == 0
+
+    # Half‐time vesting of first donation
+    boa.env.time_travel(seconds=D // 2)
+    unlocked1 = pool.internal._donation_shares()
+    assert unlocked1 == approx(
+        minted1 // 2, rel=0.02
+    ), f"~50% of first batch unlocked, got {unlocked1}"
+
+    # Second donation — must not instant‐unlock
+    minted2 = pool.donate_balanced(DONATION_USD)
+    assert pool.donation_shares() == minted1 + minted2
+    # immediately after second donation, unlocked stays the same (approx because of precision)
+    assert pool.internal._donation_shares() == approx(unlocked1, rel=0.001)
+
+    # Another half‐period: first batch fully unlocked, second ~50%
+    boa.env.time_travel(seconds=D // 2)
+    unlocked2 = pool.internal._donation_shares()
+    expected2 = minted1 + (minted2 // 2)
+    assert unlocked2 == approx(
+        expected2, rel=0.01
+    ), f"Expected ~(1st + half of 2nd) = {expected2}, got {unlocked2}"
 
 
 def test_slippage(gm_pool_with_liquidity, views_contract):
