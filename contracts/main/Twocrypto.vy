@@ -534,6 +534,7 @@ def add_liquidity(
         token_supply += d_token
 
         if is_donation:
+            assert receiver == empty(address), "nonzero receiver"
             if self.donation_shares == 0:
                 # first donation should initialize last_donation_release_timestamp
                 self.last_donation_release_timestamp = block.timestamp

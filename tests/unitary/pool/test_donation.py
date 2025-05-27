@@ -106,10 +106,10 @@ def test_remove_liquidity_affected_by_donations(gm_pool_with_liquidity):
     user_lp_tokens = pool.add_liquidity_balanced(10**18)
 
     with boa.env.anchor():
-        expected_user_tokens = pool.remove_liquidity(user_lp_tokens, [0, 0])
+        expected_user_tokens = pool.remove_liquidity(user_lp_tokens, [0, 0], sender=pool.god)
 
     pool.donate_balanced(10**18)
-    actual_user_tokens = pool.remove_liquidity(user_lp_tokens, [0, 0])
+    actual_user_tokens = pool.remove_liquidity(user_lp_tokens, [0, 0], sender=pool.god)
 
     # we allow the values in these arrays to be off by one because of rounding
     for expected, actual in zip(expected_user_tokens, actual_user_tokens):

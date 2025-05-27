@@ -13,6 +13,7 @@ class GodModePool:
     def __init__(self, instance):
         self.instance = instance
         self.coins = [ERC20_DEPLOYER.at(instance.coins(i)) for i in range(N_COINS)]
+        self.god = god
         for c in self.coins:
             c.approve(self.instance, 2**256 - 1, sender=god)
 
@@ -30,7 +31,7 @@ class GodModePool:
     def donate(self, amounts, slippage=0, update_ema=False):
         self.__premint_amounts(amounts)
 
-        self.instance.add_liquidity(amounts, slippage, boa.env.eoa, True, sender=god)
+        self.instance.add_liquidity(amounts, slippage, boa.eval("empty(address)"), True, sender=god)
 
         if update_ema:
             self.__update_ema()
@@ -61,10 +62,9 @@ class GodModePool:
 
     def add_liquidity(self, amounts, update_ema=False, donate=False):
         self.__premint_amounts(amounts)
+        receiver = boa.eval("empty(address)") if donate else god
 
-        lp_tokens_received = self.instance.add_liquidity(
-            amounts, 0, boa.env.eoa, donate, sender=god
-        )
+        lp_tokens_received = self.instance.add_liquidity(amounts, 0, receiver, donate, sender=god)
 
         if update_ema:
             self.__update_ema()
