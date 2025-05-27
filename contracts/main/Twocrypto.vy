@@ -535,21 +535,26 @@ def add_liquidity(
             new_donation_shares: uint256 = self.donation_shares + d_token
 
             # When adding donation, if the previous one hasn't been fully released we preserve
-            # the currently unlocked donation by rewinding `self.last_donation_release_ts` as if
-            # a bigger donation had been made.
+            # the currently unlocked donation [given by `self._donation_shares()`] by updating
+            # `self.last_donation_release_ts` as if a single virtual donation of size `new_donation_shares`
+            # was made in past and linearly unlocked reaching `self._donation_shares()` at the current time.
 
-            # We want the following equality to hold
+            # We want the following equality to hold:
             # self._donation_shares() = new_donation_shares * (new_elapsed / self.donation_duration)
-            # => self._donation_shares() = new_donation_shares * released_percentage
-            # We can rearrange this to find the new elapsed time (as if a bigger donation was made):
+            # We can rearrange this to find the new elapsed time (imitating one large virtual donation):
             # => new_elapsed = self._donation_shares() * self.donation_duration / new_donation_shares
-            # edge case: if self.donation_shares = 0, then new_elapsed = 0 (last_donation_release_ts = block.timestamp)
+            # edge case: if self.donation_shares = 0, then self._donation_shares() is 0
+            # and new_elapsed = 0, thus initializing last_donation_release_ts = block.timestamp
             new_elapsed: uint256 = self._donation_shares() * self.donation_duration // new_donation_shares
+            # Additional observations:
+            # new_elapsed = (old_pool * old_elapsed / D) * D / new_pool = old_elapsed * (old_pool / new_pool)
+            # => new_elapsed is always smaller than old_elapsed
+            # and self.last_donation_release_ts is carried forward propotionally to new donation size.
 
-            # We rewind the time of the last donation release. This stops “timer-riding” attacks,
-            # i.e. you can’t let a tiny donation fully unlock over time and then donate 10 ETH and
-            # have it all instantly available. Rewinding ensures only the old, already-unlocked amount
-            # carries over, and every new donation still unlocks linearly.
+            # We tweak the time of the last donation release. This stops “timer-riding” attacks,
+            # i.e. you can’t let a donation fully unlock over time and then donate 10 ETH and
+            # have it all instantly available. Timestamp tweaking ensures only the old,
+            # already-unlocked amount carries over, and every new donation still unlocks linearly.
             self.last_donation_release_ts = block.timestamp - new_elapsed
 
             # Credit donation: we don't explicitly mint lp tokens, but increase total supply
