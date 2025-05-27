@@ -25,7 +25,11 @@ def test_donate(gm_pool_with_liquidity):
     old_virtual_price = pool.virtual_price()
     old_balances = [pool.balances(i) for i in range(N_COINS)]
     old_xcp_profit = pool.xcp_profit()
+    assert (
+        pool.last_donation_release_ts() == 0
+    ), "last_donation_release_ts should be 0 before any donation has been sent"
     pool.donate_balanced(HALF_DONATION_DOLLAR_VALUE)
+    assert pool.last_donation_release_ts() == boa.env.evm.patch.timestamp, "ts must update"
     donated_amounts = pool.compute_balanced_amounts(HALF_DONATION_DOLLAR_VALUE)
     assert pool.virtual_price() > old_virtual_price, "Donation must increase vp due to noise fee"
     assert pool.xcp_profit() > old_xcp_profit, "donation increases xcp profit due to noise fee"
