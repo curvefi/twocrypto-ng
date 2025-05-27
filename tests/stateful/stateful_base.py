@@ -16,6 +16,7 @@ from tests.utils.constants import UNIX_DAY, FACTORY_DEPLOYER, ERC20_DEPLOYER
 from tests.utils.strategies import address, pool_from_preset
 import textwrap
 
+
 class StatefulBase(RuleBasedStateMachine):
     pool = None
     total_supply = 0
@@ -47,11 +48,13 @@ class StatefulBase(RuleBasedStateMachine):
         self.pool = pool
 
         self.donation_lp = boa.env.generate_address()
-        self.pool.inject_function(textwrap.dedent(f"""
+        self.pool.inject_function(
+            textwrap.dedent(f"""
             @external
             def donations_as_user():
                 self.balanceOf[{self.donation_lp}] = self.donation_shares
-        """))
+        """)
+        )
 
         # total supply of lp tokens (updated from reported balances)
         self.total_supply = 0
@@ -536,7 +539,9 @@ class StatefulBase(RuleBasedStateMachine):
     def sanity_check(self):
         """Make sure the stateful simulations matches the contract state."""
         assert self.xcp_profit == self.pool.xcp_profit()
-        assert self.total_supply == self.pool.user_supply(), "user supply should matched test supply"
+        assert (
+            self.total_supply == self.pool.user_supply()
+        ), "user supply should matched test supply"
 
         # profit, cached vp and current vp should be at least 1e18
         assert self.xcp_profit >= 1e18, "profit should be at least 1e18"
@@ -576,7 +581,7 @@ class StatefulBase(RuleBasedStateMachine):
 
         # make sure that the previous profit is smaller than the current
         assert xcpx >= self.xcpx, "xcpx has decreased"
-        # updates the previous profit
+        # updates the previous profits
         self.xcpx = xcpx
         self.xcp_profit = xcp_profit
         self.xcp_profit_a = xcp_profit_a
