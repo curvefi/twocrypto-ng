@@ -31,10 +31,14 @@ class GodModePool:
     def donate(self, amounts, slippage=0, update_ema=False):
         self.__premint_amounts(amounts)
 
-        self.instance.add_liquidity(amounts, slippage, boa.eval("empty(address)"), True, sender=god)
+        shares = self.instance.add_liquidity(
+            amounts, slippage, boa.eval("empty(address)"), True, sender=god
+        )
 
         if update_ema:
             self.__update_ema()
+
+        return shares
 
     def donate_balanced(self, amount, update_ema=False):
         balanced_amounts = self.compute_balanced_amounts(amount)
