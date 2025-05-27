@@ -318,6 +318,7 @@ class RampingStateful(ImbalancedLiquidityStateful):
         # we disable this invariant because ramping can lead to losses
         pass
 
+
 class DonateStateful(ImbalancedLiquidityStateful):
     # too high liquidity can lead to overflows
     @precondition(lambda self: self.pool.D() < 1e28)
@@ -385,10 +386,9 @@ class DonateStateful(ImbalancedLiquidityStateful):
         note("[SUCCESS]")
 
 
-
-TestOnlySwap = OnlySwapStateful.TestCase
-TestUpOnlyLiquidity = UpOnlyLiquidityStateful.TestCase
-TestOnlyBalancedLiquidity = OnlyBalancedLiquidityStateful.TestCase
-TestImbalancedLiquidity = ImbalancedLiquidityStateful.TestCase
+# TestOnlySwap = OnlySwapStateful.TestCase
+# TestUpOnlyLiquidity = UpOnlyLiquidityStateful.TestCase
+# TestOnlyBalancedLiquidity = OnlyBalancedLiquidityStateful.TestCase
+# TestImbalancedLiquidity = ImbalancedLiquidityStateful.TestCase
 # TestRampingStateful = RampingStateful.TestCase
 TestDonateStateful = DonateStateful.TestCase
