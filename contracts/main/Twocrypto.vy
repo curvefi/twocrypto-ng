@@ -534,7 +534,7 @@ def add_liquidity(
         if donation:
             new_donation_shares: uint256 = self.donation_shares + d_token
 
-            # When adding donation, if the previous one hasn't been fully released we preserve 
+            # When adding donation, if the previous one hasn't been fully released we preserve
             # the currently unlocked donation by rewinding `self.last_donation_release_ts` as if
             # a bigger donation had been made.
 
@@ -546,7 +546,7 @@ def add_liquidity(
             # edge case: if self.donation_shares = 0, then new_elapsed = 0 (last_donation_release_ts = block.timestamp)
             new_elapsed: uint256 = self._donation_shares() * self.donation_duration // new_donation_shares
 
-            # We rewind the time of the last donation release. This stops “timer-riding” attacks, 
+            # We rewind the time of the last donation release. This stops “timer-riding” attacks,
             # i.e. you can’t let a tiny donation fully unlock over time and then donate 10 ETH and
             # have it all instantly available. Rewinding ensures only the old, already-unlocked amount
             # carries over, and every new donation still unlocks linearly.
