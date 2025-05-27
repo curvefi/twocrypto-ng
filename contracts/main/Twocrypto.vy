@@ -772,6 +772,9 @@ def _remove_liquidity_fixed_out(
         price_scale=price_scale
     )
 
+    # Take care of leftover donations (if any - handled inside)
+    self._withdraw_leftover_donations()
+
     return dy
 
 
@@ -785,6 +788,7 @@ def _withdraw_leftover_donations():
     """
 
     if self.donation_shares != self.totalSupply:
+        # Something else in the pool, skip procedure
         return
 
     else:
@@ -793,16 +797,18 @@ def _withdraw_leftover_donations():
             receiver = staticcall factory.admin()
 
         # empty the pool
+        withdraw_amounts: uint256[N_COINS] = self.balances
+
         for i: uint256 in range(N_COINS):
             # updates self.balances here
-            self._transfer_out(i, self.balances[i], receiver)
+            self._transfer_out(i, withdraw_amounts[i], receiver)
 
         # Update state
         self.donation_shares = 0
         self.totalSupply = 0
         self.D = 0
 
-        log RemoveLiquidity(provider=receiver, token_amounts=self.balances, token_supply=0)
+        log RemoveLiquidity(provider=receiver, token_amounts=withdraw_amounts, token_supply=0)
 
 
 # -------------------------- Packing functions -------------------------------
