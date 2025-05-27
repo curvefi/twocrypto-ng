@@ -159,12 +159,11 @@ future_A_gamma_time: public(uint256)  # <------ Time when ramping is finished.
 #      (i.e. self.future_A_gamma_time < block.timestamp), the variable is left
 #                                                            and not set to 0.
 
-# Time constant that determines donation speed
-donation_duration: public(uint256)
-# Last time donation was released
-last_donation_release_timestamp: public(uint256)
 # Donation shares balance
 donation_shares: public(uint256)
+# Donations release parameters:
+donation_duration: public(uint256)
+last_donation_release_ts: public(uint256)
 
 balances: public(uint256[N_COINS])
 D: public(uint256)
@@ -446,9 +445,8 @@ def exchange_received(
 @internal
 def _donation_shares() -> uint256:
     donation_shares: uint256 = self.donation_shares
-
     # Time passed since the last donation absorption.
-    elapsed: uint256 = block.timestamp - self.last_donation_release_timestamp
+    elapsed: uint256 = block.timestamp - self.last_donation_release_ts
 
     # ===== absorption rate logic =====
     # `elapsed > self.donation_duration` => release whatever is left in `self.donation_shares` to avoid underflow.
@@ -466,14 +464,14 @@ def add_liquidity(
     amounts: uint256[N_COINS],
     min_mint_amount: uint256,
     receiver: address = msg.sender,
-    is_donation: bool = False
+    donation: bool = False
 ) -> uint256:
     """
     @notice Adds liquidity into the pool.
     @param amounts Amounts of each coin to add.
     @param min_mint_amount Minimum amount of LP to mint.
     @param receiver Address to send the LP tokens to. Default is msg.sender
-    @param is_donation Whether the liquidity is a donation, if True receiver is ignored.
+    @param donation Whether the liquidity is a donation, if True receiver is ignored.
     @return uint256 Amount of LP tokens received by the `receiver
     """
 
@@ -528,20 +526,42 @@ def add_liquidity(
     d_token_fee: uint256 = 0
     if old_D > 0:
         d_token_fee = (
-            self._calc_token_fee(amountsp, xp, is_donation) * d_token // 10**10 + 1
+            self._calc_token_fee(amountsp, xp, donation) * d_token // 10**10 + 1
         ) # for donations - we only take NOISE_FEE (check _calc_token_fee)
         d_token -= d_token_fee
         token_supply += d_token
 
-        if is_donation:
-            if self.donation_shares == 0:
-                # first donation should initialize last_donation_release_timestamp
-                self.last_donation_release_timestamp = block.timestamp
+        if donation:
+            new_donation_shares: uint256 = self.donation_shares + d_token
 
-            # if we donate, we don't explicitly mint lp tokens, but we add to the donation shares and total supply
-            self.donation_shares += d_token
+            # When adding donation, if the previous one hasn't been fully released we preserve
+            # the currently unlocked donation [given by `self._donation_shares()`] by updating
+            # `self.last_donation_release_ts` as if a single virtual donation of size `new_donation_shares`
+            # was made in past and linearly unlocked reaching `self._donation_shares()` at the current time.
+
+            # We want the following equality to hold:
+            # self._donation_shares() = new_donation_shares * (new_elapsed / self.donation_duration)
+            # We can rearrange this to find the new elapsed time (imitating one large virtual donation):
+            # => new_elapsed = self._donation_shares() * self.donation_duration / new_donation_shares
+            # edge case: if self.donation_shares = 0, then self._donation_shares() is 0
+            # and new_elapsed = 0, thus initializing last_donation_release_ts = block.timestamp
+            new_elapsed: uint256 = self._donation_shares() * self.donation_duration // new_donation_shares
+            # Additional observations:
+            # new_elapsed = (old_pool * old_elapsed / D) * D / new_pool = old_elapsed * (old_pool / new_pool)
+            # => new_elapsed is always smaller than old_elapsed
+            # and self.last_donation_release_ts is carried forward propotionally to new donation size.
+
+            # We tweak the time of the last donation release. This stops “timer-riding” attacks,
+            # i.e. you can’t let a donation fully unlock over time and then donate 10 ETH and
+            # have it all instantly available. Timestamp tweaking ensures only the old,
+            # already-unlocked amount carries over, and every new donation still unlocks linearly.
+            self.last_donation_release_ts = block.timestamp - new_elapsed
+
+            # Credit donation: we don't explicitly mint lp tokens, but increase total supply
+            self.donation_shares = new_donation_shares
             self.totalSupply += d_token
         else:
+            # Regular liquidity addition
             self.mint(receiver, d_token)
 
         price_scale = self.tweak_price(A_gamma, xp, D)
@@ -1053,7 +1073,7 @@ def tweak_price(
                     # we burned some donation shares, update related state
                     self.donation_shares -= donation_shares_to_burn
                     self.totalSupply -= donation_shares_to_burn
-                    self.last_donation_release_timestamp = block.timestamp
+                    self.last_donation_release_ts = block.timestamp
                 return p_new
 
     # If we end up here price_scale was not adjusted. So we update the state
@@ -1324,8 +1344,8 @@ def _xcp(D: uint256, price_scale: uint256) -> uint256:
 
 @view
 @internal
-def _calc_token_fee(amounts: uint256[N_COINS], xp: uint256[N_COINS], is_donation: bool = False) -> uint256:
-    if is_donation:
+def _calc_token_fee(amounts: uint256[N_COINS], xp: uint256[N_COINS], donation: bool = False) -> uint256:
+    if donation:
         # Donation fees are 0, but NOISE_FEE is required for numerical stability
         return NOISE_FEE
 
@@ -2001,7 +2021,7 @@ def apply_new_parameters(
 @external
 def set_donation_duration(duration: uint256):
     self._check_admin()
-
+    assert duration > 0, "duration must be positive"
     self.donation_duration = duration
     log SetDonationDuration(duration=duration)
 
