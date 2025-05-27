@@ -283,9 +283,6 @@ def test_pool_reinitialization_after_full_user_withdrawal(pool, coins, bob, dona
     initial_user_lp_balance = pool.balanceOf(user_account)
     assert initial_user_lp_balance == lp_for_user
 
-    vp_before_main_ops = pool.virtual_price()
-    xcp_profit_a_before_main_ops = pool.xcp_profit_a()
-
     # --- Optional Donation ---
     donation_shares_value = 0
     if donation_present:
@@ -294,6 +291,9 @@ def test_pool_reinitialization_after_full_user_withdrawal(pool, coins, bob, dona
         assert (
             donation_shares_value > 0
         ), "Donation did not result in donation shares (logic for donation_present=True)"
+
+    vp_before_main_ops = pool.virtual_price()
+    xcp_profit_a_before_main_ops = pool.xcp_profit_a()
 
     # --- User withdraws ALL their LP tokens ---
     pool.remove_liquidity(initial_user_lp_balance, [0] * N_COINS, sender=user_account)
