@@ -28,11 +28,11 @@ class GodModePool:
             return self.coins
         return self.coins[i]
 
-    def donate(self, amounts, slippage=0, update_ema=False):
-        self.__premint_amounts(amounts)
+    def donate(self, amounts, slippage=0, update_ema=False, sender=god):
+        self.__premint_amounts(amounts, to=sender)
 
         shares = self.instance.add_liquidity(
-            amounts, slippage, boa.eval("empty(address)"), True, sender=god
+            amounts, slippage, boa.eval("empty(address)"), True, sender=sender
         )
 
         if update_ema:
@@ -66,7 +66,7 @@ class GodModePool:
 
     def add_liquidity(self, amounts, update_ema=False, donate=False):
         self.__premint_amounts(amounts)
-        receiver = boa.eval("empty(address)") if donate else god
+        receiver = boa.eval("empty(address)") if donate else boa.env.eoa
 
         lp_tokens_received = self.instance.add_liquidity(amounts, 0, receiver, donate, sender=god)
 
@@ -92,9 +92,9 @@ class GodModePool:
         ], "pool coins balances are not consistent"
         return snapshot
 
-    def __premint_amounts(self, amounts):
+    def __premint_amounts(self, amounts, to=god):
         for c, amount in zip(self.coins, amounts):
-            boa.deal(c, god, amount)
+            boa.deal(c, to, amount)
 
     def __update_ema(self):
         boa.env.time_travel(seconds=86400 * 7)
