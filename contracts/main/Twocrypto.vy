@@ -547,15 +547,11 @@ def add_liquidity(
             # edge case: if self.donation_shares = 0, then self._donation_shares() is 0
             # and new_elapsed = 0, thus initializing last_donation_release_ts = block.timestamp
             new_elapsed: uint256 = self._donation_shares() * self.donation_duration // new_donation_shares
+
             # Additional observations:
             # new_elapsed = (old_pool * old_elapsed / D) * D / new_pool = old_elapsed * (old_pool / new_pool)
             # => new_elapsed is always smaller than old_elapsed
             # and self.last_donation_release_ts is carried forward propotionally to new donation size.
-
-            # We tweak the time of the last donation release. This stops “timer-riding” attacks,
-            # i.e. you can’t let a donation fully unlock over time and then donate 10 ETH and
-            # have it all instantly available. Timestamp tweaking ensures only the old,
-            # already-unlocked amount carries over, and every new donation still unlocks linearly.
             self.last_donation_release_ts = block.timestamp - new_elapsed
 
             # Credit donation: we don't explicitly mint lp tokens, but increase total supply
@@ -1040,7 +1036,7 @@ def tweak_price(
     vp_boosted: uint256 = 10**18 * xcp // locked_supply
     assert vp_boosted >= virtual_price, "negative donation"
     if vp_boosted  > threshold_vp + rebalancing_params[0]:
-        #                          allowed_extra_profit --------^
+        #             allowed_extra_profit --------^
         norm: uint256 = unsafe_div(
             unsafe_mul(price_oracle, 10**18), price_scale
         )
@@ -1196,6 +1192,10 @@ def _claim_admin_fees():
         # Thus, to maintain the condition vp' - 1 > (xcp_profit' - 1)/2:
         #     xcp_profit' := xcp_profit - 2 * f
         xcp_profit -= fees * 2
+        # Another way to look at it - we either track admin_claimed_xcp (=sum(fees)),
+        # and always use it to calculate admin+LP reserve, or just -=2*fees in xcp_profit.
+        # xcp_profit as raw value is thus should't be used in integrations!
+
     # ------------------- Recalculate virtual_price following admin fee claim.
     total_supply_including_admin_share: uint256 = (
         current_lp_token_supply + admin_share
