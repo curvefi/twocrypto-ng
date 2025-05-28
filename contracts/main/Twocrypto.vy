@@ -1190,7 +1190,7 @@ def _claim_admin_fees():
         xcp_profit -= fees * 2
         # Another way to look at it - we either track admin_claimed_xcp (=sum(fees)),
         # and always use it to calculate admin+LP reserve, or just -=2*fees in xcp_profit.
-        # xcp_profit as raw value is meaningless and should't be used in integrations!
+        # xcp_profit as raw value is meaningless and shouldn't be used in integrations!
 
 
         # ---------------------------- Update State ------------------------------
