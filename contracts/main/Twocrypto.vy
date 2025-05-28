@@ -1212,7 +1212,7 @@ def _claim_admin_fees():
 
         for i: uint256 in range(N_COINS):
             admin_tokens[i] = (
-                unsafe_div(balances[i] * fees, current_vprice)
+                balances[i] * fees // current_vprice
             )
 
             # _transfer_out tokens to admin and update self.balances. State
