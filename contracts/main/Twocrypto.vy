@@ -661,7 +661,7 @@ def remove_liquidity(
     # tokens burnt is `amount`, regardless of the rounding error.
     log RemoveLiquidity(provider=msg.sender, token_amounts=withdraw_amounts, token_supply=total_supply - amount)
 
-    # Take care of leftover donations (if any - handled inside)
+    # Take care of leftover donations (only if all LP left)
     self._withdraw_leftover_donations()
 
     return withdraw_amounts
@@ -772,7 +772,7 @@ def _remove_liquidity_fixed_out(
         price_scale=price_scale
     )
 
-    # Take care of leftover donations (if any - handled inside)
+    # Take care of leftover donations (only if all LP left)
     self._withdraw_leftover_donations()
 
     return dy
@@ -787,11 +787,8 @@ def _withdraw_leftover_donations():
     @dev donations go to the factory fees receiver, if not set, to the admin.
     """
 
-    if self.donation_shares != self.totalSupply:
-        # Something else in the pool, skip procedure
-        return
-
-    else:
+    if self.donation_shares == self.totalSupply:
+        # Pool has no other LP than donation shares, must be emptied
         receiver: address = staticcall factory.fee_receiver()
         if receiver == empty(address):
             receiver = staticcall factory.admin()
