@@ -1161,7 +1161,7 @@ def _claim_admin_fees():
 
     # ---------- Conditions met to claim admin fees: compute state. ----------
 
-    vprice: uint256 = self.virtual_price
+    current_vprice: uint256 = self.virtual_price
     price_scale: uint256 = self.cached_price_scale
     balances: uint256[N_COINS] = self.balances
 
@@ -1180,9 +1180,9 @@ def _claim_admin_fees():
     if fees > 0:
         # -------------------- Recalculate virtual price and xcp_profit ----------
         # We withdraw token balances without touching LP shares, so virtual price goes down.
-        vprice -= fees
+        updated_vprice: uint256 = current_vprice - fees
         # Do not claim fees if doing so causes virtual price to drop below 10**18.
-        if vprice < 10**18:
+        if updated_vprice < 10**18:
             return
 
         # To maintain rebalancing condition vp' - 1 > (xcp_profit' - 1)/2:
@@ -1194,7 +1194,7 @@ def _claim_admin_fees():
 
 
         # ---------------------------- Update State ------------------------------
-        self.virtual_price = vprice
+        self.virtual_price = updated_vprice
         self.xcp_profit = xcp_profit
         self.last_admin_fee_claim_timestamp = block.timestamp
 
@@ -1204,7 +1204,7 @@ def _claim_admin_fees():
         # Adjust D after admin seemingly removes liquidity
         # no _get_D() because we can't claim during ramping
         D: uint256 = self.D
-        self.D = D - unsafe_div(D * fees, vprice)
+        self.D = D - unsafe_div(D * fees, current_vprice)
 
         # --------------------------- Handle Transfers ---------------------------
 
@@ -1212,7 +1212,7 @@ def _claim_admin_fees():
 
         for i: uint256 in range(N_COINS):
             admin_tokens[i] = (
-                unsafe_div(balances[i] * fees, vprice)
+                unsafe_div(balances[i] * fees, current_vprice)
             )
 
             # _transfer_out tokens to admin and update self.balances. State
