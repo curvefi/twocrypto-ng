@@ -991,7 +991,6 @@ def tweak_price(
     xcp_profit: uint256 = 10**18
     virtual_price: uint256 = 10**18
 
-
     # `totalSupply` might change during this function call.
     total_supply: uint256 = self.totalSupply
     donation_shares: uint256 = self._donation_shares()
@@ -1000,20 +999,18 @@ def tweak_price(
 
     old_virtual_price: uint256 = self.virtual_price
     xcp: uint256 = self._xcp(D, price_scale)
-    if old_virtual_price > 0:
-        virtual_price = 10**18 * xcp // total_supply
-        # Virtual price can decrease only if A and gamma are being ramped.
-        # This does not imply that the virtual price will have increased at the
-        # end of this function: it can still decrease if the pool rebalances.
-        if virtual_price < old_virtual_price:
-            # If A and gamma are being ramped, we allow the virtual price to decrease,
-            # as changing the shape of the bonding curve causes losses in the pool.
-            assert self._is_ramping(), "virtual price decreased"
 
-        # xcp_profit follows growth of virtual price (and goes down on ramping)
-        xcp_profit = self.xcp_profit + virtual_price - old_virtual_price
-        # old way, here for reference
-        # xcp_profit = unsafe_div(old_xcp_profit * virtual_price, old_virtual_price)
+    virtual_price = 10**18 * xcp // total_supply
+    # Virtual price can decrease only if A and gamma are being ramped.
+    # This does not imply that the virtual price will have increased at the
+    # end of this function: it can still decrease if the pool rebalances.
+    if virtual_price < old_virtual_price:
+        # If A and gamma are being ramped, we allow the virtual price to decrease,
+        # as changing the shape of the bonding curve causes losses in the pool.
+        assert self._is_ramping(), "virtual price decreased"
+
+    # xcp_profit follows growth of virtual price (and goes down on ramping)
+    xcp_profit = self.xcp_profit + virtual_price - old_virtual_price
     self.xcp_profit = xcp_profit
 
     # ------------ Rebalance liquidity if there's enough profits to adjust it:
