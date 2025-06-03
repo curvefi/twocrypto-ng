@@ -24,7 +24,7 @@ def test_withdraw_more_than_supply(gm_pool, method):
 
 @pytest.mark.parametrize("method", ["fixed_out", "one_coin"])
 def test_withdraw_wrong_coin_index(gm_pool, method):
-    with boa.reverts("safesub"):
+    with boa.reverts():
         if method == "fixed_out":
             gm_pool.calc_withdraw_fixed_out(100, 2, 0)
         else:
