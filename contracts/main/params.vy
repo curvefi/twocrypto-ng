@@ -1,4 +1,4 @@
-# pragma version 0.4.1
+# pragma version 0.4.2
 
 from interfaces import ITwocrypto
 from interfaces import ITwocryptoFactory

@@ -1,4 +1,4 @@
-# pragma version 0.4.1
+# pragma version ~=0.4.0
 
 """
 @notice A stateless module to pack and unpack integers into a single uint256.
