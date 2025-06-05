@@ -4,6 +4,7 @@ from tests.utils.constants import (
     GAUGE_DEPLOYER,
     VIEW_DEPLOYER,
     MATH_DEPLOYER,
+    POOL_DEPLOYER,
 )
 import boa
 from tests.utils.god_mode import GodModePool, god
@@ -15,7 +16,6 @@ def deploy_test_pool(initial_price=10**18, fee_on: bool = True) -> GodModePool:
     boa.env.evm.patch.code_size_limit = 1000000  # Increase code size limit for deployment
     with boa.env.prank(deployer):
         # Deploy implementations
-        POOL_DEPLOYER = boa.load_partial("contracts/other/Twocrypto_experiment.vy")
         pool_impl = POOL_DEPLOYER.deploy_as_blueprint()
         gauge_impl = GAUGE_DEPLOYER.deploy_as_blueprint()
         view_contract = VIEW_DEPLOYER.deploy()

@@ -16,7 +16,6 @@ from tests.utils.helper import deploy_test_pool
 factory = boa.load_partial("contracts/main/TwocryptoFactory.vy")
 print("\n--- Pool Setup ---")
 gm_pool = deploy_test_pool(initial_price=20 * 10**18)
-
 # Initial liquidity provision
 initial_amount = 400_000 * 10**18
 gm_pool.add_liquidity_balanced(initial_amount, donate=False)
@@ -47,7 +46,10 @@ print(f"Pool balances: [{current_balances[0] // 10**18:,}, {current_balances[1] 
 # ============================================================================
 
 new_oracle_price = 24 * 10**18
-gm_pool.set_price_oracle(new_oracle_price)
+# gm_pool.set_price_oracle(new_oracle_price)
+gm_pool.instance.eval(f"self.last_prices = {new_oracle_price}")
+gm_pool.instance.eval(f"self.cached_price_oracle = {new_oracle_price}")
+
 print(f"Set price oracle to: {gm_pool.price_oracle() // 10**18}")
 
 # Time travel 1 week to allow oracle update

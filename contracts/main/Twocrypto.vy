@@ -1013,6 +1013,21 @@ def tweak_price(
     xcp_profit = self.xcp_profit + virtual_price - old_virtual_price
     self.xcp_profit = xcp_profit
 
+    # ------------ Absorb donation shares into virtual price ------------
+    # Note that xcp_profit grew after natural growth of virtual price
+    # and isn't supposed to grow from donation shares.
+    donation_shares_to_burn: uint256 = self._donation_shares()
+    if donation_shares_to_burn > 0:
+        # update local total_supply variable to reflect the change
+        total_supply -= donation_shares_to_burn
+        # total supply reduced by partial donation shares burn, so vp grows
+        virtual_price = 10**18 * xcp // total_supply
+
+        # update storage variables for burned donation shares
+        self.totalSupply = total_supply
+        self.donation_shares -= donation_shares_to_burn
+        self.last_donation_release_ts = block.timestamp
+
     # ------------ Rebalance liquidity if there's enough profits to adjust it:
     #
     # Mathematical basis for rebalancing condition:
@@ -1022,17 +1037,13 @@ def tweak_price(
     # Rebalancing condition transformation:
     # virtual_price - 1 > (xcp_profit - 1)/2 + allowed_extra_profit
     # virtual_price > 1 + (xcp_profit - 1)/2 + allowed_extra_profit
-    threshold_vp: uint256 = 10**18 + (xcp_profit - 10**18) // 2
+
+    # threshold_vp = 1 + (xcp_profit - 1)/2 = (xcp_profit + 1)/2
+    threshold_vp: uint256 = (xcp_profit + 10**18) // 2
 
     # The allowed_extra_profit parameter prevents reverting gas-wasting rebalances
     # by ensuring sufficient profit margin
-
-    # user_supply < total_supply => vp_boosted > virtual_price
-    # by not accounting for donation shares, virtual_price is boosted leading to rebalance trigger
-    # this is approximate condition that preliminary indicates readiness for rebalancing
-    vp_boosted: uint256 = 10**18 * xcp // locked_supply
-    assert vp_boosted >= virtual_price, "negative donation"
-    if vp_boosted  > threshold_vp + rebalancing_params[0]:
+    if virtual_price > threshold_vp + rebalancing_params[0]:
         #             allowed_extra_profit --------^
         norm: uint256 = unsafe_div(
             unsafe_mul(price_oracle, 10**18), price_scale
@@ -1070,29 +1081,6 @@ def tweak_price(
             new_xcp: uint256 = self._xcp(new_D, p_new)
             new_virtual_price: uint256 = 10**18 * new_xcp // total_supply
 
-            donation_shares_to_burn: uint256 = 0
-            if new_virtual_price < threshold_vp:
-                # new_virtual_price is not high enough, rebalance will not happen
-                # We attempt to boost virtual_price by burning some donation shares
-                #
-                #   vp(0)      = xcp /  total_supply          # no burn  -> lowest vp
-                #   vp(B)      = xcp / (total_supply – B)     # burn B   -> higher vp
-                #
-                # Goal: find the *smallest* B such that
-                #        vp(B) >= threshold_vp
-                #          B   <= donation_shares
-
-                # what would be total supply with threshold_vp and new_xcp
-                threshold_supply: uint256 = 10**18 * new_xcp // threshold_vp
-                assert threshold_supply < total_supply, "threshold supply must shrink"
-                donation_shares_to_burn = min(
-                    unsafe_sub(total_supply, threshold_supply), # burn the difference between supplies
-                    donation_shares # but not more than we can burn (lp shares donation)
-                )
-                # update virtual price with the tweaked total supply
-                new_virtual_price = 10**18 * new_xcp // (total_supply - donation_shares_to_burn)
-
-
             if (
                 new_virtual_price > 10**18 and
                 new_virtual_price >= threshold_vp
@@ -1100,11 +1088,6 @@ def tweak_price(
                 self.D = new_D
                 self.virtual_price = new_virtual_price
                 self.cached_price_scale = p_new
-                if donation_shares_to_burn > 0:
-                    # we burned some donation shares, update related state
-                    self.donation_shares -= donation_shares_to_burn
-                    self.totalSupply -= donation_shares_to_burn
-                    self.last_donation_release_ts = block.timestamp
                 return p_new
 
     # If we end up here price_scale was not adjusted. So we update the state
