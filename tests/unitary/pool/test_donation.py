@@ -155,7 +155,7 @@ def test_remove_liquidity_affected_by_donations(gm_pool_with_liquidity):
     pool.donate_balanced(10**18)
     actual_user_tokens = pool.remove_liquidity(user_lp_tokens, [0, 0])
 
-    # we allow the values in these arrays to be off by one because of rounding
+    # users get slightly more tokens due to absorbed donations
     for expected, actual in zip(expected_user_tokens, actual_user_tokens):
         assert expected < actual, "user gets more tokens due to noise fee"
 
