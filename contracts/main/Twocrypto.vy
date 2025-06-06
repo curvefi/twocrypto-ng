@@ -2061,9 +2061,17 @@ def set_donation_duration(duration: uint256):
 
 @external
 def set_donation_fee_multiplier(fee_multiplier: uint256):
+    """
+    @notice Set the donation fee multiplier.
+    @param fee_multiplier The new donation fee multiplier.
+    @dev fee_multiplier has same scale as admin fee, i.e.
+         fee_multiplier = k * 10**10, means virtual_price grows as vp_new += (k+1)*vp_delta,
+         where vp_delta is natural growth of virtual price from trading fees.
+    """
     self._check_admin()
     self.donations_fee_multiplier = fee_multiplier
     log SetDonationFeeMultiplier(fee_multiplier=fee_multiplier)
+
 
 @external
 def set_admin_fee(admin_fee: uint256):
