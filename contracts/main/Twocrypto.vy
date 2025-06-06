@@ -1021,8 +1021,8 @@ def tweak_price(
     # ------------ Absorb donation shares into virtual price ------------
     if virtual_price > old_virtual_price:
         # we donate as if extra trading fees were acquired
-        # donations fee multiplier precision is same as admin fee
-        extra_virtual_fees: uint256 = self.donations_fee_multiplier * (virtual_price - old_virtual_price) // MAX_ADMIN_FEE
+        # donations fee multiplier precision is same as admin fee (10**10)
+        extra_virtual_fees: uint256 = self.donations_fee_multiplier * (virtual_price - old_virtual_price) // 10**10
         vp_boosted: uint256 = virtual_price + extra_virtual_fees
         # vp = xcp/ts; vp_boosted = xcp/(ts - B)
         # equation through xcp: vp * ts = vp_boosted * (ts - B)
@@ -2064,9 +2064,10 @@ def set_donation_fee_multiplier(fee_multiplier: uint256):
     """
     @notice Set the donation fee multiplier.
     @param fee_multiplier The new donation fee multiplier.
-    @dev fee_multiplier has same scale as admin fee, i.e.
-         fee_multiplier = k * 10**10, means virtual_price grows as vp_new += (k+1)*vp_delta,
+    @dev fee_multiplier has same scale as admin fee (10**10), i.e.
+         fee_multiplier = k * 10**10, means virtual_price grows as (k+1)*vp_delta,
          where vp_delta is natural growth of virtual price from trading fees.
+         This is used to boost virtual price growth from donations to inrease rebalancing frequency.
     """
     self._check_admin()
     self.donations_fee_multiplier = fee_multiplier
