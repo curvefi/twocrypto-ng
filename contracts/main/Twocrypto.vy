@@ -126,6 +126,9 @@ event ClaimAdminFee:
 event SetDonationDuration:
     duration: uint256
 
+event SetDonationFeeMultiplier:
+    fee_multiplier: uint256
+
 event SetMaxDonationRatio:
     ratio: uint256
 
@@ -164,6 +167,7 @@ donation_shares: public(uint256)
 # Donations release parameters:
 donation_duration: public(uint256)
 last_donation_release_ts: public(uint256)
+donations_fee_multiplier: public(uint256)
 
 balances: public(uint256[N_COINS])
 D: public(uint256)
@@ -263,7 +267,7 @@ def __init__(
     self.xcp_profit_a = 10**18
 
     self.donation_duration = 7 * 86400
-
+    self.donations_fee_multiplier = 2 * 10**10 # Same precision as admin fee
     self.admin_fee = 5 * 10**9
 
     log Transfer(sender=empty(address), receiver=self, value=0)  # <------- Fire empty transfer from
@@ -1010,23 +1014,34 @@ def tweak_price(
         assert self._is_ramping(), "virtual price decreased"
 
     # xcp_profit follows growth of virtual price (and goes down on ramping)
+    # xcp_profit ignores virtual price growth from donation shares
     xcp_profit = self.xcp_profit + virtual_price - old_virtual_price
     self.xcp_profit = xcp_profit
 
     # ------------ Absorb donation shares into virtual price ------------
-    # Note that xcp_profit grew after natural growth of virtual price
-    # and isn't supposed to grow from donation shares.
-    donation_shares_to_burn: uint256 = self._donation_shares()
-    if donation_shares_to_burn > 0:
-        # update local total_supply variable to reflect the change
-        total_supply -= donation_shares_to_burn
-        # total supply reduced by partial donation shares burn, so vp grows
-        virtual_price = 10**18 * xcp // total_supply
+    if virtual_price > old_virtual_price:
+        # we donate as if extra trading fees were acquired
+        # donations fee multiplier precision is same as admin fee
+        extra_virtual_fees: uint256 = self.donations_fee_multiplier * (virtual_price - old_virtual_price) // MAX_ADMIN_FEE
+        vp_boosted: uint256 = virtual_price + extra_virtual_fees
+        # vp = xcp/ts; vp_boosted = xcp/(ts - B)
+        # equation through xcp: vp * ts = vp_boosted * (ts - B)
+        # vp * ts / vp_boosted = ts - B
+        # B = ts - vp * ts / vp_boosted
+        donation_shares_to_burn: uint256 = total_supply - total_supply * virtual_price // vp_boosted
+        # cap donation shares with slow release amount
+        donation_shares_to_burn = min(donation_shares_to_burn, self._donation_shares())
+        # burn donation shares
+        if donation_shares_to_burn > 0:
+            # update local total_supply variable to reflect the change
+            total_supply -= donation_shares_to_burn
+            # total supply reduced by partial donation shares burn, so vp grows
+            virtual_price = 10**18 * xcp // total_supply
 
-        # update storage variables for burned donation shares
-        self.totalSupply = total_supply
-        self.donation_shares -= donation_shares_to_burn
-        self.last_donation_release_ts = block.timestamp
+            # update storage variables for burned donation shares
+            self.totalSupply = total_supply
+            self.donation_shares -= donation_shares_to_burn
+            self.last_donation_release_ts = block.timestamp
 
     # ------------ Rebalance liquidity if there's enough profits to adjust it:
     #
@@ -2043,6 +2058,12 @@ def set_donation_duration(duration: uint256):
     self.donation_duration = duration
     log SetDonationDuration(duration=duration)
 
+
+@external
+def set_donation_fee_multiplier(fee_multiplier: uint256):
+    self._check_admin()
+    self.donations_fee_multiplier = fee_multiplier
+    log SetDonationFeeMultiplier(fee_multiplier=fee_multiplier)
 
 @external
 def set_admin_fee(admin_fee: uint256):
