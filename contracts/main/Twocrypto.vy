@@ -1028,6 +1028,8 @@ def tweak_price(
         # donations fee multiplier precision is same as admin fee (10**10)
         extra_virtual_fees: uint256 = self.donation_fee_multiplier * (virtual_price - old_virtual_price) // 10**10
         # if large LP was added within DONATION_PROTECTION_PERIOD, dampen donations drip
+        #TODO: keep donation protection, get rid of virtual fees, only preserve time-based drip
+        #TODO: parametrize donation protection
         if block.timestamp - self.large_lp_timestamp < DONATION_PROTECTION_PERIOD:
             extra_virtual_fees = min(
                 extra_virtual_fees,
