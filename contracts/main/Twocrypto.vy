@@ -169,6 +169,10 @@ donation_duration: public(uint256)
 last_donation_release_ts: public(uint256)
 donation_fee_multiplier: public(uint256)
 
+large_lp_timestamp: uint256
+LARGE_LP_THRESHOLD: constant(uint256) = 10 # 10%
+DONATION_PROTECTION_PERIOD: constant(uint256) = 5 * 60 # 5 minutes
+
 balances: public(uint256[N_COINS])
 D: public(uint256)
 xcp_profit: public(uint256)
@@ -268,6 +272,7 @@ def __init__(
 
     self.donation_duration = 7 * 86400
     self.donation_fee_multiplier = 2 * 10**10 # Same precision as admin fee
+    self.large_lp_timestamp = block.timestamp
     self.admin_fee = 5 * 10**9
 
     log Transfer(sender=empty(address), receiver=self, value=0)  # <------- Fire empty transfer from
@@ -564,6 +569,11 @@ def add_liquidity(
         else:
             # Regular liquidity addition
             self.mint(receiver, d_token)
+
+        if LARGE_LP_THRESHOLD * d_token > token_supply:
+            # if new LP is more than LARGE_LP_THRESHOLD % of pool, reset large_lp_timestamp
+            # this is used to protect donations from sandwiching
+            self.large_lp_timestamp = block.timestamp
 
         price_scale = self.tweak_price(A_gamma, xp, D)
 
@@ -1017,6 +1027,13 @@ def tweak_price(
         # we donate as if extra trading fees were acquired
         # donations fee multiplier precision is same as admin fee (10**10)
         extra_virtual_fees: uint256 = self.donation_fee_multiplier * (virtual_price - old_virtual_price) // 10**10
+        # if large LP was added within DONATION_PROTECTION_PERIOD, dampen donations drip
+        if block.timestamp - self.large_lp_timestamp < DONATION_PROTECTION_PERIOD:
+            extra_virtual_fees = min(
+                extra_virtual_fees,
+                (block.timestamp - self.large_lp_timestamp) * extra_virtual_fees // DONATION_PROTECTION_PERIOD
+                )
+
         vp_boosted: uint256 = virtual_price + extra_virtual_fees
         # vp = xcp/ts; vp_boosted = xcp/(ts - B)
         # equation through xcp: vp * ts = vp_boosted * (ts - B)
