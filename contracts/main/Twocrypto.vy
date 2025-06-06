@@ -992,19 +992,13 @@ def tweak_price(
 
     # ---------- Update profit numbers without price adjustment first --------
 
-    xcp_profit: uint256 = 10**18
-    virtual_price: uint256 = 10**18
-
     # `totalSupply` might change during this function call.
     total_supply: uint256 = self.totalSupply
-    donation_shares: uint256 = self._donation_shares()
-    # locked_supply contains LP shares and unreleased donations
-    locked_supply: uint256 = total_supply - donation_shares
 
     old_virtual_price: uint256 = self.virtual_price
     xcp: uint256 = self._xcp(D, price_scale)
 
-    virtual_price = 10**18 * xcp // total_supply
+    virtual_price: uint256 = 10**18 * xcp // total_supply
     # Virtual price can decrease only if A and gamma are being ramped.
     # This does not imply that the virtual price will have increased at the
     # end of this function: it can still decrease if the pool rebalances.
@@ -1015,7 +1009,7 @@ def tweak_price(
 
     # xcp_profit follows growth of virtual price (and goes down on ramping)
     # xcp_profit ignores virtual price growth from donation shares
-    xcp_profit = self.xcp_profit + virtual_price - old_virtual_price
+    xcp_profit: uint256 = self.xcp_profit + virtual_price - old_virtual_price
     self.xcp_profit = xcp_profit
 
     # ------------ Absorb donation shares into virtual price ------------
