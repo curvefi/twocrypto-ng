@@ -165,6 +165,7 @@ donation_shares: public(uint256)
 donation_duration: public(uint256)
 last_donation_release_ts: public(uint256)
 
+liquidity_age: public(HashMap[address, uint256])
 balances: public(uint256[N_COINS])
 D: public(uint256)
 xcp_profit: public(uint256)
@@ -185,6 +186,9 @@ MAX_ADMIN_FEE: constant(uint256) = 10**10
 MIN_FEE: constant(uint256) = 5 * 10**5  # <-------------------------- 0.5 BPS.
 MAX_FEE: constant(uint256) = 10 * 10**9
 NOISE_FEE: constant(uint256) = 10**5  # <---------------------------- 0.1 BPS.
+
+MIN_LP_AGE: constant(uint256) = 300 # 5 minutes
+LP_SANDWICH_PENALTY: constant(uint256) = 10**8 # 1%
 
 # ----------------------- Admin params ---------------------------------------
 
@@ -575,6 +579,7 @@ def add_liquidity(
         self.mint(receiver, d_token)
     assert d_token >= min_mint_amount, "slippage"
 
+    self.liquidity_age[receiver] = block.timestamp
     # ---------------------------------------------- Log and claim admin fees.
 
     log AddLiquidity(
@@ -586,6 +591,18 @@ def add_liquidity(
     )
 
     return d_token
+
+
+@internal
+@pure
+def _adjust_for_lp_age(owner:address, amount: uint256) -> uint256:
+    lp_age = block.timestamp - self.liquidity_age[owner]
+    if lp_age > MIN_LP_AGE:
+        # no penalty
+        return amount
+    else:
+        # penalty
+        return amount * (10**10 - LP_SANDWICH_PENALTY) // 10**10
 
 
 @external
@@ -637,14 +654,18 @@ def remove_liquidity(
         for i: uint256 in range(N_COINS):
             # TODO improve comments here
             # Withdraws slightly less -> favors LPs already
+
+            # must penalize LPs that remove very soon after adding liquidity
+            # in essence, prohibits sandwiching with add_liquidity
             withdraw_amounts[i] = self.balances[i] * amount // total_supply
+            withdraw_amounts[i] = self._adjust_for_lp_age(msg.sender, withdraw_amounts[i])
 
             assert withdraw_amounts[i] >= min_amounts[i], "slippage"
 
     # Reduce D proportionally to the amount of tokens leaving. Since withdrawals
     # are balanced, this is a simple subtraction. If amount == total_supply,
     # D will be 0.
-    self.D = D - unsafe_div(D * amount, total_supply)
+    self.D = D - unsafe_div(D * self._adjust_for_lp_age(msg.sender, amount), total_supply)
 
     # ---------------------------------- Transfers ---------------------------
 
@@ -745,6 +766,8 @@ def _remove_liquidity_fixed_out(
         amount_i,
     )
 
+    amount_i = self._adjust_for_lp_age(msg.sender, amount_i)
+    dy = self._adjust_for_lp_age(msg.sender, dy)
     assert dy >= min_amount_j, "slippage"
 
     # ---------------------------- State Updates -----------------------------
