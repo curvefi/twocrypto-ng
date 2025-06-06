@@ -1,6 +1,7 @@
 import boa
 from tests.utils.constants import N_COINS
 from pytest import fixture, approx
+import numpy as np
 
 
 def test_cant_donate_on_empty_pool(gm_pool):
@@ -259,3 +260,50 @@ def test_donation_improves_rebalance_onesided(gm_pool):
     for donate, (n_rebalances, ps) in res_dict.items():
         print(f"Donation: {donate}, rebalances: {n_rebalances}, ps: {ps}")
     assert n_rb[1] >= n_rb[0], "donation should increase the number of rebalances"
+
+
+def test_donation_fee_multiplier(gm_pool):
+    pool = gm_pool
+    N_LIQ_ADD = 100_000 * 10**18
+    pool.add_liquidity_balanced(N_LIQ_ADD)
+
+    # first swap a lot with time travel and see where the virtual_price goes
+    N_SWAPS = 30
+    R_SWAP = 0.1
+    R_SWAP_BACK = 0.1
+    T_FWD = 86_400 * 7
+    R_DONATE = 0.01
+    ps = []
+    res_dict = {}
+    for fee_boost in np.linspace(0, 10, 5):
+        pool.eval(f"self.donation_fee_multiplier = {int(fee_boost * 10**10)}")
+        n_rebalances = 0
+        # first without donation
+        with boa.env.anchor():
+            for i in range(N_SWAPS):
+                print(f"ITERATION {i}")
+                ps_pre = pool.price_scale()
+                pool.add_liquidity_balanced(int(R_DONATE * N_LIQ_ADD), donate=bool(1))
+                boa.env.time_travel(seconds=T_FWD)
+                ps_post = pool.price_scale()
+                n_rebalances += 1 if ps_pre != ps_post else 0
+
+                ps_pre = pool.price_scale()
+                out = pool.exchange(0, int(R_SWAP * N_LIQ_ADD), update_ema=False)
+                boa.env.time_travel(seconds=T_FWD)
+                ps_post = pool.price_scale()
+                n_rebalances += 1 if ps_pre != ps_post else 0
+
+                ps_pre = pool.price_scale()
+                pool.exchange(1, int(R_SWAP_BACK * out), update_ema=False)
+                boa.env.time_travel(seconds=T_FWD)
+                ps_post = pool.price_scale()
+                n_rebalances += 1 if ps_pre != ps_post else 0
+            ps.append(ps_post)
+        res_dict[fee_boost] = (n_rebalances, ps_post)
+
+    n_rb_prev = 0
+    for fee_boost, (n_rebalances, ps) in res_dict.items():
+        print(f"Fee boost: {fee_boost}, rebalances: {n_rebalances}, ps: {ps}")
+        assert n_rebalances >= n_rb_prev, "more donations should increase the number of rebalances"
+        n_rb_prev = n_rebalances
