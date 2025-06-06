@@ -82,7 +82,7 @@ def test_multiple_donations_linear_vesting(gm_pool_with_liquidity):
 
     D = gm_pool_with_liquidity.donation_duration()
     DONATION_USD = 10 * 10**18
-
+    NOISE_FEE = 10**5
     # First donation
     minted1 = pool.donate_balanced(DONATION_USD)
     assert pool.donation_shares() == minted1
@@ -92,23 +92,29 @@ def test_multiple_donations_linear_vesting(gm_pool_with_liquidity):
     # Half‐time vesting of first donation
     boa.env.time_travel(seconds=D // 2)
     unlocked1 = pool.internal._donation_shares()
-    assert unlocked1 == approx(
-        minted1 // 2, rel=0.02
-    ), f"~50% of first batch unlocked, got {unlocked1}"
+    assert unlocked1 == minted1 // 2, f"~50% of first batch unlocked, got {unlocked1}"
 
-    # Second donation — must not instant‐unlock
+    # Second donation
     minted2 = pool.donate_balanced(DONATION_USD)
-    assert pool.donation_shares() == minted1 + minted2
-    # immediately after second donation, unlocked stays the same (approx because of precision)
-    assert pool.internal._donation_shares() == approx(unlocked1, rel=0.001)
+    # as there were no trades, we only unlock proportional to fees
+    # as fees are only NOISE_FEE to the donation, we distributed a tiny fraction
+    fees = (minted1 + minted2) * NOISE_FEE // 10**10
+    assert pool.donation_shares() == approx((minted1 + minted2) - fees, rel=1e-5)
 
-    # Another half‐period: first batch fully unlocked, second ~50%
+    # immediately after second donation, unlocked is reduced by amount of absorbed donations
+    assert pool.internal._donation_shares() == approx(minted1 // 2 - fees, rel=1e-5)
+
+    # Another half‐period
     boa.env.time_travel(seconds=D // 2)
+    # No absorption happened (no fees acquired)
+    assert pool.donation_shares() == approx((minted1 + minted2) - fees, rel=1e-5)
+    # For time unlocks: first batch fully unlocked, second ~50%
     unlocked2 = pool.internal._donation_shares()
-    expected2 = minted1 + (minted2 // 2)
+    expected2 = minted1 + (minted2 // 2) - fees
     assert unlocked2 == approx(
-        expected2, rel=0.01
+        expected2, rel=1e-5
     ), f"Expected ~(1st + half of 2nd) = {expected2}, got {unlocked2}"
+    print(unlocked2, expected2)
 
 
 def test_slippage(gm_pool_with_liquidity, views_contract):

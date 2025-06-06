@@ -167,7 +167,7 @@ donation_shares: public(uint256)
 # Donations release parameters:
 donation_duration: public(uint256)
 last_donation_release_ts: public(uint256)
-donations_fee_multiplier: public(uint256)
+donation_fee_multiplier: public(uint256)
 
 balances: public(uint256[N_COINS])
 D: public(uint256)
@@ -267,7 +267,7 @@ def __init__(
     self.xcp_profit_a = 10**18
 
     self.donation_duration = 7 * 86400
-    self.donations_fee_multiplier = 2 * 10**10 # Same precision as admin fee
+    self.donation_fee_multiplier = 2 * 10**10 # Same precision as admin fee
     self.admin_fee = 5 * 10**9
 
     log Transfer(sender=empty(address), receiver=self, value=0)  # <------- Fire empty transfer from
@@ -1016,7 +1016,7 @@ def tweak_price(
     if virtual_price > old_virtual_price:
         # we donate as if extra trading fees were acquired
         # donations fee multiplier precision is same as admin fee (10**10)
-        extra_virtual_fees: uint256 = self.donations_fee_multiplier * (virtual_price - old_virtual_price) // 10**10
+        extra_virtual_fees: uint256 = self.donation_fee_multiplier * (virtual_price - old_virtual_price) // 10**10
         vp_boosted: uint256 = virtual_price + extra_virtual_fees
         # vp = xcp/ts; vp_boosted = xcp/(ts - B)
         # equation through xcp: vp * ts = vp_boosted * (ts - B)
@@ -1024,7 +1024,8 @@ def tweak_price(
         # B = ts - vp * ts / vp_boosted
         donation_shares_to_burn: uint256 = total_supply - total_supply * virtual_price // vp_boosted
         # cap donation shares with slow release amount
-        donation_shares_to_burn = min(donation_shares_to_burn, self._donation_shares())
+        available_donation_shares: uint256 = self._donation_shares()
+        donation_shares_to_burn = min(donation_shares_to_burn, available_donation_shares)
         # burn donation shares
         if donation_shares_to_burn > 0:
             # update local total_supply variable to reflect the change
@@ -1035,7 +1036,10 @@ def tweak_price(
             # update storage variables for burned donation shares
             self.totalSupply = total_supply
             self.donation_shares -= donation_shares_to_burn
-            self.last_donation_release_ts = block.timestamp
+            # in case we didn't absorb all time-released donations, we pull last_donation_release_ts closer to now
+            # if we burned all: self.last_donation_release_ts = block.timestamp
+            last_ts: uint256 = self.last_donation_release_ts
+            self.last_donation_release_ts = last_ts + (block.timestamp - last_ts) * donation_shares_to_burn // available_donation_shares
 
     # ------------ Rebalance liquidity if there's enough profits to adjust it:
     #
@@ -2064,7 +2068,7 @@ def set_donation_fee_multiplier(fee_multiplier: uint256):
          This is used to boost virtual price growth from donations to inrease rebalancing frequency.
     """
     self._check_admin()
-    self.donations_fee_multiplier = fee_multiplier
+    self.donation_fee_multiplier = fee_multiplier
     log SetDonationFeeMultiplier(fee_multiplier=fee_multiplier)
 
 
