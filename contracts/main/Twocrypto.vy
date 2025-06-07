@@ -549,7 +549,7 @@ def add_liquidity(
         if threshold > 0:
             relative_add_bps: uint256 = d_token * 10000 // token_supply
             added_pressure: uint256 = relative_add_bps * PRECISION // threshold
-            self.donation_protection_factor = decayed_factor + added_pressure
+            self.donation_protection_factor = min(decayed_factor + added_pressure, PRECISION)
             self.donation_protection_ts = block.timestamp
 
     d_token_fee: uint256 = 0
@@ -2122,8 +2122,8 @@ def set_admin_fee(admin_fee: uint256):
     self.admin_fee = admin_fee
     log SetAdminFee(admin_fee=admin_fee)
 
-@view
 @internal
+@view
 def _decayed_donation_protection() -> uint256:
     factor: uint256 = self.donation_protection_factor
     if factor == 0:
