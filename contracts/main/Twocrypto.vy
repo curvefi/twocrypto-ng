@@ -126,8 +126,9 @@ event ClaimAdminFee:
 event SetDonationDuration:
     duration: uint256
 
-event SetMaxDonationRatio:
-    ratio: uint256
+event SetDonationProtection:
+    donation_protection_period: uint256
+    donation_protection_lp_threshold: uint256
 
 event SetAdminFee:
     admin_fee: uint256
@@ -164,6 +165,12 @@ donation_shares: public(uint256)
 # Donations release parameters:
 donation_duration: public(uint256)
 last_donation_release_ts: public(uint256)
+
+# Donation protection
+donation_protection_factor: public(uint256)
+donation_protection_ts: public(uint256)
+donation_protection_period: public(uint256)
+donation_protection_lp_threshold: public(uint256) # In BPS
 
 balances: public(uint256[N_COINS])
 D: public(uint256)
@@ -265,6 +272,10 @@ def __init__(
     self.donation_duration = 7 * 86400
 
     self.admin_fee = 5 * 10**9
+
+    self.donation_protection_ts = block.timestamp
+    self.donation_protection_period = 300  # 5 minutes
+    self.donation_protection_lp_threshold = 100  # 1%
 
     log Transfer(sender=empty(address), receiver=self, value=0)  # <------- Fire empty transfer from
     #                                       0x0 to self for indexers to catch.
@@ -445,7 +456,6 @@ def exchange_received(
 @internal
 def _donation_shares() -> uint256:
     donation_shares: uint256 = self.donation_shares
-    # Time passed since the last donation absorption.
     elapsed: uint256 = block.timestamp - self.last_donation_release_ts
 
     # ===== absorption rate logic =====
@@ -455,7 +465,13 @@ def _donation_shares() -> uint256:
     # ===== absorption edge cases =====
     # `elapsed == 0` => multiple absorption attempts in the same block, return current value of `self.donation_shares` in storage.
     # `donation_shares == 0` => no donation has been done, or all donations have been absorbed, return 0.
-    return min(donation_shares, donation_shares * elapsed // self.donation_duration)
+    unlocked_shares: uint256 = min(donation_shares, donation_shares * elapsed // self.donation_duration)
+
+    # cap factor at PRECISION to not get negative damp_factor
+    factor: uint256 = min(self._decayed_donation_protection(), PRECISION)
+    damp_factor: uint256 = PRECISION - factor
+
+    return unlocked_shares * damp_factor // PRECISION
 
 
 @external
@@ -522,6 +538,19 @@ def add_liquidity(
         d_token = self._xcp(D, price_scale)  # <----- Making initial virtual price equal to 1.
 
     assert d_token > 0, "nothing minted"
+
+    # ------ donation protection logic ------
+    # first apply decay to donation_protection_factor
+    decayed_factor: uint256 = self._decayed_donation_protection()
+
+    # then add pressure from new liquidity
+    if old_D > 0 and token_supply > 0:
+        threshold: uint256 = self.donation_protection_lp_threshold
+        if threshold > 0:
+            relative_add_bps: uint256 = d_token * 10000 // token_supply
+            added_pressure: uint256 = relative_add_bps * PRECISION // threshold
+            self.donation_protection_factor = decayed_factor + added_pressure
+            self.donation_protection_ts = block.timestamp
 
     d_token_fee: uint256 = 0
     if old_D > 0:
@@ -993,7 +1022,11 @@ def tweak_price(
 
     # `totalSupply` might change during this function call.
     total_supply: uint256 = self.totalSupply
+
+    # ===== donation shares (update lp_protection_factor first) =====
+
     donation_shares: uint256 = self._donation_shares()
+
     # locked_supply contains LP shares and unreleased donations
     locked_supply: uint256 = total_supply - donation_shares
 
@@ -2062,6 +2095,19 @@ def set_donation_duration(duration: uint256):
 
 
 @external
+def set_donation_protection_params(
+    _period: uint256,
+    _threshold: uint256,
+):
+    self._check_admin()
+    assert _period > 0, "period must be positive"
+    assert _threshold > 0, "threshold must be positive"
+    self.donation_protection_period = _period
+    self.donation_protection_lp_threshold = _threshold
+    log SetDonationProtection(donation_protection_period=_period, donation_protection_lp_threshold=_threshold)
+
+
+@external
 def set_admin_fee(admin_fee: uint256):
     """
     @notice Set the admin fee.
@@ -2075,3 +2121,24 @@ def set_admin_fee(admin_fee: uint256):
 
     self.admin_fee = admin_fee
     log SetAdminFee(admin_fee=admin_fee)
+
+@view
+@internal
+def _decayed_donation_protection() -> uint256:
+    factor: uint256 = self.donation_protection_factor
+    if factor == 0:
+        return 0
+
+    time_passed: uint256 = block.timestamp - self.donation_protection_ts
+    if time_passed > 0:
+        decay: uint256 = 0
+        period: uint256 = self.donation_protection_period
+        if period > 0:
+            decay = time_passed * PRECISION // period
+
+        if factor <= decay:
+            return 0
+        else:
+            return factor - decay
+
+    return factor
