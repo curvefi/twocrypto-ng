@@ -126,6 +126,9 @@ event ClaimAdminFee:
 event SetDonationDuration:
     duration: uint256
 
+event SetDonationFeeMultiplier:
+    fee_multiplier: uint256
+
 event SetMaxDonationRatio:
     ratio: uint256
 
@@ -164,6 +167,11 @@ donation_shares: public(uint256)
 # Donations release parameters:
 donation_duration: public(uint256)
 last_donation_release_ts: public(uint256)
+donation_fee_multiplier: public(uint256)
+
+large_lp_timestamp: uint256
+LARGE_LP_THRESHOLD: constant(uint256) = 10 # 10%
+DONATION_PROTECTION_PERIOD: constant(uint256) = 5 * 60 # 5 minutes
 
 balances: public(uint256[N_COINS])
 D: public(uint256)
@@ -263,7 +271,8 @@ def __init__(
     self.xcp_profit_a = 10**18
 
     self.donation_duration = 7 * 86400
-
+    self.donation_fee_multiplier = 2 * 10**10 # Same precision as admin fee
+    self.large_lp_timestamp = block.timestamp
     self.admin_fee = 5 * 10**9
 
     log Transfer(sender=empty(address), receiver=self, value=0)  # <------- Fire empty transfer from
@@ -560,6 +569,11 @@ def add_liquidity(
         else:
             # Regular liquidity addition
             self.mint(receiver, d_token)
+
+        if LARGE_LP_THRESHOLD * d_token > token_supply:
+            # if new LP is more than LARGE_LP_THRESHOLD % of pool, reset large_lp_timestamp
+            # this is used to protect donations from sandwiching
+            self.large_lp_timestamp = block.timestamp
 
         price_scale = self.tweak_price(A_gamma, xp, D)
 
@@ -988,19 +1002,13 @@ def tweak_price(
 
     # ---------- Update profit numbers without price adjustment first --------
 
-    xcp_profit: uint256 = 10**18
-    virtual_price: uint256 = 10**18
-
     # `totalSupply` might change during this function call.
     total_supply: uint256 = self.totalSupply
-    donation_shares: uint256 = self._donation_shares()
-    # locked_supply contains LP shares and unreleased donations
-    locked_supply: uint256 = total_supply - donation_shares
 
     old_virtual_price: uint256 = self.virtual_price
     xcp: uint256 = self._xcp(D, price_scale)
 
-    virtual_price = 10**18 * xcp // total_supply
+    virtual_price: uint256 = 10**18 * xcp // total_supply
     # Virtual price can decrease only if A and gamma are being ramped.
     # This does not imply that the virtual price will have increased at the
     # end of this function: it can still decrease if the pool rebalances.
@@ -1010,8 +1018,47 @@ def tweak_price(
         assert self._is_ramping(), "virtual price decreased"
 
     # xcp_profit follows growth of virtual price (and goes down on ramping)
-    xcp_profit = self.xcp_profit + virtual_price - old_virtual_price
+    # xcp_profit ignores virtual price growth from donation shares
+    xcp_profit: uint256 = self.xcp_profit + virtual_price - old_virtual_price
     self.xcp_profit = xcp_profit
+
+    # ------------ Absorb donation shares into virtual price ------------
+    if virtual_price > old_virtual_price:
+        # we donate as if extra trading fees were acquired
+        # donations fee multiplier precision is same as admin fee (10**10)
+        extra_virtual_fees: uint256 = self.donation_fee_multiplier * (virtual_price - old_virtual_price) // 10**10
+        # if large LP was added within DONATION_PROTECTION_PERIOD, dampen donations drip
+        #TODO: keep donation protection, get rid of virtual fees, only preserve time-based drip
+        #TODO: parametrize donation protection
+        if block.timestamp - self.large_lp_timestamp < DONATION_PROTECTION_PERIOD:
+            extra_virtual_fees = min(
+                extra_virtual_fees,
+                (block.timestamp - self.large_lp_timestamp) * extra_virtual_fees // DONATION_PROTECTION_PERIOD
+                )
+
+        vp_boosted: uint256 = virtual_price + extra_virtual_fees
+        # vp = xcp/ts; vp_boosted = xcp/(ts - B)
+        # equation through xcp: vp * ts = vp_boosted * (ts - B)
+        # vp * ts / vp_boosted = ts - B
+        # B = ts - vp * ts / vp_boosted
+        donation_shares_to_burn: uint256 = total_supply - total_supply * virtual_price // vp_boosted
+        # cap donation shares with slow release amount
+        available_donation_shares: uint256 = self._donation_shares()
+        donation_shares_to_burn = min(donation_shares_to_burn, available_donation_shares)
+        # burn donation shares
+        if donation_shares_to_burn > 0:
+            # update local total_supply variable to reflect the change
+            total_supply -= donation_shares_to_burn
+            # total supply reduced by partial donation shares burn, so vp grows
+            virtual_price = 10**18 * xcp // total_supply
+
+            # update storage variables for burned donation shares
+            self.totalSupply = total_supply
+            self.donation_shares -= donation_shares_to_burn
+            # in case we didn't absorb all time-released donations, we pull last_donation_release_ts closer to now
+            # if we burned all: self.last_donation_release_ts = block.timestamp
+            last_ts: uint256 = self.last_donation_release_ts
+            self.last_donation_release_ts = last_ts + (block.timestamp - last_ts) * donation_shares_to_burn // available_donation_shares
 
     # ------------ Rebalance liquidity if there's enough profits to adjust it:
     #
@@ -1022,17 +1069,13 @@ def tweak_price(
     # Rebalancing condition transformation:
     # virtual_price - 1 > (xcp_profit - 1)/2 + allowed_extra_profit
     # virtual_price > 1 + (xcp_profit - 1)/2 + allowed_extra_profit
-    threshold_vp: uint256 = 10**18 + (xcp_profit - 10**18) // 2
+
+    # threshold_vp = 1 + (xcp_profit - 1)/2 = (xcp_profit + 1)/2
+    threshold_vp: uint256 = (xcp_profit + 10**18) // 2
 
     # The allowed_extra_profit parameter prevents reverting gas-wasting rebalances
     # by ensuring sufficient profit margin
-
-    # user_supply < total_supply => vp_boosted > virtual_price
-    # by not accounting for donation shares, virtual_price is boosted leading to rebalance trigger
-    # this is approximate condition that preliminary indicates readiness for rebalancing
-    vp_boosted: uint256 = 10**18 * xcp // locked_supply
-    assert vp_boosted >= virtual_price, "negative donation"
-    if vp_boosted  > threshold_vp + rebalancing_params[0]:
+    if virtual_price > threshold_vp + rebalancing_params[0]:
         #             allowed_extra_profit --------^
         norm: uint256 = unsafe_div(
             unsafe_mul(price_oracle, 10**18), price_scale
@@ -1070,29 +1113,6 @@ def tweak_price(
             new_xcp: uint256 = self._xcp(new_D, p_new)
             new_virtual_price: uint256 = 10**18 * new_xcp // total_supply
 
-            donation_shares_to_burn: uint256 = 0
-            if new_virtual_price < threshold_vp:
-                # new_virtual_price is not high enough, rebalance will not happen
-                # We attempt to boost virtual_price by burning some donation shares
-                #
-                #   vp(0)      = xcp /  total_supply          # no burn  -> lowest vp
-                #   vp(B)      = xcp / (total_supply – B)     # burn B   -> higher vp
-                #
-                # Goal: find the *smallest* B such that
-                #        vp(B) >= threshold_vp
-                #          B   <= donation_shares
-
-                # what would be total supply with threshold_vp and new_xcp
-                threshold_supply: uint256 = 10**18 * new_xcp // threshold_vp
-                assert threshold_supply < total_supply, "threshold supply must shrink"
-                donation_shares_to_burn = min(
-                    unsafe_sub(total_supply, threshold_supply), # burn the difference between supplies
-                    donation_shares # but not more than we can burn (lp shares donation)
-                )
-                # update virtual price with the tweaked total supply
-                new_virtual_price = 10**18 * new_xcp // (total_supply - donation_shares_to_burn)
-
-
             if (
                 new_virtual_price > 10**18 and
                 new_virtual_price >= threshold_vp
@@ -1100,11 +1120,6 @@ def tweak_price(
                 self.D = new_D
                 self.virtual_price = new_virtual_price
                 self.cached_price_scale = p_new
-                if donation_shares_to_burn > 0:
-                    # we burned some donation shares, update related state
-                    self.donation_shares -= donation_shares_to_burn
-                    self.totalSupply -= donation_shares_to_burn
-                    self.last_donation_release_ts = block.timestamp
                 return p_new
 
     # If we end up here price_scale was not adjusted. So we update the state
@@ -2059,6 +2074,21 @@ def set_donation_duration(duration: uint256):
     assert duration > 0, "duration must be positive"
     self.donation_duration = duration
     log SetDonationDuration(duration=duration)
+
+
+@external
+def set_donation_fee_multiplier(fee_multiplier: uint256):
+    """
+    @notice Set the donation fee multiplier.
+    @param fee_multiplier The new donation fee multiplier.
+    @dev fee_multiplier has same scale as admin fee (10**10), i.e.
+         fee_multiplier = k * 10**10, means virtual_price grows as (k+1)*vp_delta,
+         where vp_delta is natural growth of virtual price from trading fees.
+         This is used to boost virtual price growth from donations to inrease rebalancing frequency.
+    """
+    self._check_admin()
+    self.donation_fee_multiplier = fee_multiplier
+    log SetDonationFeeMultiplier(fee_multiplier=fee_multiplier)
 
 
 @external
