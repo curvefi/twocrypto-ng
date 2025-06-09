@@ -452,8 +452,8 @@ def exchange_received(
     return out[0]
 
 
-@view
 @internal
+@view
 def _donation_shares() -> uint256:
     donation_shares: uint256 = self.donation_shares
     elapsed: uint256 = block.timestamp - self.last_donation_release_ts
@@ -472,6 +472,33 @@ def _donation_shares() -> uint256:
     damp_factor: uint256 = PRECISION - factor
 
     return unlocked_shares * damp_factor // PRECISION
+
+
+@internal
+@view
+def _decayed_donation_protection() -> uint256:
+    """
+    @notice Decay the donation protection factor.
+    @dev The donation protection factor is a number 0..10**18 that decays linearly over
+    donation_protection_period and grows when liquidity is added to the pool.
+    It's purpose is to prevent donations when large amount of liquidity is added to the pool.
+    """
+    # fetch current value
+    factor: uint256 = self.donation_protection_factor
+    if factor == 0:
+        return 0
+
+    # decay over time
+    time_passed: uint256 = block.timestamp - self.donation_protection_ts
+    if time_passed > 0:
+        decay: uint256 = time_passed * PRECISION // self.donation_protection_period
+
+        if factor <= decay:
+            return 0
+        else:
+            return factor - decay
+
+    return factor
 
 
 @external
@@ -2121,24 +2148,3 @@ def set_admin_fee(admin_fee: uint256):
 
     self.admin_fee = admin_fee
     log SetAdminFee(admin_fee=admin_fee)
-
-@internal
-@view
-def _decayed_donation_protection() -> uint256:
-    factor: uint256 = self.donation_protection_factor
-    if factor == 0:
-        return 0
-
-    time_passed: uint256 = block.timestamp - self.donation_protection_ts
-    if time_passed > 0:
-        decay: uint256 = 0
-        period: uint256 = self.donation_protection_period
-        if period > 0:
-            decay = time_passed * PRECISION // period
-
-        if factor <= decay:
-            return 0
-        else:
-            return factor - decay
-
-    return factor
