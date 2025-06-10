@@ -561,14 +561,12 @@ def add_liquidity(
 
     # ------ donation protection logic ------
     # first apply decay to donation_protection_factor
-    decayed_factor: uint256 = self._decayed_donation_protection()
 
     # then add pressure from new liquidity
     if old_D > 0 and token_supply > 0:
-        threshold: uint256 = self.donation_protection_lp_threshold
         relative_add_bps: uint256 = d_token * 10000 // token_supply
-        added_pressure: uint256 = relative_add_bps * PRECISION // threshold
-        self.donation_protection_factor = min(decayed_factor + added_pressure, PRECISION)
+        added_pressure: uint256 = relative_add_bps * PRECISION // self.donation_protection_lp_threshold
+        self.donation_protection_factor = min(self._decayed_donation_protection() + added_pressure, PRECISION)
         self.donation_protection_ts = block.timestamp
 
     d_token_fee: uint256 = 0
