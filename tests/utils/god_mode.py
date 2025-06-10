@@ -42,18 +42,17 @@ class GodModePool:
 
     def donate_balanced(self, amount, update_ema=False):
         balanced_amounts = self.compute_balanced_amounts(amount)
-
         return self.donate(balanced_amounts, update_ema=update_ema)
 
-    def exchange(self, i, dx, update_ema=False, indicate_rebalance=False):
+    def exchange(self, i, dx, update_ema=False, indicate_rebalance=False, sender=god):
         if i == 0:
             amounts = [dx, 0]
         else:
             amounts = [0, dx]
-        self.__premint_amounts(amounts)
+        self.__premint_amounts(amounts, to=sender)
         if indicate_rebalance:
             price_scale_pre = self.instance.price_scale()
-        dy = self.instance.exchange(i, 1 - i, dx, 0, sender=god)
+        dy = self.instance.exchange(i, 1 - i, dx, 0, sender=sender)
         if indicate_rebalance:
             price_scale_post = self.instance.price_scale()
             rebalanced = price_scale_post != price_scale_pre
@@ -80,6 +79,32 @@ class GodModePool:
 
         return self.add_liquidity(balanced_amounts, update_ema=update_ema, donate=donate)
 
+    def remove_liquidity(self, lp_token_amount, min_amounts, update_ema=False):
+        amounts_received = self.instance.remove_liquidity(lp_token_amount, min_amounts)
+
+        if update_ema:
+            self.__update_ema()
+
+        return amounts_received
+
+    def remove_liquidity_one_coin(self, lp_token_amount, i, min_amount, update_ema=False):
+        amount_i_received = self.instance.remove_liquidity_one_coin(lp_token_amount, i, min_amount)
+
+        if update_ema:
+            self.__update_ema()
+
+        return amount_i_received
+
+    def remove_liquidity_fixed_out(self, lp_token_amount, i, amount_i, update_ema=False):
+        amount_j_received = self.instance.remove_liquidity_fixed_out(
+            lp_token_amount, i, amount_i, 0
+        )
+
+        if update_ema:
+            self.__update_ema()
+
+        return amount_j_received
+
     def balances_snapshot(self):
         snapshot = {
             "user_lp": self.instance.balanceOf(boa.env.eoa),
@@ -92,9 +117,35 @@ class GodModePool:
         ], "pool coins balances are not consistent"
         return snapshot
 
+    def get_metrics_snapshot(self):
+        """Get a snapshot of key pool metrics for tracking"""
+        return {
+            "virtual_price": self.instance.virtual_price(),
+            "xcp_profit": self.instance.xcp_profit(),
+            "xcp_profit_a": self.instance.xcp_profit_a(),
+            "price_scale": self.instance.price_scale(),
+            "price_oracle": self.instance.price_oracle(),
+            "total_supply": self.instance.totalSupply(),
+            "D": self.instance.D(),
+            "coin0_balance": self.instance.balances(0),
+            "coin1_balance": self.instance.balances(1),
+        }
+
     def __premint_amounts(self, amounts, to=god):
         for c, amount in zip(self.coins, amounts):
             boa.deal(c, to, amount)
+            c.approve(self.instance, amount, sender=to)
 
     def __update_ema(self):
         boa.env.time_travel(seconds=86400 * 7)
+
+    def virtual_price_boosted(self):
+        donation_shares = self.instance.internal._donation_shares()
+        locked_supply = self.instance.totalSupply() - donation_shares
+        if locked_supply == 0:
+            return 10**18
+        return (
+            10**18
+            * self.instance.internal._xcp(self.instance.D(), self.instance.price_scale())
+            // locked_supply
+        )

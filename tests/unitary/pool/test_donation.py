@@ -2,6 +2,8 @@ import boa
 from tests.utils.constants import N_COINS
 from pytest import fixture, approx
 
+boa.env.evm.patch.code_size_limit = 1000000  # Increase code size limit for deployment
+
 
 def test_cant_donate_on_empty_pool(gm_pool):
     assert gm_pool.donation_shares() == 0
@@ -253,3 +255,83 @@ def test_donation_improves_rebalance_onesided(gm_pool):
     for donate, (n_rebalances, ps) in res_dict.items():
         print(f"Donation: {donate}, rebalances: {n_rebalances}, ps: {ps}")
     assert n_rb[1] >= n_rb[0], "donation should increase the number of rebalances"
+
+
+def test_remove_after_rebalancing(gm_pool):
+    # This test simulates a sandwich attack where a user front-runs
+    # a rebalancing event to extract value.
+
+    # Pool Setup & Initial Liquidity
+    initial_amount = 400_000 * 10**18
+    gm_pool.add_liquidity_balanced(initial_amount)
+
+    # Phase 1: Donation
+    # A donation is made, which increases the pool's assets without minting
+    # corresponding LP tokens for a regular user. This profit is meant
+    # to be socialized over time, but this attack tries to capture it.
+    donation_amount = 200_000 * 10**18
+    gm_pool.donate_balanced(donation_amount)
+
+    # Phase 2: Unbalance the Pool
+    # A large swap unbalances the pool.
+    exchange_amount = 200_000 * 10**18
+    # exchange from random address to preserve null balances
+    gm_pool.exchange(0, exchange_amount, sender=boa.env.generate_address())
+
+    # Phase 3: Manipulate Oracle and Time Travel
+    # Attacker anticipates a price change and sees an opportunity.
+    # We simulate this by moving time forward and directly setting the
+    # oracle price that the pool will read.
+
+    # raise price to induce rebalancing
+    new_oracle_price = int(gm_pool.price_scale() * 1.3)
+    gm_pool.eval(f"self.last_prices = {new_oracle_price}")
+    gm_pool.eval(f"self.cached_price_oracle = {new_oracle_price}")
+
+    # Time travel 1 week to make the new oracle price effective for rebalancing.
+    week_in_seconds = 86400 * 7
+    boa.env.time_travel(seconds=week_in_seconds)
+    bals = [gm_pool.coins[i].balanceOf(gm_pool.god) for i in range(N_COINS)]
+    print(f"Balances before attack: {bals}")
+    assert bals[0] == bals[1] == 0, "Balances should be 0"
+    # Phase 4: Add Liquidity (Attacker front-runs rebalancing)
+    # The attacker adds liquidity, which will trigger a rebalancing operation
+    # due to the oracle price change.
+
+    # donation_shares_pre = gm_pool.donation_shares()
+    attacker_add_liquidity_amount_coin0 = 500_000 * 10**18
+    # pool is imbalanced, and we add proportionally disbalanced liquidity
+    pool_balances = [gm_pool.coins[i].balanceOf(gm_pool) for i in range(N_COINS)]
+    fraction = (
+        attacker_add_liquidity_amount_coin0 / pool_balances[0]
+    )  # rate of coin0 to pool balance
+    attacker_amounts = [
+        int(pool_balances[0] * fraction),
+        int(pool_balances[1] * fraction),
+    ]  # proportionally disbalanced lp
+
+    # attacker_amounts = gm_pool.compute_balanced_amounts(attacker_add_liquidity_amount_coin0)
+    lp_tokens_received = gm_pool.add_liquidity(attacker_amounts, donate=False)
+    # assert ( # can conditional if and .eval(_tweak_price too)
+    #     gm_pool.price_scale() != price_scale_before_attack
+    # ), "Rebalancing should have occurred"
+    # assert gm_pool.donation_shares() < donation_shares_pre, "Donation shares should decrease"
+
+    # Phase 5: Remove Liquidity and Calculate Profit
+    # Attacker removes liquidity immediately after the rebalancing.
+    assets_received = gm_pool.remove_liquidity(lp_tokens_received, [0, 0])
+
+    # Calculate the net gain/loss in tokens, same as in the script.
+    delta_coin0 = assets_received[0] - attacker_amounts[0]
+    delta_coin1 = assets_received[1] - attacker_amounts[1]
+    rel_delta_coin0 = delta_coin0 / attacker_amounts[0]
+    rel_delta_coin1 = delta_coin1 / attacker_amounts[1]
+    print(f"Rel delta coin0: {rel_delta_coin0:.2%}, Rel delta coin1: {rel_delta_coin1:.2%}")
+    # assert (
+    #     delta_coin0 0 or delta_coin1 > 0
+    # ), f"Attacker should have a net positive return. Deltas: {delta_coin0}, {delta_coin1}"
+    if delta_coin0 > 0 or delta_coin1 > 0:
+        print("Profit")
+    else:
+        print("No profit")
+    print(f"Delta coin0: {delta_coin0}, Delta coin1: {delta_coin1}")
