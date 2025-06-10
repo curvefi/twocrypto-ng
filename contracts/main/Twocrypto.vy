@@ -483,22 +483,15 @@ def _decayed_donation_protection() -> uint256:
     donation_protection_period and grows when liquidity is added to the pool.
     It's purpose is to prevent donations when large amount of liquidity is added to the pool.
     """
-    # fetch current value
     factor: uint256 = self.donation_protection_factor
     if factor == 0:
-        return 0
+        return 0 # early return if nothing to decay
 
-    # decay over time
+    # time from last add_liquidity
     time_passed: uint256 = block.timestamp - self.donation_protection_ts
-    if time_passed > 0:
-        decay: uint256 = time_passed * PRECISION // self.donation_protection_period
+    decay: uint256 = time_passed * PRECISION // self.donation_protection_period
 
-        if factor <= decay:
-            return 0
-        else:
-            return factor - decay
-
-    return factor
+    return factor - min(factor, decay)
 
 
 @external
