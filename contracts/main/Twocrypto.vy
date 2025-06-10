@@ -167,8 +167,7 @@ donation_duration: public(uint256)
 last_donation_release_ts: public(uint256)
 
 # Donation protection
-donation_protection_factor: public(uint256)
-donation_protection_ts: public(uint256)
+donation_protection_expiry_ts: public(uint256)
 donation_protection_period: public(uint256)
 donation_protection_lp_threshold: public(uint256) # In BPS
 
@@ -273,7 +272,7 @@ def __init__(
 
     self.admin_fee = 5 * 10**9
 
-    self.donation_protection_ts = block.timestamp
+    self.donation_protection_expiry_ts = block.timestamp
     self.donation_protection_period = 300  # 5 minutes
     self.donation_protection_lp_threshold = 100  # 1%
 
@@ -478,20 +477,18 @@ def _donation_shares() -> uint256:
 @view
 def _decayed_donation_protection() -> uint256:
     """
-    @notice Decay the donation protection factor.
-    @dev The donation protection factor is a number 0..10**18 that decays linearly over
-    donation_protection_period and grows when liquidity is added to the pool.
-    It's purpose is to prevent donations when large amount of liquidity is added to the pool.
+    @notice Calculates the donation protection factor.
+    @dev The factor is based on the time remaining until the protection period expires.
+         It decays linearly from PRECISION to 0.
     """
-    factor: uint256 = self.donation_protection_factor
-    if factor == 0:
-        return 0 # early return if nothing to decay
+    expiry: uint256 = self.donation_protection_expiry_ts
+    if block.timestamp >= expiry:
+        return 0
 
-    # time from last add_liquidity
-    time_passed: uint256 = block.timestamp - self.donation_protection_ts
-    decay: uint256 = time_passed * PRECISION // self.donation_protection_period
+    time_left: uint256 = expiry - block.timestamp
+    period: uint256 = self.donation_protection_period
 
-    return factor - min(factor, decay)
+    return min(PRECISION, time_left * PRECISION // period)
 
 
 @external
@@ -562,9 +559,14 @@ def add_liquidity(
     # ------ donation protection logic ------
     if not donation and old_D > 0 and token_supply > 0:
         relative_add_bps: uint256 = d_token * 10000 // token_supply
-        added_pressure: uint256 = relative_add_bps * PRECISION // self.donation_protection_lp_threshold
-        self.donation_protection_factor = min(self._decayed_donation_protection() + added_pressure, PRECISION)
-        self.donation_protection_ts = block.timestamp
+        if relative_add_bps > 0:
+            extension_seconds: uint256 = relative_add_bps * self.donation_protection_period // self.donation_protection_lp_threshold
+
+            current_expiry: uint256 = max(self.donation_protection_expiry_ts, block.timestamp)
+            new_expiry: uint256 = current_expiry + extension_seconds
+
+            cap: uint256 = block.timestamp + self.donation_protection_period
+            self.donation_protection_expiry_ts = min(new_expiry, cap)
 
     d_token_fee: uint256 = 0
     if old_D > 0:
@@ -1430,6 +1432,7 @@ def _calc_token_fee(amounts: uint256[N_COINS], xp: uint256[N_COINS], donation: b
         return NOISE_FEE
 
     # fee = sum(amounts_i - avg(amounts)) * fee' / sum(amounts)
+    # fee' = _fee(xp) * N_COINS / (4 * (N_COINS - 1)) = _fee(xp)/2 (for N_COINS=2)
     fee: uint256 = unsafe_div(
         unsafe_mul(self._fee(xp), N_COINS),
         unsafe_mul(4, unsafe_sub(N_COINS, 1))
