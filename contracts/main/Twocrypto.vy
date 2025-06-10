@@ -560,9 +560,6 @@ def add_liquidity(
     assert d_token > 0, "nothing minted"
 
     # ------ donation protection logic ------
-    # first apply decay to donation_protection_factor
-
-    # then add pressure from new liquidity
     if old_D > 0 and token_supply > 0:
         relative_add_bps: uint256 = d_token * 10000 // token_supply
         added_pressure: uint256 = relative_add_bps * PRECISION // self.donation_protection_lp_threshold
@@ -1034,14 +1031,10 @@ def tweak_price(
 
     # ---------- Update profit numbers without price adjustment first --------
 
-    xcp_profit: uint256 = 10**18
-    virtual_price: uint256 = 10**18
-
     # `totalSupply` might change during this function call.
     total_supply: uint256 = self.totalSupply
 
-    # ===== donation shares (update lp_protection_factor first) =====
-
+    # ===== donation shares (time release + add_liquidity throttling) =====
     donation_shares: uint256 = self._donation_shares()
 
     # locked_supply contains LP shares and unreleased donations
@@ -1050,7 +1043,7 @@ def tweak_price(
     old_virtual_price: uint256 = self.virtual_price
     xcp: uint256 = self._xcp(D, price_scale)
 
-    virtual_price = 10**18 * xcp // total_supply
+    virtual_price: uint256 = 10**18 * xcp // total_supply
     # Virtual price can decrease only if A and gamma are being ramped.
     # This does not imply that the virtual price will have increased at the
     # end of this function: it can still decrease if the pool rebalances.
@@ -1060,7 +1053,7 @@ def tweak_price(
         assert self._is_ramping(), "virtual price decreased"
 
     # xcp_profit follows growth of virtual price (and goes down on ramping)
-    xcp_profit = self.xcp_profit + virtual_price - old_virtual_price
+    xcp_profit: uint256 = self.xcp_profit + virtual_price - old_virtual_price
     self.xcp_profit = xcp_profit
 
     # ------------ Rebalance liquidity if there's enough profits to adjust it:
