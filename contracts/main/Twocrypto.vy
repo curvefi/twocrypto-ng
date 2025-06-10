@@ -560,7 +560,7 @@ def add_liquidity(
     assert d_token > 0, "nothing minted"
 
     # ------ donation protection logic ------
-    if old_D > 0 and token_supply > 0:
+    if not donation and old_D > 0 and token_supply > 0:
         relative_add_bps: uint256 = d_token * 10000 // token_supply
         added_pressure: uint256 = relative_add_bps * PRECISION // self.donation_protection_lp_threshold
         self.donation_protection_factor = min(self._decayed_donation_protection() + added_pressure, PRECISION)
@@ -1114,31 +1114,33 @@ def tweak_price(
             new_virtual_price: uint256 = 10**18 * new_xcp // total_supply
 
             donation_shares_to_burn: uint256 = 0
-            if new_virtual_price < threshold_vp:
-                # new_virtual_price is not high enough, rebalance will not happen
+            if new_virtual_price < virtual_price:
+                # new_virtual_price is lower than virtual_price.
                 # We attempt to boost virtual_price by burning some donation shares
+                # This will result in more frequent rebalances.
                 #
                 #   vp(0)      = xcp /  total_supply          # no burn  -> lowest vp
                 #   vp(B)      = xcp / (total_supply – B)     # burn B   -> higher vp
                 #
                 # Goal: find the *smallest* B such that
-                #        vp(B) >= threshold_vp
+                #        vp(B) -> virtual_price (pre-rebalance value)
                 #          B   <= donation_shares
 
-                # what would be total supply with threshold_vp and new_xcp
-                threshold_supply: uint256 = 10**18 * new_xcp // threshold_vp
-                assert threshold_supply < total_supply, "threshold supply must shrink"
+                # what would be total supply with (old) virtual_price and new_xcp
+                tweaked_supply: uint256 = 10**18 * new_xcp // virtual_price
+                assert tweaked_supply < total_supply, "tweaked supply must shrink"
                 donation_shares_to_burn = min(
-                    unsafe_sub(total_supply, threshold_supply), # burn the difference between supplies
+                    unsafe_sub(total_supply, tweaked_supply), # burn the difference between supplies
                     donation_shares # but not more than we can burn (lp shares donation)
                 )
                 # update virtual price with the tweaked total supply
                 new_virtual_price = 10**18 * new_xcp // (total_supply - donation_shares_to_burn)
-
+                # we thus burn some donation shares to compensate for virtual price drop
 
             if (
                 new_virtual_price > 10**18 and
                 new_virtual_price >= threshold_vp
+                # only rebalance when pool preserves half of the profits
             ):
                 self.D = new_D
                 self.virtual_price = new_virtual_price
