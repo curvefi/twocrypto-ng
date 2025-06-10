@@ -292,7 +292,6 @@ def test_remove_after_rebalancing(gm_pool):
     week_in_seconds = 86400 * 7
     boa.env.time_travel(seconds=week_in_seconds)
     bals = [gm_pool.coins[i].balanceOf(gm_pool.god) for i in range(N_COINS)]
-    print(f"Balances before attack: {bals}")
     assert bals[0] == bals[1] == 0, "Balances should be 0"
     # Phase 4: Add Liquidity (Attacker front-runs rebalancing)
     # The attacker adds liquidity, which will trigger a rebalancing operation
@@ -327,11 +326,11 @@ def test_remove_after_rebalancing(gm_pool):
     rel_delta_coin0 = delta_coin0 / attacker_amounts[0]
     rel_delta_coin1 = delta_coin1 / attacker_amounts[1]
     print(f"Rel delta coin0: {rel_delta_coin0:.2%}, Rel delta coin1: {rel_delta_coin1:.2%}")
-    # assert (
-    #     delta_coin0 0 or delta_coin1 > 0
-    # ), f"Attacker should have a net positive return. Deltas: {delta_coin0}, {delta_coin1}"
-    if delta_coin0 > 0 or delta_coin1 > 0:
-        print("Profit")
-    else:
-        print("No profit")
-    print(f"Delta coin0: {delta_coin0}, Delta coin1: {delta_coin1}")
+    assert (
+        delta_coin0 <= 0 and delta_coin1 <= 0
+    ), f"Attacker shouldn't have a net positive return. Deltas: {delta_coin0}, {delta_coin1}"
+    # if delta_coin0 > 0 or delta_coin1 > 0:
+    #     print("Profit")
+    # else:
+    #     print("No profit")
+    # print(f"Delta coin0: {delta_coin0}, Delta coin1: {delta_coin1}")
