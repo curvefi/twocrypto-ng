@@ -476,44 +476,6 @@ def _donation_shares() -> uint256:
     return unlocked_shares * (PRECISION - protection_factor) // PRECISION
 
 
-@internal
-def _donation_protection_chores(lp_token_amount: uint256, full_supply: uint256, is_add: bool):
-    """
-    @notice Adjusts the donation protection period when liquidity is added or removed.
-    @param lp_token_amount The amount of LP tokens being added or removed.
-    @param full_supply The total supply of LP tokens after adding or before removing.
-    @param is_add True if adding liquidity, False if removing.
-    """
-    if self.donation_protection_expiry_ts < block.timestamp and not is_add:
-        return  # Nothing to reduce if already expired
-
-    if lp_token_amount == 0:
-        return
-
-    threshold: uint256 = self.donation_protection_lp_threshold
-    if threshold == 0 or full_supply == 0:
-        return
-
-    relative_bps: uint256 = lp_token_amount * 10000 // full_supply
-    if relative_bps == 0:
-        return
-
-    time_change_seconds: uint256 = relative_bps * self.donation_protection_period // threshold
-
-    if is_add:
-        current_expiry: uint256 = max(self.donation_protection_expiry_ts, block.timestamp)
-        new_expiry: uint256 = current_expiry + time_change_seconds
-        cap: uint256 = block.timestamp + self.donation_protection_period
-        self.donation_protection_expiry_ts = min(new_expiry, cap)
-    else:  # is_remove
-        current_expiry: uint256 = self.donation_protection_expiry_ts
-        expiry_floor: uint256 = block.timestamp
-        if current_expiry > expiry_floor + time_change_seconds:
-            self.donation_protection_expiry_ts = current_expiry - time_change_seconds
-        else:
-            self.donation_protection_expiry_ts = expiry_floor
-
-
 @external
 @nonreentrant
 def add_liquidity(
@@ -618,7 +580,13 @@ def add_liquidity(
             # Regular liquidity addition
             self.mint(receiver, d_token)
             # ------ donation protection logic ------
-            self._donation_protection_chores(d_token, token_supply, True)
+            relative_add_bps: uint256 = d_token * 10000 // token_supply
+            if relative_add_bps > 0:
+                extension_seconds: uint256 = relative_add_bps * self.donation_protection_period // self.donation_protection_lp_threshold
+                current_expiry: uint256 = max(self.donation_protection_expiry_ts, block.timestamp)
+                new_expiry: uint256 = current_expiry + extension_seconds
+                cap: uint256 = block.timestamp + self.donation_protection_period
+                self.donation_protection_expiry_ts = min(new_expiry, cap)
 
         price_scale = self.tweak_price(A_gamma, xp, D)
 
@@ -715,9 +683,6 @@ def remove_liquidity(
     # We intentionally use the unadjusted `amount` here as the amount of lp
     # tokens burnt is `amount`, regardless of the rounding error.
     log RemoveLiquidity(provider=msg.sender, token_amounts=withdraw_amounts, token_supply=total_supply - amount)
-
-    # ------ donation protection logic ------
-    self._donation_protection_chores(amount, total_supply, False)
 
     # Take care of leftover donations (only if all LP left)
     self._withdraw_leftover_donations()
@@ -829,9 +794,6 @@ def _remove_liquidity_fixed_out(
         approx_fee=approx_fee * token_amount // PRECISION,
         price_scale=price_scale
     )
-
-    # ------ donation protection logic ------
-    self._donation_protection_chores(token_amount, self.totalSupply+token_amount, False)
 
     # Take care of leftover donations (only if all LP left)
     self._withdraw_leftover_donations()
