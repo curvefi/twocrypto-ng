@@ -147,5 +147,7 @@ def get_p(
 
 @external
 @pure
-def wad_exp(x: int256) -> int256:
-    return math._wad_exp(x)
+def wad_exp(x: int256) -> uint256:
+    # Explicitly cast the result to uint256 as wad_exp always returns positive values
+    # This avoids implicit cast confusion between int256 and uint256
+    return convert(math._wad_exp(x), uint256)
