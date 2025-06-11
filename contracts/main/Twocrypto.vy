@@ -591,9 +591,9 @@ def add_liquidity(
                     self.donation_protection_expiry_ts = new_expiry
 
                     # 2. Apply spam penalty
-                    if new_expiry > block.timestamp:
+                    if current_expiry > block.timestamp:
                         # The penalty is proportional to the remaining protection time and the current pool fee.
-                        protection_factor: uint256 = (new_expiry - block.timestamp) * PRECISION // protection_period
+                        protection_factor: uint256 = (current_expiry - block.timestamp) * PRECISION // protection_period
                         base_penalty_rate: uint256 = protection_factor * self._fee(xp) // PRECISION
 
                         # The total penalty is calculated on the amount of LP tokens before any fees.
