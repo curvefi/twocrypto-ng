@@ -77,6 +77,7 @@ event AddLiquidity:
     fee: uint256
     token_supply: uint256
     price_scale: uint256
+    is_donation: bool
 
 event RemoveLiquidity:
     provider: indexed(address)
@@ -582,7 +583,8 @@ def add_liquidity(
         token_amounts=amounts_received,
         fee=d_token_fee,
         token_supply=token_supply,
-        price_scale=price_scale
+        price_scale=price_scale,
+        is_donation=donation
     )
 
     return d_token
