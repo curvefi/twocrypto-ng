@@ -1,4 +1,4 @@
-# pragma version ~=0.4.1
+# pragma version 0.4.2
 """
 @title TwocryptoView
 @author Curve.Fi
@@ -308,34 +308,30 @@ def _calc_withdraw_one_coin(
     swap: address
 ) -> (uint256, uint256):
 
-    token_supply: uint256 = staticcall Curve(swap).totalSupply()
-    assert token_amount <= token_supply, "token amount more than supply"
     assert i < N_COINS, "coin out of range"
 
+    # Use _prep_calc to get common values
+    xx: uint256[N_COINS] = empty(uint256[N_COINS])
+    D0: uint256 = 0
+    token_supply: uint256 = 0
+    price_scale: uint256 = 0
+    A: uint256 = 0
+    gamma: uint256 = 0
+    precisions: uint256[N_COINS] = empty(uint256[N_COINS])
+    
+    xx, D0, token_supply, price_scale, A, gamma, precisions = self._prep_calc(swap)
+    
+    assert token_amount <= token_supply, "token amount more than supply"
+    
     math: Math = staticcall Curve(swap).MATH()
 
-    xx: uint256[N_COINS] = empty(uint256[N_COINS])
-    for k: uint256 in range(N_COINS):
-        xx[k] = staticcall Curve(swap).balances(k)
-
-    precisions: uint256[N_COINS] = staticcall Curve(swap).precisions()
-    A: uint256 = staticcall Curve(swap).A()
-    gamma: uint256 = staticcall Curve(swap).gamma()
-    D0: uint256 = 0
-    p: uint256 = 0
-
-    price_scale_i: uint256 = staticcall Curve(swap).price_scale() * precisions[1]
+    price_scale_i: uint256 = price_scale * precisions[1]
     xp: uint256[N_COINS] = [
         xx[0] * precisions[0],
         unsafe_div(xx[1] * price_scale_i, PRECISION)
     ]
     if i == 0:
         price_scale_i = PRECISION * precisions[0]
-
-    if staticcall Curve(swap).future_A_gamma_time() > block.timestamp:
-        D0 = staticcall math.newton_D(A, gamma, xp, 0)
-    else:
-        D0 = staticcall Curve(swap).D()
 
     D: uint256 = D0
 

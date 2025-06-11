@@ -1,4 +1,4 @@
-# pragma version ~=0.4.1
+# pragma version 0.4.2
 """
 @title Twocrypto
 @author Curve.Fi
@@ -348,30 +348,31 @@ def _transfer_out(_coin_idx: uint256, _amount: uint256, receiver: address):
 # -------------------------- AMM Main Functions ------------------------------
 
 
-@external
-@nonreentrant
-def exchange(
+@internal
+def _exchange_impl(
     i: uint256,
     j: uint256,
     dx: uint256,
     min_dy: uint256,
-    receiver: address = msg.sender
+    receiver: address,
+    expect_optimistic_transfer: bool
 ) -> uint256:
     """
-    @notice Exchange using wrapped native token by default
+    @notice Internal implementation for exchange operations
     @param i Index value for the input coin
     @param j Index value for the output coin
     @param dx Amount of input coin being swapped in
     @param min_dy Minimum amount of output coin to receive
-    @param receiver Address to send the output coin to. Default is msg.sender
-    @return uint256 Amount of tokens at index j received by the `receiver
+    @param receiver Address to send the output coin to
+    @param expect_optimistic_transfer Whether to expect an optimistic transfer
+    @return uint256 Amount of tokens at index j received by the receiver
     """
     # _transfer_in updates self.balances here:
     dx_received: uint256 = self._transfer_in(
         i,
         dx,
         msg.sender,
-        False
+        expect_optimistic_transfer
     )
 
     # No ERC20 token transfers occur here:
@@ -390,6 +391,27 @@ def exchange(
     log TokenExchange(buyer=msg.sender, sold_id=i, tokens_sold=dx_received, bought_id=j, tokens_bought=out[0], fee=out[1], price_scale=out[2])
 
     return out[0]
+
+
+@external
+@nonreentrant
+def exchange(
+    i: uint256,
+    j: uint256,
+    dx: uint256,
+    min_dy: uint256,
+    receiver: address = msg.sender
+) -> uint256:
+    """
+    @notice Exchange using wrapped native token by default
+    @param i Index value for the input coin
+    @param j Index value for the output coin
+    @param dx Amount of input coin being swapped in
+    @param min_dy Minimum amount of output coin to receive
+    @param receiver Address to send the output coin to. Default is msg.sender
+    @return uint256 Amount of tokens at index j received by the `receiver
+    """
+    return self._exchange_impl(i, j, dx, min_dy, receiver, False)
 
 
 @external
@@ -415,30 +437,7 @@ def exchange_received(
     @param receiver Address to send the output coin to
     @return uint256 Amount of tokens at index j received by the `receiver`
     """
-    # _transfer_in updates self.balances here:
-    dx_received: uint256 = self._transfer_in(
-        i,
-        dx,
-        msg.sender,
-        True  # <---- expect_optimistic_transfer is set to True here.
-    )
-
-    # No ERC20 token transfers occur here:
-    out: uint256[3] = self._exchange(
-        i,
-        j,
-        dx_received,
-        min_dy,
-    )
-
-    # _transfer_out updates self.balances here. Update to state occurs before
-    # external calls:
-    self._transfer_out(j, out[0], receiver)
-
-    # log:
-    log TokenExchange(buyer=msg.sender, sold_id=i, tokens_sold=dx_received, bought_id=j, tokens_bought=out[0], fee=out[1], price_scale=out[2])
-
-    return out[0]
+    return self._exchange_impl(i, j, dx, min_dy, receiver, True)
 
 
 @view
