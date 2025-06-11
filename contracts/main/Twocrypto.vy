@@ -486,7 +486,7 @@ def add_liquidity(
 
     amounts_received: uint256[N_COINS] = empty(uint256[N_COINS])
     # This variable will contain the old balances + the amounts received.
-    balances: uint256[N_COINS] = self.balances
+    balances: uint256[N_COINS] = old_balances
     for i: uint256 in range(N_COINS):
         if amounts[i] > 0:
             # Updates self.balances here:
@@ -629,9 +629,7 @@ def remove_liquidity(
 
     if amount == total_supply:  # <----------------------------------- Case 2.
 
-        for i: uint256 in range(N_COINS):
-
-            withdraw_amounts[i] = self.balances[i]
+        withdraw_amounts = self.balances
 
     else:  # <-------------------------------------------------------- Case 1.
         for i: uint256 in range(N_COINS):
@@ -753,8 +751,10 @@ def _remove_liquidity_fixed_out(
 
     price_scale: uint256 = self.tweak_price(A_gamma, xp, D)
 
-    self._transfer_out(i, amount_i, receiver)
-    self._transfer_out(1 - i, dy, receiver)
+    if amount_i > 0:
+        self._transfer_out(i, amount_i, receiver)
+    if dy > 0:
+        self._transfer_out(1 - i, dy, receiver)
 
     token_amounts: uint256[N_COINS] = empty(uint256[N_COINS])
     token_amounts[i] = amount_i
@@ -860,6 +860,7 @@ def _exchange(
     A_gamma: uint256[2] = self._A_gamma()
     balances: uint256[N_COINS] = self.balances
     dy: uint256 = 0
+    D: uint256 = 0
 
     y: uint256 = balances[j]
     x0: uint256 = balances[i] - dx_received  # old xp[i]
@@ -878,15 +879,16 @@ def _exchange(
 
         x1: uint256 = xp[i]  # <------------------ Back up old value in xp ...
         xp[i] = x0                                                         # |
-        self.D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)   # |
+        D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)        # |
+        self.D = D                                                         # |
         xp[i] = x1  # <-------------------------------------- ... and restore.
 
     # ----------------------- Calculate dy and fees --------------------------
 
-    D: uint256 = self.D
+    D = self.D
     y_out: uint256[2] = staticcall MATH.get_y(A_gamma[0], A_gamma[1], xp, D, j)
     dy = xp[j] - y_out[0]
-    xp[j] -= dy
+    xp[j] = y_out[0]
     dy -= 1
 
     if j > 0:
@@ -1385,10 +1387,8 @@ def _calc_token_fee(amounts: uint256[N_COINS], xp: uint256[N_COINS], donation: b
         return NOISE_FEE
 
     # fee = sum(amounts_i - avg(amounts)) * fee' / sum(amounts)
-    fee: uint256 = unsafe_div(
-        unsafe_mul(self._fee(xp), N_COINS),
-        unsafe_mul(4, unsafe_sub(N_COINS, 1))
-    )
+    # Simplified for N_COINS=2: fee = self._fee(xp) * 2 / 4 = self._fee(xp) / 2
+    fee: uint256 = self._fee(xp) // 2
 
     S: uint256 = 0
     for _x: uint256 in amounts:

@@ -44,13 +44,10 @@ def get_y(
     c: uint256 = D
     Ann: uint256 = A * N_COINS
 
-    for _i: uint256 in range(N_COINS):
-        if _i != i:
-            _x = xp[_i]
-        else:
-            continue
-        S_ += _x
-        c = c * D // (_x * N_COINS)
+    # Inline loop for N_COINS=2
+    _x = xp[1 - i]  # When i=0, use xp[1]; when i=1, use xp[0]
+    S_ += _x
+    c = c * D // (_x * N_COINS)
 
     c = c * D * A_MULTIPLIER // (Ann * N_COINS)
     b: uint256 = S_ + D * A_MULTIPLIER // Ann
@@ -82,9 +79,8 @@ def newton_D(_amp: uint256,
     # gamma and K0_prev are ignored
     # _amp is already multiplied by a [higher] A_MULTIPLIER
 
-    S: uint256 = 0
-    for x: uint256 in _xp:
-        S += x
+    # Inline loop for N_COINS=2
+    S: uint256 = _xp[0] + _xp[1]
     if S == 0:
         return 0
 
@@ -94,9 +90,10 @@ def newton_D(_amp: uint256,
     for i: uint256 in range(255):
 
         D_P: uint256 = D
-        for x: uint256 in _xp:
-            D_P = D_P * D // x
-        D_P //= pow_mod256(N_COINS, N_COINS)
+        # Inline loop for N_COINS=2
+        D_P = D_P * D // _xp[0]
+        D_P = D_P * D // _xp[1]
+        D_P //= N_COINS ** N_COINS
         Dprev: uint256 = D
 
         # (Ann * S / A_PRECISION + D_P * N_COINS) * D / ((Ann - A_PRECISION) * D / A_PRECISION + (N_COINS + 1) * D_P)
@@ -135,10 +132,11 @@ def get_p(
     """
     # dx_0 / dx_1 only, however can have any number of coins in pool
     ANN: uint256 = unsafe_mul(_A_gamma[0], N_COINS)
-    Dr: uint256 = unsafe_div(_D, pow_mod256(N_COINS, N_COINS))
+    Dr: uint256 = unsafe_div(_D, N_COINS ** N_COINS)
 
-    for i: uint256 in range(N_COINS):
-        Dr = Dr * _D // _xp[i]
+    # Inline loop for N_COINS=2
+    Dr = Dr * _D // _xp[0]
+    Dr = Dr * _D // _xp[1]
 
     xp0_A: uint256 = unsafe_div(ANN * _xp[0], A_MULTIPLIER)
 
