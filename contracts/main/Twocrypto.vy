@@ -579,34 +579,32 @@ def add_liquidity(
             # --- Donation Protection & LP Spam Penalty ---
             # Extend protection to shield against donation extraction via sandwich attacks.
             # A penalty is applied for extending the protection to disincentivize spamming.
-            threshold: uint256 = self.donation_protection_lp_threshold
-            if threshold > 0 and token_supply > 0:
-                relative_lp_add: uint256 = d_token * PRECISION // token_supply
-                if relative_lp_add > 0:  # sub-precision additions are expensive to stack
-                    # 1. Extend protection period
-                    protection_period: uint256 = self.donation_protection_period
-                    extension_seconds: uint256 = relative_lp_add * protection_period // threshold
-                    current_expiry: uint256 = max(self.donation_protection_expiry_ts, block.timestamp)
-                    new_expiry: uint256 = min(current_expiry + extension_seconds, block.timestamp + protection_period)
-                    self.donation_protection_expiry_ts = new_expiry
+            relative_lp_add: uint256 = d_token * PRECISION // token_supply
+            if relative_lp_add > 0:  # sub-precision additions are expensive to stack
+                # 1. Extend protection period
+                protection_period: uint256 = self.donation_protection_period
+                extension_seconds: uint256 = relative_lp_add * protection_period // self.donation_protection_lp_threshold
+                current_expiry: uint256 = max(self.donation_protection_expiry_ts, block.timestamp)
+                new_expiry: uint256 = min(current_expiry + extension_seconds, block.timestamp + protection_period)
+                self.donation_protection_expiry_ts = new_expiry
 
-                    # 2. Apply spam penalty
-                    if current_expiry > block.timestamp:
-                        # The penalty is proportional to the remaining protection time and the current pool fee.
-                        protection_factor: uint256 = (current_expiry - block.timestamp) * PRECISION // protection_period
-                        base_penalty_rate: uint256 = protection_factor * self._fee(xp) // PRECISION
+                # 2. Apply spam penalty
+                if current_expiry > block.timestamp:
+                    # The penalty is proportional to the remaining protection time and the current pool fee.
+                    protection_factor: uint256 = (current_expiry - block.timestamp) * PRECISION // protection_period
+                    base_penalty_rate: uint256 = protection_factor * self._fee(xp) // PRECISION
 
-                        # The total penalty is calculated on the amount of LP tokens before any fees.
-                        total_penalty_lp: uint256 = base_penalty_rate * (d_token + d_token_fee) // 10**10
+                    # The total penalty is calculated on the amount of LP tokens before any fees.
+                    total_penalty_lp: uint256 = base_penalty_rate * (d_token + d_token_fee) // 10**10
 
-                        # We only apply the part of the penalty that exceeds the imbalance fee already charged.
-                        spam_penalty: uint256 = 0
-                        if total_penalty_lp > d_token_fee:
-                            spam_penalty = total_penalty_lp - d_token_fee
+                    # We only apply the part of the penalty that exceeds the imbalance fee already charged.
+                    spam_penalty: uint256 = 0
+                    if total_penalty_lp > d_token_fee:
+                        spam_penalty = total_penalty_lp - d_token_fee
 
-                        if spam_penalty > 0:
-                            d_token -= spam_penalty
-                            token_supply -= spam_penalty
+                    if spam_penalty > 0:
+                        d_token -= spam_penalty
+                        token_supply -= spam_penalty
 
             # Regular liquidity addition
             self.mint(receiver, d_token)
