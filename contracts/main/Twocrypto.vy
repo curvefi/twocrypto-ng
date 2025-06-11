@@ -635,8 +635,8 @@ def remove_liquidity(
 
     else:  # <-------------------------------------------------------- Case 1.
         for i: uint256 in range(N_COINS):
-            # TODO improve comments here
-            # Withdraws slightly less -> favors LPs already
+            # Calculate proportional withdrawal amounts based on LP tokens burnt.
+            # Integer division slightly favors remaining LPs by rounding down.
             withdraw_amounts[i] = self.balances[i] * amount // total_supply
 
             assert withdraw_amounts[i] >= min_amounts[i], "slippage"
@@ -823,7 +823,7 @@ def _pack_3(x: uint256[3]) -> uint256:
 def _unpack_3(_packed: uint256) -> uint256[3]:
     """
     @notice Unpacks a uint256 into 3 integers (values must be <= 10**18)
-    @param val The uint256 to unpack
+    @param _packed The uint256 to unpack
     @return uint256[3] A list of length 3 with unpacked integers
     """
     return [
@@ -1191,7 +1191,7 @@ def _claim_admin_fees():
         xcp_profit -= fees * 2
         # Another way to look at it - we either track admin_claimed_xcp (=sum(fees)),
         # and always use it to calculate admin+LP reserve, or just -=2*fees in xcp_profit.
-        # xcp_profit as raw value is thus should't be used in integrations!
+        # xcp_profit as raw value is thus shouldn't be used in integrations!
 
     # ------------------- Recalculate virtual_price following admin fee claim.
     total_supply_including_admin_share: uint256 = (

@@ -403,7 +403,7 @@ def _prep_calc(swap: address) -> (
 def _unpack_3(_packed: uint256) -> uint256[3]:
     """
     @notice Unpacks a uint256 into 3 integers (values must be <= 10**18)
-    @param val The uint256 to unpack
+    @param _packed The uint256 to unpack
     @return The unpacked uint256[3]
     """
     return [

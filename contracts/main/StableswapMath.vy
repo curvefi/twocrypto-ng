@@ -26,7 +26,7 @@ version: public(constant(String[8])) = "v0.1.0"
 @pure
 def get_y(
     A: uint256,
-    _gamma: uint256, # unused, present for compatibility with twocrypto
+    _gamma: uint256, # unused - maintained for interface compatibility with twocrypto pool
     xp: uint256[N_COINS],
     D: uint256,
     i: uint256
@@ -72,9 +72,9 @@ def get_y(
 @external
 @view
 def newton_D(_amp: uint256,
-    gamma: uint256, # unused, present for compatibility with twocrypto
+    gamma: uint256, # unused - maintained for interface compatibility with twocrypto pool
     _xp: uint256[N_COINS],
-    K0_prev: uint256 = 0 # unused, present for compatibility with twocrypto
+    K0_prev: uint256 = 0 # unused - maintained for interface compatibility with twocrypto pool
 ) -> uint256:
     """
     Find D for given x[i] and A.
@@ -128,7 +128,7 @@ def get_p(
 ) -> uint256:
     """
     @notice Calculates dx/dy.
-    @dev Output needs to be multiplied with price_scale to get the actual value. ?
+    @dev Output needs to be multiplied with price_scale to get the actual value.
     @param _xp Balances of the pool.
     @param _D Current value of D.
     @param _A_gamma Amplification coefficient and gamma.
