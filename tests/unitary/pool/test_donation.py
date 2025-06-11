@@ -1,12 +1,12 @@
 import boa
 from tests.utils.constants import N_COINS
-from pytest import fixture, approx
+from pytest import fixture, approx, raises
 
 
 def test_cant_donate_on_empty_pool(gm_pool):
     assert gm_pool.donation_shares() == 0
-    gm_pool.donate([10**18, 2 * 10**18])
-    assert gm_pool.donation_shares() == 0
+    with raises(boa.BoaError, match="no donation on first deposit"):
+        gm_pool.donate([10**18, 2 * 10**18])
 
 
 @fixture()

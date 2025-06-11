@@ -566,6 +566,7 @@ def add_liquidity(
     else:
 
         # (re)instatiating an empty pool:
+        assert not donation, "no donation on first deposit"
 
         self.D = D
         self.virtual_price = 10**18
