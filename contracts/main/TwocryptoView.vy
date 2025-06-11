@@ -106,7 +106,7 @@ def calc_withdraw_one_coin(
 def calc_token_amount(
     amounts: uint256[N_COINS], deposit: bool, swap: address, donation: bool = False
 ) -> uint256:
-    
+
     # Sanity check: donation only valid for deposits
     assert not donation or deposit, "donation requires deposit"
 
@@ -148,7 +148,7 @@ def calc_fee_withdraw_one_coin(
 def calc_fee_token_amount(
     amounts: uint256[N_COINS], deposit: bool, swap: address, donation: bool = False
 ) -> uint256:
-    
+
     # Sanity check: donation only valid for deposits
     assert not donation or deposit, "donation requires deposit"
 
