@@ -169,7 +169,7 @@ last_donation_release_ts: public(uint256)
 # Donation protection
 donation_protection_expiry_ts: public(uint256)
 donation_protection_period: public(uint256)
-donation_protection_lp_threshold: public(uint256) # In BPS
+donation_protection_lp_threshold: public(uint256)
 
 balances: public(uint256[N_COINS])
 D: public(uint256)
@@ -273,8 +273,8 @@ def __init__(
     self.admin_fee = 5 * 10**9
 
     self.donation_protection_expiry_ts = block.timestamp
-    self.donation_protection_period = 300  # 5 minutes
-    self.donation_protection_lp_threshold = 3_000  # 30%
+    self.donation_protection_period = 5 * 60   # 5 minutes
+    self.donation_protection_lp_threshold = 30 * PRECISION // 100  # 30%
 
     log Transfer(sender=empty(address), receiver=self, value=0)  # <------- Fire empty transfer from
     #                                       0x0 to self for indexers to catch.
@@ -469,9 +469,8 @@ def _donation_shares() -> uint256:
     # --- Donation protection damping factor ---
     protection_factor: uint256 = 0
     expiry: uint256 = self.donation_protection_expiry_ts
-    if block.timestamp < expiry:
-        time_left: uint256 = expiry - block.timestamp
-        protection_factor = min(PRECISION, time_left * PRECISION // self.donation_protection_period)
+    if expiry > block.timestamp:
+        protection_factor = (expiry - block.timestamp) * PRECISION // self.donation_protection_period
 
     return unlocked_shares * (PRECISION - protection_factor) // PRECISION
 
@@ -577,16 +576,28 @@ def add_liquidity(
             self.donation_shares = new_donation_shares
             self.totalSupply += d_token
         else:
+            # ------ donation protection logic ------
+            # extend protection period when LP is added to protect from donation extraction sandwich
+            relative_add_bps: uint256 = d_token * PRECISION // token_supply
+            protection_period: uint256 = self.donation_protection_period
+            if relative_add_bps > 0: # sub-precision additions are expensive to stack
+                extension_seconds: uint256 = relative_add_bps * protection_period // self.donation_protection_lp_threshold
+                current_expiry: uint256 = max(self.donation_protection_expiry_ts, block.timestamp)
+                new_expiry: uint256 = min(current_expiry + extension_seconds, block.timestamp + protection_period)
+                self.donation_protection_expiry_ts = new_expiry
+                # penalize LP spam that could be used to abuse donation protection to pause donations
+                if new_expiry > block.timestamp:
+                    protection_factor: uint256 = (new_expiry - block.timestamp) * PRECISION // protection_period
+                    lp_spam_penalty_fee: uint256 = protection_factor * self._fee(xp) // PRECISION
+                    d_token_penalty_fee: uint256 = lp_spam_penalty_fee * (d_token+d_token_fee) // 10**10
+                    # we only penalize if add_liq had low fee (balanced add => NOISE_FEE only)
+                    d_token_penalty_fee -= min(d_token_penalty_fee, d_token_fee)
+                    if d_token_penalty_fee > 0:
+                        d_token -= d_token_penalty_fee # reduce LP tokens minted
+                        token_supply -= d_token_penalty_fee # subtract from total_supply (we added it previously)
+
             # Regular liquidity addition
             self.mint(receiver, d_token)
-            # ------ donation protection logic ------
-            relative_add_bps: uint256 = d_token * 10000 // token_supply
-            if relative_add_bps > 0:
-                extension_seconds: uint256 = relative_add_bps * self.donation_protection_period // self.donation_protection_lp_threshold
-                current_expiry: uint256 = max(self.donation_protection_expiry_ts, block.timestamp)
-                new_expiry: uint256 = current_expiry + extension_seconds
-                cap: uint256 = block.timestamp + self.donation_protection_period
-                self.donation_protection_expiry_ts = min(new_expiry, cap)
 
         price_scale = self.tweak_price(A_gamma, xp, D)
 
@@ -2096,6 +2107,13 @@ def set_donation_protection_params(
     _period: uint256,
     _threshold: uint256,
 ):
+    """
+    @notice Set donation protection parameters.
+    @param _period The new donation protection period in seconds.
+    @param _threshold The new donation protection threshold with 10**18 precision.
+    @dev _threshold = 30 * 10**18//100 means 30%
+    """
+
     self._check_admin()
     assert _period > 0, "period must be positive"
     assert _threshold > 0, "threshold must be positive"
