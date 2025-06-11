@@ -266,6 +266,31 @@ def __init__(
 
     self.admin_fee = 5 * 10**9
 
+    # Emit initial events
+    fee_params: uint256[3] = self._unpack_3(packed_fee_params)
+    rebalancing_params: uint256[3] = self._unpack_3(packed_rebalancing_params)
+    
+    log NewParameters(
+        mid_fee=fee_params[0],
+        out_fee=fee_params[1],
+        fee_gamma=fee_params[2],
+        allowed_extra_profit=rebalancing_params[0],
+        adjustment_step=rebalancing_params[1],
+        ma_time=rebalancing_params[2]
+    )
+    
+    log RampAgamma(
+        initial_A=gamma_A[1],
+        future_A=gamma_A[1],
+        initial_gamma=gamma_A[0],
+        future_gamma=gamma_A[0],
+        initial_time=block.timestamp,
+        future_time=block.timestamp
+    )
+    
+    log SetDonationDuration(duration=self.donation_duration)
+    log SetAdminFee(admin_fee=self.admin_fee)
+
     log Transfer(sender=empty(address), receiver=self, value=0)  # <------- Fire empty transfer from
     #                                       0x0 to self for indexers to catch.
 
@@ -557,6 +582,9 @@ def add_liquidity(
             # Credit donation: we don't explicitly mint lp tokens, but increase total supply
             self.donation_shares = new_donation_shares
             self.totalSupply += d_token
+            
+            # Emit Transfer event for donation
+            log Transfer(sender=empty(address), receiver=empty(address), value=d_token)
         else:
             # Regular liquidity addition
             self.mint(receiver, d_token)
