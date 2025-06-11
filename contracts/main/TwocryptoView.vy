@@ -318,11 +318,11 @@ def _calc_withdraw_one_coin(
     A: uint256 = 0
     gamma: uint256 = 0
     precisions: uint256[N_COINS] = empty(uint256[N_COINS])
-    
+
     xx, D0, token_supply, price_scale, A, gamma, precisions = self._prep_calc(swap)
-    
+
     assert token_amount <= token_supply, "token amount more than supply"
-    
+
     math: Math = staticcall Curve(swap).MATH()
 
     price_scale_i: uint256 = price_scale * precisions[1]
