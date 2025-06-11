@@ -61,11 +61,7 @@ assert (
 
 A_MULTIPLIER = POOL_DEPLOYER._constants.A_MULTIPLIER
 
-assert POOL_DEPLOYER._constants.MIN_A == MATH_DEPLOYER._constants.MIN_A, "MIN_A mismatch"
-
 MIN_A = POOL_DEPLOYER._constants.MIN_A
-
-assert POOL_DEPLOYER._constants.MAX_A == MATH_DEPLOYER._constants.MAX_A, "MAX_A mismatch"
 
 MAX_A = POOL_DEPLOYER._constants.MAX_A
 

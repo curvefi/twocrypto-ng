@@ -83,14 +83,6 @@ event RemoveLiquidity:
     token_amounts: uint256[N_COINS]
     token_supply: uint256
 
-event RemoveLiquidityOne:
-    provider: indexed(address)
-    token_amount: uint256
-    coin_index: uint256
-    coin_amount: uint256
-    approx_fee: uint256
-    price_scale: uint256
-
 event RemoveLiquidityImbalance:
     provider: indexed(address)
     lp_token_amount: uint256
@@ -1318,14 +1310,6 @@ def _fee(xp: uint256[N_COINS]) -> uint256:
 
     # mid_fee * B + out_fee * (1 - B)
     return unsafe_div(fee_params[0] * B + fee_params[1] * (10**18 - B), 10**18)
-
-
-@internal
-@pure
-def _D_from_xcp(xcp: uint256, price_scale: uint256) -> uint256:
-    # For N_COINS=2 xcp equals to D // (N_COINS * √price_scale), this is just
-    # the inverse of the formula used in `_xcp`.
-    return xcp * N_COINS * isqrt(price_scale * PRECISION) // PRECISION
 
 
 @internal
