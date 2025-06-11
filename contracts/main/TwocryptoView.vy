@@ -290,12 +290,18 @@ def _calc_dtoken_nofee(
     ]
 
     D: uint256 = staticcall math.newton_D(A, gamma, xp, 0)
-    d_token: uint256 = token_supply * D // D0
+    d_token: uint256 = 0
 
-    if deposit:
-        d_token -= token_supply
+    if D0 > 0:
+        d_token = token_supply * D // D0
+        if deposit:
+            d_token -= token_supply
+        else:
+            d_token = token_supply - d_token
     else:
-        d_token = token_supply - d_token
+        # First deposit: use xcp formula to maintain initial virtual price of 1
+        # xcp = D // N_COINS // sqrt(price_scale)
+        d_token = D * PRECISION // N_COINS // isqrt(PRECISION * price_scale)
 
     return d_token, amountsp, xp
 
