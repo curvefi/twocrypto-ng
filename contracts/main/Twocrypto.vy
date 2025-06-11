@@ -274,7 +274,7 @@ def __init__(
 
     self.donation_protection_expiry_ts = block.timestamp
     self.donation_protection_period = 300  # 5 minutes
-    self.donation_protection_lp_threshold = 100  # 1%
+    self.donation_protection_lp_threshold = 3_000  # 30%
 
     log Transfer(sender=empty(address), receiver=self, value=0)  # <------- Fire empty transfer from
     #                                       0x0 to self for indexers to catch.
