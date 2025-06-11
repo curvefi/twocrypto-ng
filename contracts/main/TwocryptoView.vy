@@ -61,6 +61,14 @@ PRECISION: constant(uint256) = 10**18
 def get_dy(
     i: uint256, j: uint256, dx: uint256, swap: address
 ) -> uint256:
+    """
+    @notice Calculate the amount of coin j received for swapping dx of coin i
+    @param i Index of input coin
+    @param j Index of output coin
+    @param dx Amount of input coin to swap
+    @param swap Address of the swap pool
+    @return Amount of output coin that will be received
+    """
 
     dy: uint256 = 0
     xp: uint256[N_COINS] = empty(uint256[N_COINS])
@@ -77,6 +85,14 @@ def get_dy(
 def get_dx(
     i: uint256, j: uint256, dy: uint256, swap: address
 ) -> uint256:
+    """
+    @notice Calculate the amount of coin i needed to receive dy of coin j
+    @param i Index of input coin
+    @param j Index of output coin
+    @param dy Desired amount of output coin
+    @param swap Address of the swap pool
+    @return Amount of input coin needed
+    """
 
     dx: uint256 = 0
     xp: uint256[N_COINS] = empty(uint256[N_COINS])
@@ -97,6 +113,13 @@ def get_dx(
 def calc_withdraw_one_coin(
     token_amount: uint256, i: uint256, swap: address
 ) -> uint256:
+    """
+    @notice Calculate amount of coin i withdrawn when burning token_amount of LP tokens
+    @param token_amount Amount of LP tokens to burn
+    @param i Index of coin to withdraw
+    @param swap Address of the swap pool
+    @return Amount of coin i that will be withdrawn
+    """
 
     return self._calc_withdraw_one_coin(token_amount, i, swap)[0]
 
@@ -106,6 +129,14 @@ def calc_withdraw_one_coin(
 def calc_token_amount(
     amounts: uint256[N_COINS], deposit: bool, swap: address, donation: bool = False
 ) -> uint256:
+    """
+    @notice Calculate LP tokens to be minted/burned for given amounts
+    @param amounts Amounts of coins to be deposited/withdrawn
+    @param deposit True for deposit, False for withdrawal
+    @param swap Address of the swap pool
+    @param donation Whether the deposit is a donation
+    @return Amount of LP tokens to be minted (if deposit) or burned (if withdrawal)
+    """
 
     d_token: uint256 = 0
     amountsp: uint256[N_COINS] = empty(uint256[N_COINS])
@@ -123,6 +154,14 @@ def calc_token_amount(
 @view
 def calc_fee_get_dy(i: uint256, j: uint256, dx: uint256, swap: address
 ) -> uint256:
+    """
+    @notice Calculate the fee charged for swapping dx of coin i for coin j
+    @param i Index of input coin
+    @param j Index of output coin
+    @param dx Amount of input coin to swap
+    @param swap Address of the swap pool
+    @return Fee amount in units of output coin j
+    """
 
     dy: uint256 = 0
     xp: uint256[N_COINS] = empty(uint256[N_COINS])
@@ -136,6 +175,13 @@ def calc_fee_get_dy(i: uint256, j: uint256, dx: uint256, swap: address
 def calc_fee_withdraw_one_coin(
     token_amount: uint256, i: uint256, swap: address
 ) -> uint256:
+    """
+    @notice Calculate fee for withdrawing one coin by burning LP tokens
+    @param token_amount Amount of LP tokens to burn
+    @param i Index of coin to withdraw
+    @param swap Address of the swap pool
+    @return Approximate fee charged for the withdrawal
+    """
 
     return self._calc_withdraw_one_coin(token_amount, i, swap)[1]
 
@@ -145,6 +191,14 @@ def calc_fee_withdraw_one_coin(
 def calc_fee_token_amount(
     amounts: uint256[N_COINS], deposit: bool, swap: address, donation: bool = False
 ) -> uint256:
+    """
+    @notice Calculate fee charged for minting/burning LP tokens
+    @param amounts Amounts of coins to be deposited/withdrawn
+    @param deposit True for deposit, False for withdrawal
+    @param swap Address of the swap pool
+    @param donation Whether the deposit is a donation
+    @return Fee amount in LP tokens
+    """
 
     d_token: uint256 = 0
     amountsp: uint256[N_COINS] = empty(uint256[N_COINS])

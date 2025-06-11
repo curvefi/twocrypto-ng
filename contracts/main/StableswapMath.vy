@@ -32,7 +32,13 @@ def get_y(
     i: uint256
 ) -> uint256[2]: # returns [y, 0] (0 is unused, present for compatibility with twocrypto)
     """
-    Calculate x[i] for given x[j] (j != i) and D.
+    @notice Calculate x[i] for given x[j] (j != i) and D
+    @param A Amplification coefficient
+    @param _gamma Gamma parameter (unused, for compatibility)
+    @param xp Balances of coins in the pool
+    @param D Invariant D
+    @param i Index of coin to calculate
+    @return Array of [y value, 0] where y is the calculated balance
     """
     # x in the input is converted to the same price/precision
 
@@ -77,7 +83,12 @@ def newton_D(_amp: uint256,
     K0_prev: uint256 = 0 # unused, present for compatibility with twocrypto
 ) -> uint256:
     """
-    Find D for given x[i] and A.
+    @notice Find invariant D for given x[i] and A
+    @param _amp Amplification coefficient (already multiplied by A_MULTIPLIER)
+    @param gamma Gamma parameter (unused, for compatibility)
+    @param _xp Balances of coins in the pool
+    @param K0_prev Previous K0 value (unused, for compatibility)
+    @return Invariant D
     """
     # gamma and K0_prev are ignored
     # _amp is already multiplied by a [higher] A_MULTIPLIER
@@ -128,10 +139,11 @@ def get_p(
 ) -> uint256:
     """
     @notice Calculates dx/dy.
-    @dev Output needs to be multiplied with price_scale to get the actual value. ?
+    @dev Output needs to be multiplied with price_scale to get the actual value.
     @param _xp Balances of the pool.
     @param _D Current value of D.
     @param _A_gamma Amplification coefficient and gamma.
+    @return Price ratio dx/dy
     """
     # dx_0 / dx_1 only, however can have any number of coins in pool
     ANN: uint256 = unsafe_mul(_A_gamma[0], N_COINS)
