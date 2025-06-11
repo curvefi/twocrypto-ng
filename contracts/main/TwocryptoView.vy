@@ -140,6 +140,44 @@ def calc_fee_withdraw_one_coin(
     return self._calc_withdraw_one_coin(token_amount, i, swap)[1]
 
 
+@external
+@view
+def calc_withdraw_fixed_out(
+    token_amount: uint256,
+    i: uint256,
+    amount_i: uint256,
+    swap: address
+) -> uint256:
+    """
+    @notice Calculate amount of coin j to receive when withdrawing fixed amount of coin i
+    @param token_amount LP tokens to burn
+    @param i Index of coin to withdraw fixed amount
+    @param amount_i Fixed amount of coin i to withdraw
+    @param swap Address of the pool
+    @return Amount of coin j that will be withdrawn
+    """
+    return self._calc_withdraw_fixed_out(token_amount, i, amount_i, swap)[0]
+
+
+@external
+@view
+def calc_fee_withdraw_fixed_out(
+    token_amount: uint256,
+    i: uint256,
+    amount_i: uint256,
+    swap: address
+) -> uint256:
+    """
+    @notice Calculate approximate fee for withdrawing fixed amount of coin i
+    @param token_amount LP tokens to burn
+    @param i Index of coin to withdraw fixed amount
+    @param amount_i Fixed amount of coin i to withdraw
+    @param swap Address of the pool
+    @return Approximate fee (scaled by 10^10)
+    """
+    return self._calc_withdraw_fixed_out(token_amount, i, amount_i, swap)[1]
+
+
 @view
 @external
 def calc_fee_token_amount(
@@ -350,6 +388,76 @@ def _calc_withdraw_one_coin(
     y_out: uint256[2] = staticcall math.get_y(A, gamma, xp, D, i)
     dy: uint256 = (xp[i] - y_out[0]) * PRECISION // price_scale_i
     xp[i] = y_out[0]
+
+    return dy, approx_fee
+
+
+@internal
+@view
+def _calc_withdraw_fixed_out(
+    token_amount: uint256,
+    i: uint256,
+    amount_i: uint256,
+    swap: address
+) -> (uint256, uint256):
+    """
+    @notice Calculate withdrawal of fixed amount of coin i
+    @param token_amount LP tokens to burn
+    @param i Index of coin to withdraw fixed amount
+    @param amount_i Fixed amount of coin i to withdraw
+    @param swap Address of the pool
+    @return (amount of coin j, approximate fee)
+    """
+    token_supply: uint256 = staticcall Curve(swap).totalSupply()
+    assert token_amount <= token_supply, "withdraw > supply"
+
+    j: uint256 = 1 - i
+
+    math: Math = staticcall Curve(swap).MATH()
+
+    # Get current balances and parameters
+    balances: uint256[N_COINS] = empty(uint256[N_COINS])
+    for k: uint256 in range(N_COINS):
+        balances[k] = staticcall Curve(swap).balances(k)
+
+    precisions: uint256[N_COINS] = staticcall Curve(swap).precisions()
+    price_scale: uint256 = staticcall Curve(swap).price_scale()
+    A: uint256 = staticcall Curve(swap).A()
+    gamma: uint256 = staticcall Curve(swap).gamma()
+
+    # Calculate xp (scaled balances)
+    xp: uint256[N_COINS] = [
+        balances[0] * precisions[0],
+        balances[1] * price_scale * precisions[1] // PRECISION
+    ]
+
+    # Calculate current D
+    D: uint256 = self._calc_D_ramp(A, gamma, balances, precisions, price_scale, swap)
+
+    # Calculate dD based on token amount
+    dD: uint256 = token_amount * D // token_supply
+    xp_new: uint256[N_COINS] = xp
+
+    price_scales: uint256[N_COINS] = [PRECISION * precisions[0], price_scale * precisions[1]]
+
+    # amountsp is scaled amounts
+    amountsp: uint256[N_COINS] = empty(uint256[N_COINS])
+    amountsp[i] = amount_i * price_scales[i] // PRECISION
+    xp_new[i] -= amountsp[i]
+
+    # Calculate new y without fees
+    y_out: uint256[2] = staticcall math.get_y(A, gamma, xp_new, D - dD, j)
+    amountsp[j] = xp[j] - y_out[0]
+    xp_new[j] = y_out[0]
+
+    # Calculate fee
+    packed_fee_params: uint256 = staticcall Curve(swap).packed_fee_params()
+    approx_fee: uint256 = staticcall Curve(swap).calc_token_fee(amountsp, xp_new, False)
+    dD -= dD * approx_fee // 10**10 + 1
+
+    # Recalculate with fees
+    y_out = staticcall math.get_y(A, gamma, xp_new, D - dD, j)
+    dy: uint256 = (xp[j] - y_out[0]) * PRECISION // price_scales[j]
 
     return dy, approx_fee
 
