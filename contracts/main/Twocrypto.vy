@@ -576,25 +576,37 @@ def add_liquidity(
             self.donation_shares = new_donation_shares
             self.totalSupply += d_token
         else:
-            # ------ donation protection logic ------
-            # extend protection period when LP is added to protect from donation extraction sandwich
-            relative_add_bps: uint256 = d_token * PRECISION // token_supply
-            protection_period: uint256 = self.donation_protection_period
-            if relative_add_bps > 0: # sub-precision additions are expensive to stack
-                extension_seconds: uint256 = relative_add_bps * protection_period // self.donation_protection_lp_threshold
-                current_expiry: uint256 = max(self.donation_protection_expiry_ts, block.timestamp)
-                new_expiry: uint256 = min(current_expiry + extension_seconds, block.timestamp + protection_period)
-                self.donation_protection_expiry_ts = new_expiry
-                # penalize LP spam that could be used to abuse donation protection to pause donations
-                if new_expiry > block.timestamp:
-                    protection_factor: uint256 = (new_expiry - block.timestamp) * PRECISION // protection_period
-                    lp_spam_penalty_fee: uint256 = protection_factor * self._fee(xp) // PRECISION
-                    d_token_penalty_fee: uint256 = lp_spam_penalty_fee * (d_token+d_token_fee) // 10**10
-                    # we only penalize if add_liq had low fee (balanced add => NOISE_FEE only)
-                    d_token_penalty_fee -= min(d_token_penalty_fee, d_token_fee)
-                    if d_token_penalty_fee > 0:
-                        d_token -= d_token_penalty_fee # reduce LP tokens minted
-                        token_supply -= d_token_penalty_fee # subtract from total_supply (we added it previously)
+            # --- Donation Protection & LP Spam Penalty ---
+            # Extend protection to shield against donation extraction via sandwich attacks.
+            # A penalty is applied for extending the protection to disincentivize spamming.
+            threshold: uint256 = self.donation_protection_lp_threshold
+            if threshold > 0 and token_supply > 0:
+                relative_lp_add: uint256 = d_token * PRECISION // token_supply
+                if relative_lp_add > 0:  # sub-precision additions are expensive to stack
+                    # 1. Extend protection period
+                    protection_period: uint256 = self.donation_protection_period
+                    extension_seconds: uint256 = relative_lp_add * protection_period // threshold
+                    current_expiry: uint256 = max(self.donation_protection_expiry_ts, block.timestamp)
+                    new_expiry: uint256 = min(current_expiry + extension_seconds, block.timestamp + protection_period)
+                    self.donation_protection_expiry_ts = new_expiry
+
+                    # 2. Apply spam penalty
+                    if new_expiry > block.timestamp:
+                        # The penalty is proportional to the remaining protection time and the current pool fee.
+                        protection_factor: uint256 = (new_expiry - block.timestamp) * PRECISION // protection_period
+                        base_penalty_rate: uint256 = protection_factor * self._fee(xp) // PRECISION
+
+                        # The total penalty is calculated on the amount of LP tokens before any fees.
+                        total_penalty_lp: uint256 = base_penalty_rate * (d_token + d_token_fee) // 10**10
+
+                        # We only apply the part of the penalty that exceeds the imbalance fee already charged.
+                        spam_penalty: uint256 = 0
+                        if total_penalty_lp > d_token_fee:
+                            spam_penalty = total_penalty_lp - d_token_fee
+
+                        if spam_penalty > 0:
+                            d_token -= spam_penalty
+                            token_supply -= spam_penalty
 
             # Regular liquidity addition
             self.mint(receiver, d_token)
