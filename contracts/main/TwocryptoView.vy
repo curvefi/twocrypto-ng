@@ -383,19 +383,19 @@ def _prep_calc(swap: address) -> (
 
     precisions: uint256[N_COINS] = staticcall Curve(swap).precisions()
     token_supply: uint256 = staticcall Curve(swap).totalSupply()
-    xp: uint256[N_COINS] = empty(uint256[N_COINS])
+    balances: uint256[N_COINS] = empty(uint256[N_COINS])
     for k: uint256 in range(N_COINS):
-        xp[k] = staticcall Curve(swap).balances(k)
+        balances[k] = staticcall Curve(swap).balances(k)
 
     price_scale: uint256 = staticcall Curve(swap).price_scale()
 
     A: uint256 = staticcall Curve(swap).A()
     gamma: uint256 = staticcall Curve(swap).gamma()
     D: uint256 = self._calc_D_ramp(
-        A, gamma, xp, precisions, price_scale, swap
+        A, gamma, balances, precisions, price_scale, swap
     )
 
-    return xp, D, token_supply, price_scale, A, gamma, precisions
+    return balances, D, token_supply, price_scale, A, gamma, precisions
 
 
 @internal

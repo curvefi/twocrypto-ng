@@ -8,10 +8,6 @@
 
 from snekmate.utils import math
 
-# MIN_GAMMA: constant(uint256) = 10**10
-# MAX_GAMMA_SMALL: constant(uint256) = 2 * 10**16
-# MAX_GAMMA: constant(uint256) = 199 * 10**15 # 1.99 * 10**17
-
 MIN_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER // 10
 MAX_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER * 1000
 
@@ -66,12 +62,12 @@ def get_y(
         else:
             if y_prev - y <= 1:
                 return [y, 0]
-    raise
+    raise "Did not converge"
 
 
 @external
 @view
-def newton_D(_amp: uint256,
+def newton_D(A: uint256,
     gamma: uint256, # unused, present for compatibility with twocrypto
     _xp: uint256[N_COINS],
     K0_prev: uint256 = 0 # unused, present for compatibility with twocrypto
@@ -80,7 +76,7 @@ def newton_D(_amp: uint256,
     Find D for given x[i] and A.
     """
     # gamma and K0_prev are ignored
-    # _amp is already multiplied by a [higher] A_MULTIPLIER
+    # A is already multiplied by a [higher] A_MULTIPLIER
 
     S: uint256 = 0
     for x: uint256 in _xp:
@@ -89,14 +85,14 @@ def newton_D(_amp: uint256,
         return 0
 
     D: uint256 = S
-    Ann: uint256 = _amp * N_COINS
+    Ann: uint256 = A * N_COINS
 
     for i: uint256 in range(255):
 
         D_P: uint256 = D
         for x: uint256 in _xp:
             D_P = D_P * D // x
-        D_P //= pow_mod256(N_COINS, N_COINS)
+        D_P //= N_COINS ** N_COINS
         Dprev: uint256 = D
 
         # (Ann * S / A_PRECISION + D_P * N_COINS) * D / ((Ann - A_PRECISION) * D / A_PRECISION + (N_COINS + 1) * D_P)
@@ -135,10 +131,10 @@ def get_p(
     """
     # dx_0 / dx_1 only, however can have any number of coins in pool
     ANN: uint256 = unsafe_mul(_A_gamma[0], N_COINS)
-    Dr: uint256 = unsafe_div(_D, pow_mod256(N_COINS, N_COINS))
+    Dr: uint256 = unsafe_div(_D, N_COINS ** N_COINS)
 
-    for i: uint256 in range(N_COINS):
-        Dr = Dr * _D // _xp[i]
+    for x: uint256 in _xp:
+        Dr = Dr * _D // x
 
     xp0_A: uint256 = unsafe_div(ANN * _xp[0], A_MULTIPLIER)
 

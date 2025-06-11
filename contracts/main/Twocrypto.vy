@@ -136,6 +136,7 @@ event SetAdminFee:
 
 N_COINS: constant(uint256) = 2
 PRECISION: constant(uint256) = 10**18  # <------- The precision to convert to.
+MAX_UINT64: constant(uint256) = 2 ** 64 - 1  # <-- Maximum value for uint64.
 PRECISIONS: immutable(uint256[N_COINS])
 
 MATH: public(immutable(Math))
@@ -559,9 +560,9 @@ def add_liquidity(
             self.totalSupply += d_token
         else:
             # Regular liquidity addition
-            self.mint(receiver, d_token)
+            self._mint(receiver, d_token)
 
-        price_scale = self.tweak_price(A_gamma, xp, D)
+        price_scale = self._tweak_price(A_gamma, xp, D)
 
     else:
 
@@ -572,7 +573,7 @@ def add_liquidity(
         self.xcp_profit = 10**18
         self.xcp_profit_a = 10**18
 
-        self.mint(receiver, d_token)
+        self._mint(receiver, d_token)
     assert d_token >= min_mint_amount, "slippage"
 
     # ---------------------------------------------- Log and claim admin fees.
@@ -613,7 +614,7 @@ def remove_liquidity(
     # We cache the total supply to avoid multiple SLOADs. It is important to do
     # this before the burnFrom call, as the burnFrom call will reduce the supply.
     total_supply: uint256 = self.totalSupply
-    self.burnFrom(msg.sender, amount)
+    self._burnFrom(msg.sender, amount)
 
     # There are two cases for withdrawing tokens from the pool.
     #   Case 1. Withdrawal does not empty the pool.
@@ -635,8 +636,8 @@ def remove_liquidity(
 
     else:  # <-------------------------------------------------------- Case 1.
         for i: uint256 in range(N_COINS):
-            # TODO improve comments here
-            # Withdraws slightly less -> favors LPs already
+            # Calculate proportional withdrawal amounts based on LP token share
+            # Integer division slightly favors remaining LPs due to rounding down
             withdraw_amounts[i] = self.balances[i] * amount // total_supply
 
             assert withdraw_amounts[i] >= min_amounts[i], "slippage"
@@ -693,21 +694,21 @@ def remove_liquidity_fixed_out(
 @external
 @nonreentrant
 def remove_liquidity_one_coin(
-    lp_token_amount: uint256,
+    token_amount: uint256,
     i: uint256,
     min_amount: uint256,
     receiver: address = msg.sender
 ) -> uint256:
     """
     @notice Withdraw liquidity in a single coin.
-    @param lp_token_amount Amount of LP tokens to burn.
+    @param token_amount Amount of LP tokens to burn.
     @param i Index of the coin to withdraw.
     @param min_amount Minimum amount of coin[i] to withdraw.
     @param receiver Address to send the withdrawn tokens to
     @return Amount of coin[i] tokens received by the `receiver`
     """
     return self._remove_liquidity_fixed_out(
-        lp_token_amount,
+        token_amount,
         1 - i, # Here we flip i because we want to constrain the other coin to be zero.
         0, # We set the amount of coin[1 - i] to be withdrawn to 0.
         min_amount,
@@ -749,9 +750,9 @@ def _remove_liquidity_fixed_out(
 
     # ---------------------------- State Updates -----------------------------
 
-    self.burnFrom(msg.sender, token_amount)
+    self._burnFrom(msg.sender, token_amount)
 
-    price_scale: uint256 = self.tweak_price(A_gamma, xp, D)
+    price_scale: uint256 = self._tweak_price(A_gamma, xp, D)
 
     self._transfer_out(i, amount_i, receiver)
     self._transfer_out(1 - i, dy, receiver)
@@ -827,9 +828,9 @@ def _unpack_3(_packed: uint256) -> uint256[3]:
     @return uint256[3] A list of length 3 with unpacked integers
     """
     return [
-        (_packed >> 128) & 18446744073709551615,
-        (_packed >> 64) & 18446744073709551615,
-        _packed & 18446744073709551615,
+        (_packed >> 128) & MAX_UINT64,
+        (_packed >> 64) & MAX_UINT64,
+        _packed & MAX_UINT64,
     ]
 
 
@@ -909,13 +910,13 @@ def _exchange(
     # fees, we need to update D to reflect the new balances.
     D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, y_out[1])
 
-    price_scale = self.tweak_price(A_gamma, xp, D)
+    price_scale = self._tweak_price(A_gamma, xp, D)
 
     return [dy, fee, price_scale]
 
 
 @internal
-def tweak_price(
+def _tweak_price(
     A_gamma: uint256[2],
     _xp: uint256[N_COINS],
     D: uint256,
@@ -1032,8 +1033,8 @@ def tweak_price(
     # this is approximate condition that preliminary indicates readiness for rebalancing
     vp_boosted: uint256 = 10**18 * xcp // locked_supply
     assert vp_boosted >= virtual_price, "negative donation"
-    if vp_boosted  > threshold_vp + rebalancing_params[0]:
-        #             allowed_extra_profit --------^
+    if vp_boosted > threshold_vp + rebalancing_params[0]:
+        # allowed_extra_profit = rebalancing_params[0]
         norm: uint256 = unsafe_div(
             unsafe_mul(price_oracle, 10**18), price_scale
         )
@@ -1571,7 +1572,7 @@ def approve(_spender: address, _value: uint256) -> bool:
 
 
 @internal
-def mint(_to: address, _value: uint256) -> bool:
+def _mint(_to: address, _value: uint256) -> bool:
     """
     @dev Mint an amount of the token and assigns it to an account.
          This encapsulates the modification of balances such that the
@@ -1588,7 +1589,7 @@ def mint(_to: address, _value: uint256) -> bool:
 
 
 @internal
-def burnFrom(_to: address, _value: uint256) -> bool:
+def _burnFrom(_to: address, _value: uint256) -> bool:
     """
     @dev Burn an amount of the token from a given account.
     @param _to The account whose tokens will be burned.
