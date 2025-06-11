@@ -1571,35 +1571,31 @@ def approve(_spender: address, _value: uint256) -> bool:
 
 
 @internal
-def mint(_to: address, _value: uint256) -> bool:
+def mint(_to: address, _value: uint256):
     """
     @dev Mint an amount of the token and assigns it to an account.
          This encapsulates the modification of balances such that the
          proper events are emitted.
     @param _to The account that will receive the created tokens.
     @param _value The amount that will be created.
-    @return bool Success.
     """
     self.totalSupply += _value
     self.balanceOf[_to] += _value
 
     log Transfer(sender=empty(address), receiver=_to, value=_value)
-    return True
 
 
 @internal
-def burnFrom(_to: address, _value: uint256) -> bool:
+def burnFrom(_to: address, _value: uint256):
     """
     @dev Burn an amount of the token from a given account.
     @param _to The account whose tokens will be burned.
     @param _value The amount that will be burned.
-    @return bool Success.
     """
     self.totalSupply -= _value
     self.balanceOf[_to] -= _value
 
     log Transfer(sender=_to, receiver=empty(address), value=_value)
-    return True
 
 
 # ------------------------- AMM View Functions -------------------------------
