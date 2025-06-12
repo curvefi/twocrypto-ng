@@ -406,7 +406,7 @@ def _prep_calc(swap: address) -> (
 
 
 @internal
-@view
+@pure
 def _unpack_3(_packed: uint256) -> uint256[3]:
     """
     @notice Unpacks a uint256 into 3 integers (values must be <= 10**18)
