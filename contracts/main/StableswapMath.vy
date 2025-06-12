@@ -12,9 +12,6 @@ from snekmate.utils import math
 # MAX_GAMMA_SMALL: constant(uint256) = 2 * 10**16
 # MAX_GAMMA: constant(uint256) = 199 * 10**15 # 1.99 * 10**17
 
-MIN_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER // 10
-MAX_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER * 1000
-
 N_COINS: constant(uint256) = 2
 A_MULTIPLIER: constant(uint256) = 10000
 

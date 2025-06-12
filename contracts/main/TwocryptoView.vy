@@ -15,8 +15,6 @@ interface Curve:
     def A() -> uint256: view
     def gamma() -> uint256: view
     def price_scale() -> uint256: view
-    def price_oracle() -> uint256: view
-    def get_virtual_price() -> uint256: view
     def balances(i: uint256) -> uint256: view
     def D() -> uint256: view
     def fee_calc(xp: uint256[N_COINS]) -> uint256: view
@@ -43,13 +41,6 @@ interface Math:
         D: uint256,
         i: uint256,
     ) -> uint256[2]: view
-    def newton_y(
-        ANN: uint256,
-        gamma: uint256,
-        x: uint256[N_COINS],
-        D: uint256,
-        i: uint256,
-    ) -> uint256: view
 
 
 N_COINS: constant(uint256) = 2
