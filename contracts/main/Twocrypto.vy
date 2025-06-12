@@ -196,7 +196,7 @@ MIN_ADMIN_FEE_CLAIM_INTERVAL: constant(uint256) = 86400
 A_MULTIPLIER: constant(uint256) = 10000
 MIN_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER // 10
 MAX_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER * 1000
-MAX_RELATIVE_CHANGE: constant(uint256) = 10
+MAX_PARAM_CHANGE: constant(uint256) = 10
 MIN_GAMMA: constant(uint256) = 10**10
 MAX_GAMMA: constant(uint256) = 199 * 10**15 # 1.99 * 10**17
 
@@ -1926,12 +1926,12 @@ def ramp_A_gamma(
     assert future_gamma < MAX_GAMMA + 1, "gamme>max"
 
     ratio: uint256 = 10**18 * future_A // A_gamma[0]
-    assert ratio < 10**18 * MAX_RELATIVE_CHANGE + 1, "A change too high"
-    assert ratio > 10**18 // MAX_RELATIVE_CHANGE - 1, "A change too low"
+    assert ratio < 10**18 * MAX_PARAM_CHANGE + 1, "A change too high"
+    assert ratio > 10**18 // MAX_PARAM_CHANGE - 1, "A change too low"
 
     ratio = 10**18 * future_gamma // A_gamma[1]
-    assert ratio < 10**18 * MAX_RELATIVE_CHANGE + 1, "gamma change too high"
-    assert ratio > 10**18 // MAX_RELATIVE_CHANGE - 1, "gamma change too low"
+    assert ratio < 10**18 * MAX_PARAM_CHANGE + 1, "gamma change too high"
+    assert ratio > 10**18 // MAX_PARAM_CHANGE - 1, "gamma change too low"
 
     self.initial_A_gamma = initial_A_gamma
     self.initial_A_gamma_time = block.timestamp
