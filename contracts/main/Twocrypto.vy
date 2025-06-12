@@ -783,25 +783,27 @@ def _withdraw_leftover_donations():
     @dev donations go to the factory fees receiver, if not set, to the admin.
     """
 
-    if self.donation_shares == self.totalSupply:
-        # Pool has no other LP than donation shares, must be emptied
-        receiver: address = staticcall factory.fee_receiver()
-        if receiver == empty(address):
-            receiver = staticcall factory.admin()
+    if self.donation_shares != self.totalSupply:
+        return
 
-        # empty the pool
-        withdraw_amounts: uint256[N_COINS] = self.balances
+    # Pool has no other LP than donation shares, must be emptied
+    receiver: address = staticcall factory.fee_receiver()
+    if receiver == empty(address):
+        receiver = staticcall factory.admin()
 
-        for i: uint256 in range(N_COINS):
-            # updates self.balances here
-            self._transfer_out(i, withdraw_amounts[i], receiver)
+    # empty the pool
+    withdraw_amounts: uint256[N_COINS] = self.balances
 
-        # Update state
-        self.donation_shares = 0
-        self.totalSupply = 0
-        self.D = 0
+    for i: uint256 in range(N_COINS):
+        # updates self.balances here
+        self._transfer_out(i, withdraw_amounts[i], receiver)
 
-        log RemoveLiquidity(provider=receiver, token_amounts=withdraw_amounts, token_supply=0)
+    # Update state
+    self.donation_shares = 0
+    self.totalSupply = 0
+    self.D = 0
+
+    log RemoveLiquidity(provider=receiver, token_amounts=withdraw_amounts, token_supply=0)
 
 
 # -------------------------- Packing functions -------------------------------
