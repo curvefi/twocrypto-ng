@@ -360,13 +360,20 @@ def _fee(xp: uint256[N_COINS], swap: address) -> uint256:
 
     packed_fee_params: uint256 = staticcall Curve(swap).packed_fee_params()
     fee_params: uint256[3] = self._unpack_3(packed_fee_params)
-    f: uint256 = xp[0] + xp[1]
-    f = fee_params[2] * 10**18 // (
-        fee_params[2] + 10**18 -
-        (10**18 * N_COINS**N_COINS) * xp[0] // f * xp[1] // f
-    )
 
-    return (fee_params[0] * f + fee_params[1] * (10**18 - f)) // 10**18
+    # warm up variable with sum of balances
+    B: uint256 = xp[0] + xp[1]
+
+    # balance indicator that goes from 10**18 (perfect pool balance) to 0 (very imbalanced, 100:1 and worse)
+    # N^N * (xp[0] * xp[1]) / (xp[0] + xp[1])**2
+    B = PRECISION * N_COINS**N_COINS * xp[0] // B * xp[1] // B
+
+    # regulate slope using fee_gamma
+    # fee_gamma * balance_term / (fee_gamma * balance_term + 1 - balance_term)
+    B = fee_params[2] * B // (unsafe_div(fee_params[2] * B, 10**18) + 10**18 - B)
+
+    # mid_fee * B + out_fee * (1 - B)
+    return unsafe_div(fee_params[0] * B + fee_params[1] * (10**18 - B), 10**18)
 
 
 @internal
