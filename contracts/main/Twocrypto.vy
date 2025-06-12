@@ -930,7 +930,8 @@ def tweak_price(
     @dev Contains main liquidity rebalancing logic, by tweaking `price_scale`.
     @param A_gamma Array of A and gamma parameters.
     @param _xp Array of current balances.
-    @param new_D New D value.
+    @param D New D value.
+    @return uint256 The new price_scale.
     """
 
     # ---------------------------- Read storage ------------------------------
@@ -2057,6 +2058,11 @@ def apply_new_parameters(
 
 @external
 def set_donation_duration(duration: uint256):
+    """
+    @notice Set the donation duration.
+    @param duration The new donation duration.
+    @dev The time required for donations to fully release from locked state.
+    """
     self._check_admin()
     assert duration > 0, "duration must be positive"
     self.donation_duration = duration
