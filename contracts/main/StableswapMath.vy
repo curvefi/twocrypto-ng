@@ -70,7 +70,7 @@ def get_y(
 
 
 @external
-@view
+@pure
 def newton_D(_amp: uint256,
     gamma: uint256, # unused, present for compatibility with twocrypto
     _xp: uint256[N_COINS],
@@ -122,7 +122,7 @@ def newton_D(_amp: uint256,
 
 
 @external
-@view
+@pure
 def get_p(
     _xp: uint256[N_COINS], _D: uint256, _A_gamma: uint256[N_COINS]
 ) -> uint256:

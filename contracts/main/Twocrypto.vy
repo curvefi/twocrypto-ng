@@ -441,8 +441,8 @@ def exchange_received(
     return out[0]
 
 
-@view
 @internal
+@view
 def _donation_shares() -> uint256:
     donation_shares: uint256 = self.donation_shares
     # Time passed since the last donation absorption.
@@ -1272,11 +1272,12 @@ def _is_ramping() -> bool:
     return self.future_A_gamma_time > block.timestamp
 
 @internal
+@view
 def _check_admin():
     assert msg.sender == staticcall factory.admin(), "only owner"
 
-@view
 @internal
+@view
 def _A_gamma() -> uint256[2]:
     t1: uint256 = self.future_A_gamma_time
 
@@ -1380,8 +1381,8 @@ def _xcp(D: uint256, price_scale: uint256) -> uint256:
     return D * PRECISION // N_COINS // isqrt(PRECISION * price_scale)
 
 
-@view
 @internal
+@view
 def _calc_token_fee(amounts: uint256[N_COINS], xp: uint256[N_COINS], donation: bool = False) -> uint256:
     if donation:
         # Donation fees are 0, but NOISE_FEE is required for numerical stability
