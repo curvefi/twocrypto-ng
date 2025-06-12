@@ -1,6 +1,7 @@
 import boa
 from tests.utils.constants import N_COINS
 from pytest import fixture, approx
+import pytest
 
 boa.env.evm.patch.code_size_limit = 1000000  # Increase code size limit for deployment
 
@@ -156,9 +157,23 @@ def test_remove_liquidity_affected_by_donations(gm_pool_with_liquidity):
         assert expected < actual, "user gets more tokens due to noise fee"
 
 
-def test_donation_improves_swap_liquidity():
-    # TODO simple test where we check that a donation give a better price for a swap
-    pass
+@pytest.mark.parametrize("i", range(N_COINS))
+def test_donation_improves_swap_liquidity(gm_pool_with_liquidity, i):
+    pool = gm_pool_with_liquidity
+
+    AMOUNT = 10**18
+
+    with boa.env.anchor():
+        pre_donation_dy = pool.exchange(i, AMOUNT)
+
+    pool.donate_balanced(10**18)
+
+    with boa.env.anchor():
+        post_donation_dy = pool.exchange(i, AMOUNT)
+
+    assert (
+        post_donation_dy > pre_donation_dy
+    ), "donation should improve swap liquidity, dy should increase"
 
 
 def test_donation_improves_rebalance(gm_pool):
