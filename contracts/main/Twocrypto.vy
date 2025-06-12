@@ -146,7 +146,7 @@ cached_price_scale: uint256  # <------------------------ Internal price scale.
 cached_price_oracle: uint256  # <------- Price target given by moving average.
 
 last_prices: public(uint256)
-last_timestamp: public(uint256)    # idx 0 is for prices, idx 1 is for xcp.
+last_timestamp: public(uint256)
 
 initial_A_gamma: public(uint256)
 initial_A_gamma_time: public(uint256)
@@ -472,7 +472,7 @@ def add_liquidity(
     @param min_mint_amount Minimum amount of LP to mint.
     @param receiver Address to send the LP tokens to. Default is msg.sender
     @param donation Whether the liquidity is a donation, if True receiver is ignored.
-    @return uint256 Amount of LP tokens received by the `receiver
+    @return uint256 Amount of LP tokens issued (to receiver or donation buffer).
     """
 
 
