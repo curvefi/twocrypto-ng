@@ -78,6 +78,10 @@ event AddLiquidity:
     token_supply: uint256
     price_scale: uint256
 
+event Donation:
+    donor: indexed(address)
+    token_amounts: uint256[N_COINS]
+
 event RemoveLiquidity:
     provider: indexed(address)
     token_amounts: uint256[N_COINS]
@@ -575,6 +579,7 @@ def add_liquidity(
             # Credit donation: we don't explicitly mint lp tokens, but increase total supply
             self.donation_shares = new_donation_shares
             self.totalSupply += d_token
+            log Donation(donor=msg.sender, token_amounts=amounts_received)
         else:
             # --- Donation Protection & LP Spam Penalty ---
             # Extend protection to shield against donation extraction via sandwich attacks.
