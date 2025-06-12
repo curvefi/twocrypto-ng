@@ -764,7 +764,7 @@ def _remove_liquidity_fixed_out(
         provider=msg.sender,
         lp_token_amount=token_amount,
         token_amounts=token_amounts,
-        approx_fee=approx_fee * token_amount // PRECISION,
+        approx_fee=approx_fee * token_amount // 10**10 + 1,
         price_scale=price_scale
     )
 
