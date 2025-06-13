@@ -494,11 +494,6 @@ def add_liquidity(
     xp: uint256[N_COINS] = self._xp(balances, price_scale)
     old_xp: uint256[N_COINS] = self._xp(old_balances, price_scale)
 
-    # amountsp (amounts * p) contains the scaled `amounts_received` of each coin.
-    amountsp: uint256[N_COINS] = empty(uint256[N_COINS])
-    for i: uint256 in range(N_COINS):
-        if amounts_received[i] > 0:
-            amountsp[i] = xp[i] - old_xp[i]
     # -------------------- Calculate LP tokens to mint -----------------------
 
     A_gamma: uint256[2] = self._A_gamma()
@@ -1368,6 +1363,11 @@ def _xcp(D: uint256, price_scale: uint256) -> uint256:
 @internal
 @view
 def _calc_token_fee(amounts: uint256[N_COINS], xp: uint256[N_COINS], donation: bool = False, from_view: bool = False) -> uint256:
+
+    if donation:
+        # Donation fees are 0, but NOISE_FEE is required for numerical stability
+        return NOISE_FEE
+
     surplus_amounts: uint256[N_COINS] = amounts
     if from_view:
         # When calling from the view contract no liquidity has been
@@ -1377,14 +1377,10 @@ def _calc_token_fee(amounts: uint256[N_COINS], xp: uint256[N_COINS], donation: b
     # the ratio of the balances before the liquidity operation
     # balances[0] / balances[1] (adjusted for fixed precisions)
     balances_ratio: uint256 = (self.balances[0] - surplus_amounts[0]) * PRECISIONS[0] * PRECISION // ((self.balances[1] - surplus_amounts[1]) * PRECISIONS[1])
-    # amounts only here use the balances ratio to scale the amounts and not
-    # the price scale, this is because we want to calculate the fee based on
-    # the impact on the spot balances and not the price scale.
+    # We calculate the fee based on the impact on the spot balances.
+    # For this reason here (AND ONLY HERE) we use the balances ratio and not
+    # the price_scale in self._xp().
     amounts = self._xp(amounts, balances_ratio)
-
-    if donation:
-        # Donation fees are 0, but NOISE_FEE is required for numerical stability
-        return NOISE_FEE
 
     # fee = sum(amounts_i - avg(amounts)) * fee' / sum(amounts)
     fee: uint256 = unsafe_div(
