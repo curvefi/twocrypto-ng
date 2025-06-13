@@ -196,8 +196,11 @@ MIN_RAMP_TIME: constant(uint256) = 86400
 MIN_ADMIN_FEE_CLAIM_INTERVAL: constant(uint256) = 86400
 
 A_MULTIPLIER: constant(uint256) = 10000
-MIN_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER // 10
-MAX_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER * 1000
+# Note on pool internal logic:
+# A is scaled by N_COINS in context of StableswapMath.vy
+# So A := A_true * N_COINS
+MIN_A: constant(uint256) = N_COINS**(N_COINS-1) * A_MULTIPLIER // 10
+MAX_A: constant(uint256) = N_COINS**(N_COINS-1) * A_MULTIPLIER * 1000
 MAX_PARAM_CHANGE: constant(uint256) = 10
 MIN_GAMMA: constant(uint256) = 10**10
 MAX_GAMMA: constant(uint256) = 199 * 10**15 # 1.99 * 10**17
