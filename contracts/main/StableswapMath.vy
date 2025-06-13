@@ -8,10 +8,6 @@
 
 from snekmate.utils import math
 
-# MIN_GAMMA: constant(uint256) = 10**10
-# MAX_GAMMA_SMALL: constant(uint256) = 2 * 10**16
-# MAX_GAMMA: constant(uint256) = 199 * 10**15 # 1.99 * 10**17
-
 N_COINS: constant(uint256) = 2
 A_MULTIPLIER: constant(uint256) = 10000
 
@@ -22,16 +18,16 @@ version: public(constant(String[8])) = "v0.1.0"
 @external
 @pure
 def get_y(
-    A: uint256,
+    _amp: uint256,
     _gamma: uint256, # unused, present for compatibility with twocrypto
     xp: uint256[N_COINS],
     D: uint256,
     i: uint256
 ) -> uint256[2]: # returns [y, 0] (0 is unused, present for compatibility with twocrypto)
     """
-    Calculate x[i] for given x[j] (j != i) and D.
+    Calculate xp[i] for given xp[j] (j != i) and D.
     """
-    # x in the input is converted to the same price/precision
+    # xp in the input is converted to the same price/precision
 
     assert i < N_COINS  # dev: i above N_COINS
 
@@ -39,7 +35,7 @@ def get_y(
     _x: uint256 = 0
     y_prev: uint256 = 0
     c: uint256 = D
-    Ann: uint256 = A * N_COINS
+    Ann: uint256 = _amp * N_COINS
 
     for _i: uint256 in range(N_COINS):
         if _i != i:
@@ -63,7 +59,7 @@ def get_y(
         else:
             if y_prev - y <= 1:
                 return [y, 0]
-    raise
+    raise "Did not converge"
 
 
 @external
@@ -77,7 +73,7 @@ def newton_D(_amp: uint256,
     Find D for given x[i] and A.
     """
     # gamma and K0_prev are ignored
-    # _amp is already multiplied by a [higher] A_MULTIPLIER
+    # _amp is already multiplied by a A_MULTIPLIER and N_COINS
 
     S: uint256 = 0
     for x: uint256 in _xp:
@@ -93,7 +89,7 @@ def newton_D(_amp: uint256,
         D_P: uint256 = D
         for x: uint256 in _xp:
             D_P = D_P * D // x
-        D_P //= pow_mod256(N_COINS, N_COINS)
+        D_P //= N_COINS**N_COINS
         Dprev: uint256 = D
 
         # (Ann * S / A_PRECISION + D_P * N_COINS) * D / ((Ann - A_PRECISION) * D / A_PRECISION + (N_COINS + 1) * D_P)
@@ -125,14 +121,14 @@ def get_p(
 ) -> uint256:
     """
     @notice Calculates dx/dy.
-    @dev Output needs to be multiplied with price_scale to get the actual value. ?
+    @dev Output needs to be multiplied with price_scale to get the actual value.
     @param _xp Balances of the pool.
     @param _D Current value of D.
     @param _A_gamma Amplification coefficient and gamma.
     """
     # dx_0 / dx_1 only, however can have any number of coins in pool
     ANN: uint256 = unsafe_mul(_A_gamma[0], N_COINS)
-    Dr: uint256 = unsafe_div(_D, pow_mod256(N_COINS, N_COINS))
+    Dr: uint256 = unsafe_div(_D, N_COINS**N_COINS)
 
     for i: uint256 in range(N_COINS):
         Dr = Dr * _D // _xp[i]
