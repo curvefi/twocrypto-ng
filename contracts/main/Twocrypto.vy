@@ -578,7 +578,7 @@ def add_liquidity(
             if relative_lp_add > 0:  # sub-precision additions are expensive to stack
                 # 1. Extend protection period
                 protection_period: uint256 = self.donation_protection_period
-                extension_seconds: uint256 = relative_lp_add * protection_period // self.donation_protection_lp_threshold
+                extension_seconds: uint256 = min(relative_lp_add * protection_period // self.donation_protection_lp_threshold, protection_period)
                 current_expiry: uint256 = max(self.donation_protection_expiry_ts, block.timestamp)
                 new_expiry: uint256 = min(current_expiry + extension_seconds, block.timestamp + protection_period)
                 self.donation_protection_expiry_ts = new_expiry
