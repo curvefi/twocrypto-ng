@@ -518,7 +518,7 @@ def add_liquidity(
     d_token_fee: uint256 = 0
     if old_D > 0:
         d_token_fee = (
-            self._calc_token_fee(amountsp, xp, donation) * d_token // 10**10 + 1
+            self._calc_token_fee(amounts_received, xp, donation) * d_token // 10**10 + 1
         ) # for donations - we only take NOISE_FEE (check _calc_token_fee)
         d_token -= d_token_fee
         token_supply += d_token
@@ -1367,7 +1367,21 @@ def _xcp(D: uint256, price_scale: uint256) -> uint256:
 
 @internal
 @view
-def _calc_token_fee(amounts: uint256[N_COINS], xp: uint256[N_COINS], donation: bool = False) -> uint256:
+def _calc_token_fee(amounts: uint256[N_COINS], xp: uint256[N_COINS], donation: bool = False, from_view: bool = False) -> uint256:
+    surplus_amounts: uint256[N_COINS] = amounts
+    if from_view:
+        # When calling from the view contract no liquidity has been
+        # added to the balances.
+        surplus_amounts = [0, 0]
+
+    # the ratio of the balances before the liquidity operation
+    # balances[0] / balances[1] (adjusted for fixed precisions)
+    balances_ratio: uint256 = (self.balances[0] - surplus_amounts[0]) * PRECISIONS[0] * PRECISION // ((self.balances[1] - surplus_amounts[1]) * PRECISIONS[1])
+    # amounts only here use the balances ratio to scale the amounts and not
+    # the price scale, this is because we want to calculate the fee based on
+    # the impact on the spot balances and not the price scale.
+    amounts = self._xp(amounts, balances_ratio)
+
     if donation:
         # Donation fees are 0, but NOISE_FEE is required for numerical stability
         return NOISE_FEE
@@ -1481,9 +1495,17 @@ def _calc_withdraw_fixed_out(
     amountsp[j] = xp[j] - y
     xp_new[j] = y
 
+    # _calc_token_fee expects unscaled amounts and without decimals
+    # adjustments.
+    amounts: uint256[N_COINS] = empty(uint256[N_COINS])
+    amounts[i] = amount_i
+    if i == 0:
+        amounts[1] = amountsp[1] // PRECISIONS[1] * PRECISION // price_scales[1]
+    else:
+        amounts[0] = amountsp[0] // PRECISIONS[0]
     # The only way to compute the fees is to simulate a withdrawal as we have done
     # above and then rewind and apply the fees.
-    approx_fee: uint256 = self._calc_token_fee(amountsp, xp_new)
+    approx_fee: uint256 = self._calc_token_fee(amounts, xp_new)
     dD -= dD * approx_fee // 10**10 + 1
 
     # Same reasoning as before except now we're charging fees.
@@ -1775,12 +1797,12 @@ def calc_token_fee(
 ) -> uint256:
     """
     @notice Returns the fee charged on the given amounts for add_liquidity.
-    @param amounts The amounts of coins being added to the pool.
+    @param amounts The amounts of coins being added to the pool (unscaled).
     @param xp The current balances of the pool multiplied by coin precisions.
     @param donation Whether the liquidity is a donation, if True only NOISE_FEE is charged.
     @return uint256 Fee charged.
     """
-    return self._calc_token_fee(amounts, xp, donation)
+    return self._calc_token_fee(amounts, xp, donation, True)
 
 
 @view

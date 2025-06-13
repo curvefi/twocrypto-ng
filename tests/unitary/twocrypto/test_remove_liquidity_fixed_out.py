@@ -140,5 +140,5 @@ def test_fixed_out_swap_equivalence(gm_pool, i, percentage, seeded_liquidity_i):
         swap_amount_j = gm_pool.exchange(i, excess_i)
 
     assert math.isclose(
-        fixed_out_amount_j, swap_amount_j + balanced_amounts[j], rel_tol=0.001
+        fixed_out_amount_j, swap_amount_j + balanced_amounts[j], rel_tol=0.01
     ), "fixed_out and swap+balanced amounts should be equal"

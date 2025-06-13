@@ -28,6 +28,11 @@ class GodModePool:
             return self.coins
         return self.coins[i]
 
+    def balances(self, i=None):
+        if i is None:
+            return [self.instance.balances(j) for j in range(N_COINS)]
+        return self.instance.balances(i)
+
     def donate(self, amounts, slippage=0, update_ema=False, sender=god):
         self.__premint_amounts(amounts, to=sender)
 
