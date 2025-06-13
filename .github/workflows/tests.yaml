@@ -14,7 +14,7 @@ jobs:
         folder:
           - "tests/unitary"
           - "tests/fuzzing"
-          # - "tests/stateful"
+          - "tests/stateful"
           # - "tests/integration"
     steps:
       - name: Checkout repo

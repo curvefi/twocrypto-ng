@@ -4,6 +4,7 @@ from hypothesis.stateful import precondition, rule
 from hypothesis.strategies import data, floats, integers, sampled_from
 from stateful_base import StatefulBase
 
+from tests.unitary.factory.test_deploy_pool import ZERO_ADDRESS
 from tests.utils.constants import MAX_A, MAX_GAMMA, MIN_A, MIN_GAMMA, UNIX_DAY
 from tests.utils.strategies import address
 
@@ -327,7 +328,7 @@ class DonateStateful(ImbalancedLiquidityStateful):
         # from the initial deposit that can be up to 1e30 to avoid
         # breaking newton_D
         amount=integers(min_value=int(1e20), max_value=int(1e25)),
-        user=address,
+        user=address.filter(lambda x: x == ZERO_ADDRESS),
     )
     def donate_balanced(self, amount: int, user: str):
         note("[BALANCED DONATION]")
@@ -349,7 +350,7 @@ class DonateStateful(ImbalancedLiquidityStateful):
     @rule(
         data=data(),
         imbalance_ratio=floats(min_value=0, max_value=1),
-        user=address,
+        user=address.filter(lambda x: x == ZERO_ADDRESS),
     )
     def donate_imbalanced(self, data, imbalance_ratio, user: str):
         note("[IMBALANCED DONATION]")
