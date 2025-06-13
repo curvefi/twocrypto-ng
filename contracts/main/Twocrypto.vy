@@ -200,7 +200,7 @@ A_MULTIPLIER: constant(uint256) = 10000
 # A is scaled by N_COINS in context of StableswapMath.vy
 # So A := A_true * N_COINS
 MIN_A: constant(uint256) = N_COINS**(N_COINS-1) * A_MULTIPLIER // 10
-MAX_A: constant(uint256) = N_COINS**(N_COINS-1) * A_MULTIPLIER * 1000
+MAX_A: constant(uint256) = N_COINS**(N_COINS-0) * A_MULTIPLIER * 1000 #relax max constraint
 MAX_PARAM_CHANGE: constant(uint256) = 10
 MIN_GAMMA: constant(uint256) = 10**10
 MAX_GAMMA: constant(uint256) = 199 * 10**15 # 1.99 * 10**17
