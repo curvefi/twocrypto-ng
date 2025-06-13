@@ -100,9 +100,11 @@ class GodModePool:
 
         return amount_i_received
 
-    def remove_liquidity_fixed_out(self, lp_token_amount, i, amount_i, update_ema=False):
+    def remove_liquidity_fixed_out(
+        self, lp_token_amount, i, amount_i, min_amount_j=0, update_ema=False
+    ):
         amount_j_received = self.instance.remove_liquidity_fixed_out(
-            lp_token_amount, i, amount_i, 0
+            lp_token_amount, i, amount_i, min_amount_j
         )
 
         if update_ema:
