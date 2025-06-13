@@ -541,7 +541,6 @@ def add_liquidity(
             self._calc_token_fee(amounts_received, xp, donation) * d_token // 10**10 + 1
         ) # for donations - we only take NOISE_FEE (check _calc_token_fee)
         d_token -= d_token_fee
-        token_supply += d_token
 
         if donation:
             assert receiver == empty(address), "nonzero receiver"
@@ -599,7 +598,6 @@ def add_liquidity(
 
                     if spam_penalty > 0:
                         d_token -= spam_penalty
-                        token_supply -= spam_penalty
 
             # Regular liquidity addition
             self.mint(receiver, d_token)
@@ -624,7 +622,7 @@ def add_liquidity(
         receiver=receiver,
         token_amounts=amounts_received,
         fee=d_token_fee,
-        token_supply=token_supply,
+        token_supply=token_supply+d_token,
         price_scale=price_scale
     )
 
