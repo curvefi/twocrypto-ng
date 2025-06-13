@@ -72,7 +72,7 @@ event TokenExchange:
     price_scale: uint256
 
 event AddLiquidity:
-    provider: indexed(address)
+    receiver: indexed(address)
     token_amounts: uint256[N_COINS]
     fee: uint256
     token_supply: uint256
@@ -86,14 +86,6 @@ event RemoveLiquidity:
     provider: indexed(address)
     token_amounts: uint256[N_COINS]
     token_supply: uint256
-
-event RemoveLiquidityOne:
-    provider: indexed(address)
-    token_amount: uint256
-    coin_index: uint256
-    coin_amount: uint256
-    approx_fee: uint256
-    price_scale: uint256
 
 event RemoveLiquidityImbalance:
     provider: indexed(address)
@@ -151,7 +143,7 @@ cached_price_scale: uint256  # <------------------------ Internal price scale.
 cached_price_oracle: uint256  # <------- Price target given by moving average.
 
 last_prices: public(uint256)
-last_timestamp: public(uint256)    # idx 0 is for prices, idx 1 is for xcp.
+last_timestamp: public(uint256)
 
 initial_A_gamma: public(uint256)
 initial_A_gamma_time: public(uint256)
@@ -206,7 +198,7 @@ MIN_ADMIN_FEE_CLAIM_INTERVAL: constant(uint256) = 86400
 A_MULTIPLIER: constant(uint256) = 10000
 MIN_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER // 10
 MAX_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER * 1000
-MAX_A_CHANGE: constant(uint256) = 10
+MAX_PARAM_CHANGE: constant(uint256) = 10
 MIN_GAMMA: constant(uint256) = 10**10
 MAX_GAMMA: constant(uint256) = 199 * 10**15 # 1.99 * 10**17
 
@@ -493,7 +485,7 @@ def add_liquidity(
     @param min_mint_amount Minimum amount of LP to mint.
     @param receiver Address to send the LP tokens to. Default is msg.sender
     @param donation Whether the liquidity is a donation, if True receiver is ignored.
-    @return uint256 Amount of LP tokens received by the `receiver
+    @return uint256 Amount of LP tokens issued (to receiver or donation buffer).
     """
 
 
@@ -631,7 +623,7 @@ def add_liquidity(
     # ---------------------------------------------- Log and claim admin fees.
 
     log AddLiquidity(
-        provider=receiver,
+        receiver=receiver,
         token_amounts=amounts_received,
         fee=d_token_fee,
         token_supply=token_supply,
@@ -817,7 +809,7 @@ def _remove_liquidity_fixed_out(
         provider=msg.sender,
         lp_token_amount=token_amount,
         token_amounts=token_amounts,
-        approx_fee=approx_fee * token_amount // PRECISION,
+        approx_fee=approx_fee * token_amount // 10**10 + 1,
         price_scale=price_scale
     )
 
@@ -836,25 +828,27 @@ def _withdraw_leftover_donations():
     @dev donations go to the factory fees receiver, if not set, to the admin.
     """
 
-    if self.donation_shares == self.totalSupply:
-        # Pool has no other LP than donation shares, must be emptied
-        receiver: address = staticcall factory.fee_receiver()
-        if receiver == empty(address):
-            receiver = staticcall factory.admin()
+    if self.donation_shares != self.totalSupply:
+        return
 
-        # empty the pool
-        withdraw_amounts: uint256[N_COINS] = self.balances
+    # Pool has no other LP than donation shares, must be emptied
+    receiver: address = staticcall factory.fee_receiver()
+    if receiver == empty(address):
+        receiver = staticcall factory.admin()
 
-        for i: uint256 in range(N_COINS):
-            # updates self.balances here
-            self._transfer_out(i, withdraw_amounts[i], receiver)
+    # empty the pool
+    withdraw_amounts: uint256[N_COINS] = self.balances
 
-        # Update state
-        self.donation_shares = 0
-        self.totalSupply = 0
-        self.D = 0
+    for i: uint256 in range(N_COINS):
+        # updates self.balances here
+        self._transfer_out(i, withdraw_amounts[i], receiver)
 
-        log RemoveLiquidity(provider=receiver, token_amounts=withdraw_amounts, token_supply=0)
+    # Update state
+    self.donation_shares = 0
+    self.totalSupply = 0
+    self.D = 0
+
+    log RemoveLiquidity(provider=receiver, token_amounts=withdraw_amounts, token_supply=0)
 
 
 # -------------------------- Packing functions -------------------------------
@@ -981,7 +975,8 @@ def tweak_price(
     @dev Contains main liquidity rebalancing logic, by tweaking `price_scale`.
     @param A_gamma Array of A and gamma parameters.
     @param _xp Array of current balances.
-    @param new_D New D value.
+    @param D New D value.
+    @return uint256 The new price_scale.
     """
 
     # ---------------------------- Read storage ------------------------------
@@ -1324,11 +1319,12 @@ def _is_ramping() -> bool:
     return self.future_A_gamma_time > block.timestamp
 
 @internal
+@view
 def _check_admin():
     assert msg.sender == staticcall factory.admin(), "only owner"
 
-@view
 @internal
+@view
 def _A_gamma() -> uint256[2]:
     t1: uint256 = self.future_A_gamma_time
 
@@ -1373,14 +1369,6 @@ def _fee(xp: uint256[N_COINS]) -> uint256:
 
     # mid_fee * B + out_fee * (1 - B)
     return unsafe_div(fee_params[0] * B + fee_params[1] * (10**18 - B), 10**18)
-
-
-@internal
-@pure
-def _D_from_xcp(xcp: uint256, price_scale: uint256) -> uint256:
-    # For N_COINS=2 xcp equals to D // (N_COINS * √price_scale), this is just
-    # the inverse of the formula used in `_xcp`.
-    return xcp * N_COINS * isqrt(price_scale * PRECISION) // PRECISION
 
 
 @internal
@@ -1432,8 +1420,8 @@ def _xcp(D: uint256, price_scale: uint256) -> uint256:
     return D * PRECISION // N_COINS // isqrt(PRECISION * price_scale)
 
 
-@view
 @internal
+@view
 def _calc_token_fee(amounts: uint256[N_COINS], xp: uint256[N_COINS], donation: bool = False) -> uint256:
     if donation:
         # Donation fees are 0, but NOISE_FEE is required for numerical stability
@@ -1982,12 +1970,12 @@ def ramp_A_gamma(
     assert future_gamma < MAX_GAMMA + 1, "gamme>max"
 
     ratio: uint256 = 10**18 * future_A // A_gamma[0]
-    assert ratio < 10**18 * MAX_A_CHANGE + 1, "A change too high"
-    assert ratio > 10**18 // MAX_A_CHANGE - 1, "A change too low"
+    assert ratio < 10**18 * MAX_PARAM_CHANGE + 1, "A change too high"
+    assert ratio > 10**18 // MAX_PARAM_CHANGE - 1, "A change too low"
 
     ratio = 10**18 * future_gamma // A_gamma[1]
-    assert ratio < 10**18 * MAX_A_CHANGE + 1, "gamma change too high"
-    assert ratio > 10**18 // MAX_A_CHANGE - 1, "gamma change too low"
+    assert ratio < 10**18 * MAX_PARAM_CHANGE + 1, "gamma change too high"
+    assert ratio > 10**18 // MAX_PARAM_CHANGE - 1, "gamma change too low"
 
     self.initial_A_gamma = initial_A_gamma
     self.initial_A_gamma_time = block.timestamp
@@ -2111,6 +2099,11 @@ def apply_new_parameters(
 
 @external
 def set_donation_duration(duration: uint256):
+    """
+    @notice Set the donation duration.
+    @param duration The new donation duration.
+    @dev The time required for donations to fully release from locked state.
+    """
     self._check_admin()
     assert duration > 0, "duration must be positive"
     self.donation_duration = duration

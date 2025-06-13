@@ -12,9 +12,6 @@ from snekmate.utils import math
 # MAX_GAMMA_SMALL: constant(uint256) = 2 * 10**16
 # MAX_GAMMA: constant(uint256) = 199 * 10**15 # 1.99 * 10**17
 
-MIN_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER // 10
-MAX_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER * 1000
-
 N_COINS: constant(uint256) = 2
 A_MULTIPLIER: constant(uint256) = 10000
 
@@ -70,7 +67,7 @@ def get_y(
 
 
 @external
-@view
+@pure
 def newton_D(_amp: uint256,
     gamma: uint256, # unused, present for compatibility with twocrypto
     _xp: uint256[N_COINS],
@@ -122,7 +119,7 @@ def newton_D(_amp: uint256,
 
 
 @external
-@view
+@pure
 def get_p(
     _xp: uint256[N_COINS], _D: uint256, _A_gamma: uint256[N_COINS]
 ) -> uint256:
@@ -147,5 +144,7 @@ def get_p(
 
 @external
 @pure
-def wad_exp(x: int256) -> int256:
-    return math._wad_exp(x)
+def wad_exp(x: int256) -> uint256:
+    # Explicitly cast the result to uint256 as wad_exp always returns positive values
+    # This avoids implicit cast confusion between int256 and uint256
+    return convert(math._wad_exp(x), uint256)
