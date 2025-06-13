@@ -3,6 +3,7 @@ import pytest
 
 from tests.utils.constants import N_COINS
 from tests.utils.god_mode import GodModePool
+import numpy as np
 
 PRECISION = 10**18
 INITIAL_LIQUIDITY_COIN0 = 1000 * PRECISION  # Amount of coin 0 for initial balanced liquidity
@@ -350,3 +351,46 @@ def test_pool_reinitialization_after_full_user_withdrawal(pool, coins, bob, dona
     ), "Pool XCP_A not reinitialized to PRECISION after Bob's deposit."
     assert pool.D() > 0, "Pool D is not > 0 after Bob's deposit."
     assert pool.totalSupply() > 0, "Pool totalSupply is not > 0 after Bob's deposit."
+
+
+@pytest.mark.parametrize("i", range(N_COINS))
+def test_no_fee_discount_with_remove_liquidity(pool, i):
+    pool = GodModePool(pool)
+
+    print("======= seeding liquidity")
+    initial_liquidity = 1_000_000 * PRECISION
+    initial_liquidity = np.array(pool.compute_balanced_amounts(initial_liquidity))
+    pool.add_liquidity(initial_liquidity.tolist())
+
+    print("======= swap")
+    # we imbalance the pool because without updating the tweak price not
+    # to trigger rebalances. It is the divergence between price scale and
+    # spot price that creates the fee discount.
+    pool.exchange(i, int(0.45 * initial_liquidity[i]))
+
+    ps_balanced_amounts = pool.compute_balanced_amounts(int(initial_liquidity[i] * 0.5))
+    with boa.env.anchor():
+        print("====== add+remove liquidity")
+        lp_tokens = pool.add_liquidity(ps_balanced_amounts)
+        spot_balanced_amounts = pool.remove_liquidity(lp_tokens, [0, 0])
+
+    ps_balanced_np = np.array(ps_balanced_amounts)
+    spot_balanced_np = np.array(spot_balanced_amounts)
+    delta = spot_balanced_np - ps_balanced_np
+    print(f"Balances delta: {delta / PRECISION}")
+
+    swapped_amount = abs(min(delta))
+    print(
+        f"This is equivalent to swapping (i) {swapped_amount/PRECISION:.5f} -> (j) {max(delta)/PRECISION:.5f}"
+    )
+
+    with boa.env.anchor():
+        print("======= check swap")
+        # index of swapped_amount in delta
+        i = int(np.where(delta == min(delta))[0][0])
+        out_amount = pool.exchange(i, swapped_amount)
+    print(
+        f"            Actual swap led to (i) {swapped_amount/PRECISION:.5f} -> (j) {out_amount/PRECISION:.5f}"
+    )
+
+    assert out_amount >= delta[1 - i], "add+remove is getting a discount on fees"
