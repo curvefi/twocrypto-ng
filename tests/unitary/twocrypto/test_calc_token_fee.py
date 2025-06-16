@@ -1,6 +1,19 @@
 from tests.utils.god_mode import GodModePool
 from tests.utils.constants import N_COINS, NOISE_FEE
 import pytest
+import boa
+
+INITIAL_LIQUIDITY = 1000 * 10**18
+
+
+@pytest.fixture(scope="module")
+def user_account():
+    return boa.env.generate_address()
+
+
+@pytest.fixture(scope="module")
+def bob():
+    return boa.env.generate_address()
 
 
 @pytest.mark.parametrize("i", range(N_COINS))
@@ -63,3 +76,44 @@ def test_donation_mode(pool):
         [1, 1],
         True,
     )
+
+
+def test_calc_token_fee_view_donation_protection(pool, user_account, bob):
+    gm_pool = GodModePool(pool)
+    # 1. user_account adds initial liquidity. This seeds the pool.
+    user_adds_amounts = gm_pool.compute_balanced_amounts(INITIAL_LIQUIDITY)
+    gm_pool.premint_amounts(user_adds_amounts, to=user_account)
+    pool.add_liquidity(user_adds_amounts, 0, sender=user_account)
+    assert pool.donation_protection_expiry_ts() == boa.env.evm.patch.timestamp
+
+    # 2. bob adds liquidity right after, triggering protection.
+    bob_adds_amounts = gm_pool.compute_balanced_amounts(INITIAL_LIQUIDITY)
+    gm_pool.premint_amounts(bob_adds_amounts, to=bob)
+    pool.add_liquidity(bob_adds_amounts, 0, sender=bob)
+    assert pool.donation_protection_expiry_ts() > boa.env.evm.patch.timestamp
+
+    # 3. charlie is our test case. Prepare his deposit details.
+    charlie_adds_amounts = gm_pool.compute_balanced_amounts(INITIAL_LIQUIDITY // 10)
+    # 4. Get the initial fee right after protection is triggered. It should be high.
+    last_fee = pool.calc_token_fee(charlie_adds_amounts, gm_pool.xp(), False, True)
+    assert last_fee > 0
+
+    # 5. Loop through time and assert the fee decreases.
+    protection_period = pool.donation_protection_period()
+    steps = 10
+    time_step = protection_period // steps
+
+    for _ in range(steps - 1):
+        boa.env.time_travel(seconds=time_step)
+        current_fee = pool.calc_token_fee(charlie_adds_amounts, gm_pool.xp(), False, True)
+        assert current_fee < last_fee
+        last_fee = current_fee
+
+    # 6. Travel past the protection period.
+    boa.env.time_travel(seconds=time_step + 1)
+
+    # 7. Check the fee is now the base fee.
+    final_fee = pool.calc_token_fee(charlie_adds_amounts, gm_pool.xp(), False, True)
+    base_fee = pool.calc_token_fee(charlie_adds_amounts, gm_pool.xp(), False, False)
+    assert final_fee == pytest.approx(base_fee)
+    assert final_fee < last_fee
