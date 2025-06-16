@@ -1,6 +1,9 @@
 import boa
 from tests.utils.constants import N_COINS
 from pytest import fixture, approx
+import pytest
+
+boa.env.evm.patch.code_size_limit = 1000000  # Increase code size limit for deployment
 
 
 def test_cant_donate_on_empty_pool(gm_pool):
@@ -154,9 +157,23 @@ def test_remove_liquidity_affected_by_donations(gm_pool_with_liquidity):
         assert expected < actual, "user gets more tokens due to noise fee"
 
 
-def test_donation_improves_swap_liquidity():
-    # TODO simple test where we check that a donation give a better price for a swap
-    pass
+@pytest.mark.parametrize("i", range(N_COINS))
+def test_donation_improves_swap_liquidity(gm_pool_with_liquidity, i):
+    pool = gm_pool_with_liquidity
+
+    AMOUNT = 10**18
+
+    with boa.env.anchor():
+        pre_donation_dy = pool.exchange(i, AMOUNT)
+
+    pool.donate_balanced(10**18)
+
+    with boa.env.anchor():
+        post_donation_dy = pool.exchange(i, AMOUNT)
+
+    assert (
+        post_donation_dy > pre_donation_dy
+    ), "donation should improve swap liquidity, dy should increase"
 
 
 def test_donation_improves_rebalance(gm_pool):
@@ -253,3 +270,146 @@ def test_donation_improves_rebalance_onesided(gm_pool):
     for donate, (n_rebalances, ps) in res_dict.items():
         print(f"Donation: {donate}, rebalances: {n_rebalances}, ps: {ps}")
     assert n_rb[1] >= n_rb[0], "donation should increase the number of rebalances"
+
+
+def test_withdraw_leftover_donations(gm_pool_with_liquidity, fee_receiver):
+    pool = gm_pool_with_liquidity
+    user = boa.env.eoa
+    lp_balance = pool.balanceOf(user)
+    assert lp_balance > 0
+
+    # Donate to the pool
+    donation_amount = 100 * 10**18
+    pool.donate_balanced(donation_amount)
+    assert pool.donation_shares() > 0
+    donation_shares = pool.donation_shares()
+    total_supply_before_withdraw = pool.totalSupply()
+
+    initial_lp_balance = total_supply_before_withdraw - donation_shares
+    assert lp_balance == initial_lp_balance
+
+    # Record balances before user withdraws all liquidity
+    balances_before_withdraw = [pool.balances(i) for i in range(N_COINS)]
+
+    receiver_balances_before = [c.balanceOf(fee_receiver) for c in pool.coins]
+
+    # User removes all their liquidity. The GodModePool helper sends from eoa.
+    user_withdraw_amounts = pool.remove_liquidity(lp_balance, [0, 0])
+
+    # Check that user received their share of the pool
+    assert pool.balanceOf(user) == 0
+    for i in range(N_COINS):
+        expected_amount = balances_before_withdraw[i] * lp_balance // total_supply_before_withdraw
+        assert user_withdraw_amounts[i] == expected_amount
+
+    # After user withdrawal, _withdraw_leftover_donations should be called
+    # Check pool state is reset
+    assert pool.donation_shares() == 0
+    assert pool.totalSupply() == 0
+    assert pool.D() == 0
+    for i in range(N_COINS):
+        assert pool.balances(i) == 0
+
+    # Check that fee receiver got the leftover funds (the donation)
+    receiver_balances_after = [c.balanceOf(fee_receiver) for c in pool.coins]
+    for i in range(N_COINS):
+        leftover_amount = balances_before_withdraw[i] - user_withdraw_amounts[i]
+        assert receiver_balances_after[i] == receiver_balances_before[i] + leftover_amount
+        assert leftover_amount > 0
+
+    # Check pool is not blocked and can receive new liquidity
+    new_user = boa.env.generate_address()
+    new_liquidity = 500 * 10**18
+    # Bypassing harness here because it mints to eoa.
+    amounts = pool.compute_balanced_amounts(new_liquidity)
+    for i, c in enumerate(pool.coins):
+        boa.deal(c, new_user, amounts[i])
+
+    with boa.env.prank(new_user):
+        for i, c in enumerate(pool.coins):
+            c.approve(pool.instance, amounts[i])
+        new_lp_tokens = pool.instance.add_liquidity(amounts, 0)
+
+    assert pool.balanceOf(new_user) == new_lp_tokens
+    assert new_lp_tokens > 0
+    assert pool.totalSupply() > 0
+    assert pool.D() > 0
+
+
+def test_remove_after_rebalancing(gm_pool):
+    # This test simulates a sandwich attack where a user front-runs
+    # a rebalancing event to extract value.
+
+    # Pool Setup & Initial Liquidity
+    initial_amount = 400_000 * 10**18
+    gm_pool.add_liquidity_balanced(initial_amount)
+
+    # Phase 1: Donation
+    # A donation is made, which increases the pool's assets without minting
+    # corresponding LP tokens for a regular user. This profit is meant
+    # to be socialized over time, but this attack tries to capture it.
+    donation_amount = 200_000 * 10**18
+    gm_pool.donate_balanced(donation_amount)
+
+    # Phase 2: Unbalance the Pool
+    # A large swap unbalances the pool.
+    exchange_amount = 200_000 * 10**18
+    # exchange from random address to preserve null balances
+    gm_pool.exchange(0, exchange_amount, sender=boa.env.generate_address())
+
+    # Phase 3: Manipulate Oracle and Time Travel
+    # Attacker anticipates a price change and sees an opportunity.
+    # We simulate this by moving time forward and directly setting the
+    # oracle price that the pool will read.
+
+    # raise price to induce rebalancing
+    new_oracle_price = int(gm_pool.price_scale() * 1.3)
+    gm_pool.eval(f"self.last_prices = {new_oracle_price}")
+    gm_pool.eval(f"self.cached_price_oracle = {new_oracle_price}")
+
+    # Time travel 1 week to make the new oracle price effective for rebalancing.
+    week_in_seconds = 86400 * 7
+    boa.env.time_travel(seconds=week_in_seconds)
+    bals = [gm_pool.coins[i].balanceOf(gm_pool.god) for i in range(N_COINS)]
+    assert bals[0] == bals[1] == 0, "Balances should be 0"
+    # Phase 4: Add Liquidity (Attacker front-runs rebalancing)
+    # The attacker adds liquidity, which will trigger a rebalancing operation
+    # due to the oracle price change.
+
+    # donation_shares_pre = gm_pool.donation_shares()
+    attacker_add_liquidity_amount_coin0 = 500_000 * 10**18
+    # pool is imbalanced, and we add proportionally disbalanced liquidity
+    pool_balances = [gm_pool.coins[i].balanceOf(gm_pool) for i in range(N_COINS)]
+    fraction = (
+        attacker_add_liquidity_amount_coin0 / pool_balances[0]
+    )  # rate of coin0 to pool balance
+    attacker_amounts = [
+        int(pool_balances[0] * fraction),
+        int(pool_balances[1] * fraction),
+    ]  # proportionally disbalanced lp
+
+    # attacker_amounts = gm_pool.compute_balanced_amounts(attacker_add_liquidity_amount_coin0)
+    lp_tokens_received = gm_pool.add_liquidity(attacker_amounts, donate=False)
+    # assert ( # can conditional if and .eval(_tweak_price too)
+    #     gm_pool.price_scale() != price_scale_before_attack
+    # ), "Rebalancing should have occurred"
+    # assert gm_pool.donation_shares() < donation_shares_pre, "Donation shares should decrease"
+
+    # Phase 5: Remove Liquidity and Calculate Profit
+    # Attacker removes liquidity immediately after the rebalancing.
+    assets_received = gm_pool.remove_liquidity(lp_tokens_received, [0, 0])
+
+    # Calculate the net gain/loss in tokens, same as in the script.
+    delta_coin0 = assets_received[0] - attacker_amounts[0]
+    delta_coin1 = assets_received[1] - attacker_amounts[1]
+    rel_delta_coin0 = delta_coin0 / attacker_amounts[0]
+    rel_delta_coin1 = delta_coin1 / attacker_amounts[1]
+    print(f"Rel delta coin0: {rel_delta_coin0:.2%}, Rel delta coin1: {rel_delta_coin1:.2%}")
+    assert (
+        delta_coin0 <= 0 and delta_coin1 <= 0
+    ), f"Attacker shouldn't have a net positive return. Deltas: {delta_coin0}, {delta_coin1}"
+    # if delta_coin0 > 0 or delta_coin1 > 0:
+    #     print("Profit")
+    # else:
+    #     print("No profit")
+    # print(f"Delta coin0: {delta_coin0}, Delta coin1: {delta_coin1}")
