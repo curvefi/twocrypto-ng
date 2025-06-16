@@ -33,8 +33,11 @@ class GodModePool:
             return [self.instance.balances(j) for j in range(N_COINS)]
         return self.instance.balances(i)
 
+    def xp(self):
+        return self.instance.internal._xp(self.balances(), self.instance.price_scale())
+
     def donate(self, amounts, slippage=0, update_ema=False, sender=god):
-        self.__premint_amounts(amounts, to=sender)
+        self.premint_amounts(amounts, to=sender)
 
         shares = self.instance.add_liquidity(
             amounts, slippage, boa.eval("empty(address)"), True, sender=sender
@@ -54,7 +57,7 @@ class GodModePool:
             amounts = [dx, 0]
         else:
             amounts = [0, dx]
-        self.__premint_amounts(amounts, to=sender)
+        self.premint_amounts(amounts, to=sender)
         if indicate_rebalance:
             price_scale_pre = self.instance.price_scale()
         dy = self.instance.exchange(i, 1 - i, dx, 0, sender=sender)
@@ -69,7 +72,7 @@ class GodModePool:
         return dy
 
     def add_liquidity(self, amounts, update_ema=False, donate=False):
-        self.__premint_amounts(amounts)
+        self.premint_amounts(amounts)
         receiver = boa.eval("empty(address)") if donate else boa.env.eoa
 
         lp_tokens_received = self.instance.add_liquidity(amounts, 0, receiver, donate, sender=god)
@@ -138,7 +141,7 @@ class GodModePool:
             "coin1_balance": self.instance.balances(1),
         }
 
-    def __premint_amounts(self, amounts, to=god):
+    def premint_amounts(self, amounts, to=god):
         for c, amount in zip(self.coins, amounts):
             boa.deal(c, to, amount)
             c.approve(self.instance, amount, sender=to)

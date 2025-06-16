@@ -19,7 +19,7 @@ interface Curve:
     def D() -> uint256: view
     def fee_calc(xp: uint256[N_COINS]) -> uint256: view
     def calc_token_fee(
-        amounts: uint256[N_COINS], xp: uint256[N_COINS], donation: bool = False
+        amounts: uint256[N_COINS], xp: uint256[N_COINS], donation: bool = False, deposit: bool = False
     ) -> uint256: view
     def future_A_gamma_time() -> uint256: view
     def totalSupply() -> uint256: view
@@ -104,7 +104,7 @@ def calc_token_amount(
 
     d_token, amountsp, xp = self._calc_dtoken_nofee(amounts, deposit, swap)
     d_token -= (
-        staticcall Curve(swap).calc_token_fee(amountsp, xp, donation) * d_token // 10**10 + 1
+        staticcall Curve(swap).calc_token_fee(amounts, xp, donation, deposit) * d_token // 10**10 + 1
     )
 
     return d_token
@@ -142,7 +142,7 @@ def calc_fee_token_amount(
     xp: uint256[N_COINS] = empty(uint256[N_COINS])
     d_token, amountsp, xp = self._calc_dtoken_nofee(amounts, deposit, swap)
 
-    return (staticcall Curve(swap).calc_token_fee(amountsp, xp, donation)) * d_token // 10**10 + 1
+    return (staticcall Curve(swap).calc_token_fee(amounts, xp, donation, deposit)) * d_token // 10**10 + 1
 
 
 @internal

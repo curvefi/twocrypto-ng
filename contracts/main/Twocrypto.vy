@@ -538,7 +538,7 @@ def add_liquidity(
     d_token_fee: uint256 = 0
     if old_D > 0:
         d_token_fee = (
-            self._calc_token_fee(amounts_received, xp, donation) * d_token // 10**10 + 1
+            self._calc_token_fee(amounts_received, xp, donation, True) * d_token // 10**10 + 1
         ) # for donations - we only take NOISE_FEE (check _calc_token_fee)
         d_token -= d_token_fee
 
@@ -575,29 +575,12 @@ def add_liquidity(
             # A penalty is applied for extending the protection to disincentivize spamming.
             relative_lp_add: uint256 = d_token * PRECISION // token_supply
             if relative_lp_add > 0:  # sub-precision additions are expensive to stack
-                # 1. Extend protection period
+                # Extend protection period
                 protection_period: uint256 = self.donation_protection_period
                 extension_seconds: uint256 = min(relative_lp_add * protection_period // self.donation_protection_lp_threshold, protection_period)
                 current_expiry: uint256 = max(self.donation_protection_expiry_ts, block.timestamp)
                 new_expiry: uint256 = min(current_expiry + extension_seconds, block.timestamp + protection_period)
                 self.donation_protection_expiry_ts = new_expiry
-
-                # 2. Apply spam penalty
-                if current_expiry > block.timestamp:
-                    # The penalty is proportional to the remaining protection time and the current pool fee.
-                    protection_factor: uint256 = (current_expiry - block.timestamp) * PRECISION // protection_period
-                    base_penalty_rate: uint256 = protection_factor * self._fee(xp) // PRECISION
-
-                    # The total penalty is calculated on the amount of LP tokens before any fees.
-                    total_penalty_lp: uint256 = base_penalty_rate * (d_token + d_token_fee) // 10**10
-
-                    # We only apply the part of the penalty that exceeds the imbalance fee already charged.
-                    spam_penalty: uint256 = 0
-                    if total_penalty_lp > d_token_fee:
-                        spam_penalty = total_penalty_lp - d_token_fee
-
-                    if spam_penalty > 0:
-                        d_token -= spam_penalty
 
             # Regular liquidity addition
             self.mint(receiver, d_token)
@@ -1418,7 +1401,11 @@ def _xcp(D: uint256, price_scale: uint256) -> uint256:
 
 @internal
 @view
-def _calc_token_fee(amounts: uint256[N_COINS], xp: uint256[N_COINS], donation: bool = False, from_view: bool = False) -> uint256:
+def _calc_token_fee(amounts: uint256[N_COINS],
+                    xp: uint256[N_COINS],
+                    donation: bool = False,
+                    deposit: bool = False,
+                    from_view: bool = False) -> uint256:
 
     if donation:
         # Donation fees are 0, but NOISE_FEE is required for numerical stability
@@ -1458,7 +1445,16 @@ def _calc_token_fee(amounts: uint256[N_COINS], xp: uint256[N_COINS], donation: b
         else:
             Sdiff += unsafe_sub(avg, _x)
 
-    return fee * Sdiff // S + NOISE_FEE
+    lp_spam_penalty_fee: uint256 = 0
+    if deposit:
+        # Penalty fee for spamming add_liquidity into the pool
+        current_expiry: uint256 = self.donation_protection_expiry_ts
+        if current_expiry > block.timestamp:
+            # The penalty is proportional to the remaining protection time and the current pool fee.
+            protection_factor: uint256 = min((current_expiry - block.timestamp) * PRECISION // self.donation_protection_period, PRECISION)
+            lp_spam_penalty_fee = protection_factor * fee // PRECISION
+
+    return fee * Sdiff // S + NOISE_FEE + lp_spam_penalty_fee
 
 @view
 @external
@@ -1846,16 +1842,18 @@ def fee() -> uint256:
 @external
 @view
 def calc_token_fee(
-    amounts: uint256[N_COINS], xp: uint256[N_COINS], donation: bool = False
+    amounts: uint256[N_COINS], xp: uint256[N_COINS], donation: bool = False, deposit: bool = False
 ) -> uint256:
     """
     @notice Returns the fee charged on the given amounts for add_liquidity.
     @param amounts The amounts of coins being added to the pool (unscaled).
     @param xp The current balances of the pool multiplied by coin precisions.
     @param donation Whether the liquidity is a donation, if True only NOISE_FEE is charged.
+    @param deposit Whether the liquidity is a deposit.
     @return uint256 Fee charged.
     """
-    return self._calc_token_fee(amounts, xp, donation, True)
+    # last True is for from_view
+    return self._calc_token_fee(amounts, xp, donation, deposit, True)
 
 
 @view
