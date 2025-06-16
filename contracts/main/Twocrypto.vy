@@ -538,7 +538,7 @@ def add_liquidity(
     d_token_fee: uint256 = 0
     if old_D > 0:
         d_token_fee = (
-            self._calc_token_fee(amounts_received, xp, donation) * d_token // 10**10 + 1
+            self._calc_token_fee(amounts_received, xp, donation, True) * d_token // 10**10 + 1
         ) # for donations - we only take NOISE_FEE (check _calc_token_fee)
         d_token -= d_token_fee
 
@@ -1404,13 +1404,12 @@ def _xcp(D: uint256, price_scale: uint256) -> uint256:
 def _calc_token_fee(amounts: uint256[N_COINS],
                     xp: uint256[N_COINS],
                     donation: bool = False,
-                    add_liquidity: bool = False,
+                    deposit: bool = False,
                     from_view: bool = False) -> uint256:
 
     if donation:
         # Donation fees are 0, but NOISE_FEE is required for numerical stability
         return NOISE_FEE
-
 
     surplus_amounts: uint256[N_COINS] = amounts
     if from_view:
@@ -1447,7 +1446,7 @@ def _calc_token_fee(amounts: uint256[N_COINS],
             Sdiff += unsafe_sub(avg, _x)
 
     lp_spam_penalty_fee: uint256 = 0
-    if add_liquidity:
+    if deposit:
         # Penalty fee for spamming add_liquidity into the pool
         current_expiry: uint256 = self.donation_protection_expiry_ts
         if current_expiry > block.timestamp:
@@ -1843,16 +1842,18 @@ def fee() -> uint256:
 @external
 @view
 def calc_token_fee(
-    amounts: uint256[N_COINS], xp: uint256[N_COINS], donation: bool = False
+    amounts: uint256[N_COINS], xp: uint256[N_COINS], donation: bool = False, deposit: bool = False
 ) -> uint256:
     """
     @notice Returns the fee charged on the given amounts for add_liquidity.
     @param amounts The amounts of coins being added to the pool (unscaled).
     @param xp The current balances of the pool multiplied by coin precisions.
     @param donation Whether the liquidity is a donation, if True only NOISE_FEE is charged.
+    @param deposit Whether the liquidity is a deposit.
     @return uint256 Fee charged.
     """
-    return self._calc_token_fee(amounts, xp, donation, True)
+    # last True is for from_view
+    return self._calc_token_fee(amounts, xp, donation, deposit, True)
 
 
 @view
