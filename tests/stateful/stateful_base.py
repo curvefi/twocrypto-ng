@@ -423,9 +423,15 @@ class StatefulBase(RuleBasedStateMachine):
         new_xcp_profit_a = self.pool.xcp_profit_a()
         # store the balances of the fee receiver before the removal
         old_xcp_profit_a = self.xcp_profit_a
-
         # check if the admin fees were claimed (not always the case)
-        if new_xcp_profit_a > old_xcp_profit_a:
+        claim_timer_passed = (
+            boa.env.evm.patch.timestamp - self.pool._storage.last_admin_fee_claim_timestamp.get()
+            > self.pool._constants.MIN_ADMIN_FEE_CLAIM_INTERVAL
+        )
+        is_ramping = self.pool.internal._is_ramping()
+        profit_increased = new_xcp_profit_a > old_xcp_profit_a
+        claim_possible = not is_ramping and profit_increased and claim_timer_passed
+        if claim_possible:
             event("admin fees claim was detected")
             note("claiming admin fees during removal")
             # if the admin fees were claimed we have to update xcp

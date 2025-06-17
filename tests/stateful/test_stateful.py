@@ -3,7 +3,6 @@ from hypothesis import event, note
 from hypothesis.stateful import precondition, rule
 from hypothesis.strategies import data, floats, integers, sampled_from
 from stateful_base import StatefulBase
-
 from tests.unitary.factory.test_deploy_pool import ZERO_ADDRESS
 from tests.utils.constants import MAX_A, MAX_GAMMA, MIN_A, MIN_GAMMA, UNIX_DAY
 from tests.utils.strategies import address
