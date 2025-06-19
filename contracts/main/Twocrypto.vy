@@ -452,7 +452,7 @@ def exchange_received(
 
 @internal
 @view
-def _donation_shares() -> uint256:
+def _donation_shares(_donation_protection: bool = True) -> uint256:
     """
     @notice Calculates the amount of donation shares that are unlocked and not under protection.
     @dev This function accounts for both time-based release and add_liquidity-based protection.
@@ -464,6 +464,12 @@ def _donation_shares() -> uint256:
     # --- Time-based release of donation shares ---
     elapsed: uint256 = block.timestamp - self.last_donation_release_ts
     unlocked_shares: uint256 = min(donation_shares, donation_shares * elapsed // self.donation_duration)
+
+    if not _donation_protection:
+        # if donation protection is disabled, return the total amount of unlocked donation shares
+        # this is needed to calculate new timestamp for overlapping donations in add_liquidity
+        # otherwise must always be called with donation_protection=True
+        return unlocked_shares
 
     # --- Donation protection damping factor ---
     protection_factor: uint256 = 0
@@ -557,7 +563,7 @@ def add_liquidity(
             # => new_elapsed = self._donation_shares() * self.donation_duration / new_donation_shares
             # edge case: if self.donation_shares = 0, then self._donation_shares() is 0
             # and new_elapsed = 0, thus initializing last_donation_release_ts = block.timestamp
-            new_elapsed: uint256 = self._donation_shares() * self.donation_duration // new_donation_shares
+            new_elapsed: uint256 = self._donation_shares(False) * self.donation_duration // new_donation_shares
 
             # Additional observations:
             # new_elapsed = (old_pool * old_elapsed / D) * D / new_pool = old_elapsed * (old_pool / new_pool)
