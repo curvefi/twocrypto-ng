@@ -475,7 +475,7 @@ def _donation_shares(_donation_protection: bool = True) -> uint256:
     protection_factor: uint256 = 0
     expiry: uint256 = self.donation_protection_expiry_ts
     if expiry > block.timestamp:
-        protection_factor = (expiry - block.timestamp) * PRECISION // self.donation_protection_period
+        protection_factor = min((expiry - block.timestamp) * PRECISION // self.donation_protection_period, PRECISION)
 
     return unlocked_shares * (PRECISION - protection_factor) // PRECISION
 
