@@ -580,7 +580,7 @@ def add_liquidity(
             # Extend protection to shield against donation extraction via sandwich attacks.
             # A penalty is applied for extending the protection to disincentivize spamming.
             relative_lp_add: uint256 = d_token * PRECISION // (token_supply + d_token)
-            if relative_lp_add > 0:  # sub-precision additions are expensive to stack
+            if relative_lp_add > 0 and self.donation_shares > 0:  # sub-precision additions are expensive to stack
                 # Extend protection period
                 protection_period: uint256 = self.donation_protection_period
                 extension_seconds: uint256 = min(relative_lp_add * protection_period // self.donation_protection_lp_threshold, protection_period)
