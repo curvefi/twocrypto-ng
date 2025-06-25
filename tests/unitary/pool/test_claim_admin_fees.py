@@ -1,7 +1,6 @@
 import boa
 import pytest
 
-boa.env.evm.patch.code_size_limit = 56_000
 # TRADE_SIZE = 3 # times pool liq
 TRADE_SIZE = 1_000_000 * 10**18
 N_TRADES = 10

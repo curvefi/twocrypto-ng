@@ -10,12 +10,9 @@ are consistent across different contracts.
 
 import boa
 
-VENOM_FLAG = False
+VENOM_FLAG = True
 MATH_DEPLOYER = boa.load_partial(
     "contracts/main/StableswapMath.vy", compiler_args={"experimental_codegen": VENOM_FLAG}
-)
-VIEW_DEPLOYER = boa.load_partial(
-    "contracts/main/TwocryptoView.vy", compiler_args={"experimental_codegen": VENOM_FLAG}
 )
 FACTORY_DEPLOYER = boa.load_partial(
     "contracts/main/TwocryptoFactory.vy", compiler_args={"experimental_codegen": VENOM_FLAG}
@@ -34,7 +31,6 @@ assert (
     POOL_DEPLOYER._constants.N_COINS
     == MATH_DEPLOYER._constants.N_COINS
     == FACTORY_DEPLOYER._constants.N_COINS
-    == VIEW_DEPLOYER._constants.N_COINS
 ), "N_COINS mismatch"
 
 N_COINS = POOL_DEPLOYER._constants.N_COINS

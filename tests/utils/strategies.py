@@ -21,7 +21,6 @@ from tests.utils.constants import (
     FACTORY_DEPLOYER,
     MATH_DEPLOYER,
     GAUGE_DEPLOYER,
-    VIEW_DEPLOYER,
 )
 from tests.utils.pool_presets import all_presets
 
@@ -52,7 +51,6 @@ def factory(
         pool_implementation = POOL_DEPLOYER.deploy_as_blueprint()
         gauge_implementation = GAUGE_DEPLOYER.deploy_as_blueprint()
 
-        view_contract = VIEW_DEPLOYER.deploy()
         math_contract = MATH_DEPLOYER.deploy()
 
         _factory = FACTORY_DEPLOYER.deploy()
@@ -61,7 +59,6 @@ def factory(
     with boa.env.prank(_owner):
         _factory.set_pool_implementation(pool_implementation, 0)
         _factory.set_gauge_implementation(gauge_implementation)
-        _factory.set_views_implementation(view_contract)
         _factory.set_math_implementation(math_contract)
 
     return _factory

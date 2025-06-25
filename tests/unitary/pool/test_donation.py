@@ -3,9 +3,6 @@ from tests.utils.constants import N_COINS
 from pytest import fixture, approx
 import pytest
 
-boa.env.evm.patch.code_size_limit = 1000000  # Increase code size limit for deployment
-
-
 def test_cant_donate_on_empty_pool(gm_pool):
     assert gm_pool.donation_shares() == 0
     gm_pool.donate([10**18, 2 * 10**18])
@@ -118,7 +115,7 @@ def test_slippage(gm_pool_with_liquidity, views_contract):
     pool = gm_pool_with_liquidity
     DONATION_AMOUNT = pool.compute_balanced_amounts(10 * 10**18)
 
-    expected_amount = views_contract.calc_token_amount(DONATION_AMOUNT, True, pool.address)
+    expected_amount = views_contract.calc_token_amount(DONATION_AMOUNT, True)
 
     pool.donate(DONATION_AMOUNT, slippage=expected_amount)
 

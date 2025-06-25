@@ -101,6 +101,11 @@ def test_add_liquidity_slippage(pool, user_account):
 
     expected_lp = pool.calc_token_amount(amounts, True)
 
+    with boa.env.anchor():
+        actual_lp = gm_pool.add_liquidity(amounts, 0)
+
+    assert actual_lp == expected_lp, "previewed amount should match actual minted LP tokens"
+
     with boa.reverts("slippage"):
         pool.add_liquidity(amounts, expected_lp + 1, sender=user_account)
 

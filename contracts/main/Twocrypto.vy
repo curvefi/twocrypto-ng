@@ -38,17 +38,6 @@ interface Factory:
     def fee_receiver() -> address: view
     def views_implementation() -> address: view
 
-interface Views:
-    def calc_token_amount(
-        amounts: uint256[N_COINS], deposit: bool, swap: address
-    ) -> uint256: view
-    def get_dy(
-        i: uint256, j: uint256, dx: uint256, swap: address
-    ) -> uint256: view
-    def get_dx(
-        i: uint256, j: uint256, dy: uint256, swap: address
-    ) -> uint256: view
-
 
 # ------------------------------- Events -------------------------------------
 
@@ -1729,54 +1718,6 @@ def admin() -> address:
 
 @external
 @view
-def calc_token_amount(amounts: uint256[N_COINS], deposit: bool) -> uint256:
-    """
-    @notice Calculate LP tokens minted or to be burned for depositing or
-            removing `amounts` of coins
-    @dev Includes fee.
-    @param amounts Amounts of tokens being deposited or withdrawn
-    @param deposit True if it is a deposit action, False if withdrawn.
-    @return uint256 Amount of LP tokens deposited or withdrawn.
-    """
-    view_contract: address = staticcall factory.views_implementation()
-    return staticcall Views(view_contract).calc_token_amount(amounts, deposit, self)
-
-
-@external
-@view
-def get_dy(i: uint256, j: uint256, dx: uint256) -> uint256:
-    """
-    @notice Get amount of coin[j] tokens received for swapping in dx amount of coin[i]
-    @dev Includes fee.
-    @param i index of input token. Check pool.coins(i) to get coin address at ith index
-    @param j index of output token
-    @param dx amount of input coin[i] tokens
-    @return uint256 Exact amount of output j tokens for dx amount of i input tokens.
-    """
-    view_contract: address = staticcall factory.views_implementation()
-    return staticcall Views(view_contract).get_dy(i, j, dx, self)
-
-
-@external
-@view
-def get_dx(i: uint256, j: uint256, dy: uint256) -> uint256:
-    """
-    @notice Get amount of coin[i] tokens to input for swapping out dy amount
-            of coin[j]
-    @dev This is an approximate method, and returns estimates close to the input
-         amount. Expensive to call on-chain.
-    @param i index of input token. Check pool.coins(i) to get coin address at
-           ith index
-    @param j index of output token
-    @param dy amount of input coin[j] tokens received
-    @return uint256 Approximate amount of input i tokens to get dy amount of j tokens.
-    """
-    view_contract: address = staticcall factory.views_implementation()
-    return staticcall Views(view_contract).get_dx(i, j, dy, self)
-
-
-@external
-@view
 @nonreentrant
 def lp_price() -> uint256:
     """
@@ -2167,3 +2108,271 @@ def set_admin_fee(admin_fee: uint256):
 
     self.admin_fee = admin_fee
     log SetAdminFee(admin_fee=admin_fee)
+
+#### VIEW ####
+# Just a dump of view contract functionalities, this needs to be refactored
+# in a future release to reduce code duplication.
+# Functions in this section are not gas efficient nor accurate.
+
+@internal
+@view
+def _prep_calc() -> (
+    uint256[N_COINS],
+    uint256,
+    uint256,
+    uint256,
+    uint256,
+    uint256,
+    uint256[N_COINS]
+):
+    precisions: uint256[N_COINS] = PRECISIONS
+    token_supply: uint256 = self.totalSupply
+    balances: uint256[N_COINS] = self.balances
+    price_scale: uint256 = self.cached_price_scale
+
+    A_gamma: uint256[2] = self._A_gamma()
+    D: uint256 = self._calc_D_ramp(
+        A_gamma[0], A_gamma[1], balances, precisions, price_scale
+    )
+
+    return balances, D, token_supply, price_scale, A_gamma[0], A_gamma[1], precisions
+
+@internal
+@view
+def _calc_D_ramp(
+    A: uint256,
+    gamma: uint256,
+    xp: uint256[N_COINS],
+    precisions: uint256[N_COINS],
+    price_scale: uint256,
+) -> uint256:
+
+    D: uint256 = self.D
+    if self._is_ramping():
+        _xp: uint256[N_COINS] = xp
+        _xp[0] *= precisions[0]
+        _xp[1] = _xp[1] * price_scale * precisions[1] // PRECISION
+        D = staticcall MATH.newton_D(A, gamma, _xp, 0)
+
+    return D
+
+
+@external
+@view
+def get_dy(
+    i: uint256, j: uint256, dx: uint256
+) -> uint256:
+    """
+    @notice Get amount of coin[j] tokens received for swapping in dx amount of coin[i]
+    @dev Includes fee.
+    @param i index of input token. Check pool.coins(i) to get coin address at ith index
+    @param j index of output token
+    @param dx amount of input coin[i] tokens
+    @return uint256 Exact amount of output j tokens for dx amount of i input tokens.
+    """
+
+    dy: uint256 = 0
+    xp: uint256[N_COINS] = empty(uint256[N_COINS])
+
+    # dy = (get_y(x + dx) - y) * (1 - fee)
+    dy, xp = self._get_dy_nofee(i, j, dx)
+    dy -= self._fee(xp) * dy // 10**10
+
+    return dy
+
+@view
+@external
+def calc_token_amount(
+    amounts: uint256[N_COINS], deposit: bool, donation: bool = False
+) -> uint256:
+    """
+    @notice Calculate LP tokens minted or to be burned for depositing or
+            removing `amounts` of coins
+    @dev Includes fee.
+    @param amounts Amounts of tokens being deposited or withdrawn
+    @param deposit True if it is a deposit action, False if withdrawn.
+    @return uint256 Amount of LP tokens deposited or withdrawn.
+    """
+
+    d_token: uint256 = 0
+    amountsp: uint256[N_COINS] = empty(uint256[N_COINS])
+    xp: uint256[N_COINS] = empty(uint256[N_COINS])
+
+    d_token, amountsp, xp = self._calc_dtoken_nofee(amounts, deposit)
+    d_token -= (
+        self._calc_token_fee(amounts, xp, donation, deposit, True) * d_token // 10**10 + 1
+    )
+
+    return d_token
+
+
+@view
+@external
+def get_dx(
+    i: uint256, j: uint256, dy: uint256
+) -> uint256:
+    """
+    @notice Get amount of coin[i] tokens to input for swapping out dy amount
+            of coin[j]
+    @dev This is an approximate method, and returns estimates close to the input
+         amount. Expensive to call on-chain.
+    @param i index of input token. Check pool.coins(i) to get coin address at
+           ith index
+    @param j index of output token
+    @param dy amount of input coin[j] tokens received
+    @return uint256 Approximate amount of input i tokens to get dy amount of j tokens.
+    """
+
+    dx: uint256 = 0
+    xp: uint256[N_COINS] = empty(uint256[N_COINS])
+    fee_dy: uint256 = 0
+    _dy: uint256 = dy
+
+    # for more precise dx (but never exact), increase num loops
+    for k: uint256 in range(5):
+        dx, xp = self._get_dx_fee(i, j, _dy)
+        fee_dy = self._fee(xp) * _dy // 10**10
+        _dy = dy + fee_dy + 1
+
+    return dx
+
+
+@internal
+@view
+def _get_dy_nofee(
+    i: uint256, j: uint256, dx: uint256
+) -> (uint256, uint256[N_COINS]):
+
+    assert i != j and i < N_COINS and j < N_COINS, "coin index out of range"
+    assert dx > 0, "do not exchange 0 coins"
+
+    xp: uint256[N_COINS] = empty(uint256[N_COINS])
+    precisions: uint256[N_COINS] = empty(uint256[N_COINS])
+    price_scale: uint256 = 0
+    D: uint256 = 0
+    token_supply: uint256 = 0
+    A: uint256 = 0
+    gamma: uint256 = 0
+
+    xp, D, token_supply, price_scale, A, gamma, precisions = self._prep_calc()
+
+    # adjust xp with input dx
+    xp[i] += dx
+    xp = [
+        xp[0] * precisions[0],
+        xp[1] * price_scale * precisions[1] // PRECISION
+    ]
+
+    y_out: uint256[2] = staticcall MATH.get_y(A, gamma, xp, D, j)
+
+    dy: uint256 = xp[j] - y_out[0] - 1
+    xp[j] = y_out[0]
+    if j > 0:
+        dy = dy * PRECISION // price_scale
+    dy //= precisions[j]
+
+    return dy, xp
+
+@internal
+@view
+def _calc_dtoken_nofee(
+    amounts: uint256[N_COINS], deposit: bool
+) -> (uint256, uint256[N_COINS], uint256[N_COINS]):
+
+    xp: uint256[N_COINS] = empty(uint256[N_COINS])
+    precisions: uint256[N_COINS] = empty(uint256[N_COINS])
+    price_scale: uint256 = 0
+    D0: uint256 = 0
+    token_supply: uint256 = 0
+    A: uint256 = 0
+    gamma: uint256 = 0
+
+    xp, D0, token_supply, price_scale, A, gamma, precisions = self._prep_calc()
+
+    amountsp: uint256[N_COINS] = amounts
+    if deposit:
+        for k: uint256 in range(N_COINS):
+            xp[k] += amounts[k]
+    else:
+        for k: uint256 in range(N_COINS):
+            xp[k] -= amounts[k]
+
+    xp = [
+        xp[0] * precisions[0],
+        xp[1] * price_scale * precisions[1] // PRECISION
+    ]
+    amountsp = [
+        amountsp[0]* precisions[0],
+        amountsp[1] * price_scale * precisions[1] // PRECISION
+    ]
+
+    D: uint256 = staticcall MATH.newton_D(A, gamma, xp, 0)
+    d_token: uint256 = token_supply * D // D0
+
+    if deposit:
+        d_token -= token_supply
+    else:
+        d_token = token_supply - d_token
+
+    return d_token, amountsp, xp
+
+
+@internal
+@view
+def _get_dx_fee(
+    i: uint256, j: uint256, dy: uint256
+) -> (uint256, uint256[N_COINS]):
+
+    # here, dy must include fees (and 1 wei offset)
+
+    assert i != j and i < N_COINS and j < N_COINS, "coin index out of range"
+    assert dy > 0, "do not exchange out 0 coins"
+
+    xp: uint256[N_COINS] = empty(uint256[N_COINS])
+    precisions: uint256[N_COINS] = empty(uint256[N_COINS])
+    price_scale: uint256 = 0
+    D: uint256 = 0
+    token_supply: uint256 = 0
+    A: uint256 = 0
+    gamma: uint256 = 0
+
+    xp, D, token_supply, price_scale, A, gamma, precisions = self._prep_calc()
+
+    # adjust xp with output dy. dy contains fee element, which we handle later
+    # (hence this internal method is called _get_dx_fee)
+    xp[j] -= dy
+    xp = [xp[0] * precisions[0], xp[1] * price_scale * precisions[1] // PRECISION]
+
+    x_out: uint256[2] = staticcall MATH.get_y(A, gamma, xp, D, i)
+    dx: uint256 = x_out[0] - xp[i]
+    xp[i] = x_out[0]
+
+    if i > 0:
+        dx = dx * PRECISION // price_scale
+    dx //= precisions[i]
+
+    return dx, xp
+
+@view
+@external
+def calc_fee_token_amount(
+    amounts: uint256[N_COINS], deposit: bool, donation: bool = False
+) -> uint256:
+
+    d_token: uint256 = 0
+    amountsp: uint256[N_COINS] = empty(uint256[N_COINS])
+    xp: uint256[N_COINS] = empty(uint256[N_COINS])
+    d_token, amountsp, xp = self._calc_dtoken_nofee(amounts, deposit)
+
+    return self._calc_token_fee(amounts, xp, donation, deposit, True) * d_token // 10**10 + 1
+
+@external
+@view
+def calc_fee_get_dy(i: uint256, j: uint256, dx: uint256
+) -> uint256:
+
+    dy: uint256 = 0
+    xp: uint256[N_COINS] = empty(uint256[N_COINS])
+    dy, xp = self._get_dy_nofee(i, j, dx)
+
+    return self._fee(xp) * dy // 10**10

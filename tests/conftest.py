@@ -4,7 +4,6 @@ from tests.utils.constants import (
     MATH_DEPLOYER,
     GAUGE_DEPLOYER,
     POOL_DEPLOYER,
-    VIEW_DEPLOYER,
     FACTORY_DEPLOYER,
     ERC20_DEPLOYER,
 )
@@ -140,9 +139,9 @@ def amm_implementation(deployer):
 
 
 @fixture(scope="module")
-def views_contract(deployer):
-    with boa.env.prank(deployer):
-        return VIEW_DEPLOYER.deploy()
+def views_contract(pool):
+    # TODO make this cleaner, this used to be a separate contract
+    return pool
 
 
 @fixture(scope="module")
@@ -153,7 +152,6 @@ def factory(
     amm_implementation,
     gauge_implementation,
     math_contract,
-    views_contract,
 ):
     with boa.env.prank(deployer):
         factory = FACTORY_DEPLOYER.deploy()
@@ -162,7 +160,6 @@ def factory(
     with boa.env.prank(owner):
         factory.set_pool_implementation(amm_implementation, 0)
         factory.set_gauge_implementation(gauge_implementation)
-        factory.set_views_implementation(views_contract)
         factory.set_math_implementation(math_contract)
 
     return factory
