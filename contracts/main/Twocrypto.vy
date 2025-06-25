@@ -273,7 +273,7 @@ def __init__(
 
     self.donation_protection_expiry_ts = block.timestamp
     self.donation_protection_period = 5 * 60   # 5 minutes
-    self.donation_protection_lp_threshold = 30 * PRECISION // 100  # 30%
+    self.donation_protection_lp_threshold = 20 * PRECISION // 100  # 20%
 
     log Transfer(sender=empty(address), receiver=self, value=0)  # <------- Fire empty transfer from
     #                                       0x0 to self for indexers to catch.
@@ -579,7 +579,7 @@ def add_liquidity(
             # --- Donation Protection & LP Spam Penalty ---
             # Extend protection to shield against donation extraction via sandwich attacks.
             # A penalty is applied for extending the protection to disincentivize spamming.
-            relative_lp_add: uint256 = d_token * PRECISION // token_supply
+            relative_lp_add: uint256 = d_token * PRECISION // (token_supply + d_token)
             if relative_lp_add > 0:  # sub-precision additions are expensive to stack
                 # Extend protection period
                 protection_period: uint256 = self.donation_protection_period
