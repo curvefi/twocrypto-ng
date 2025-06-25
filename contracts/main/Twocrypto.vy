@@ -1104,7 +1104,9 @@ def tweak_price(
             new_virtual_price: uint256 = 10**18 * new_xcp // total_supply
 
             donation_shares_to_burn: uint256 = 0
-            if new_virtual_price < virtual_price:
+            # burn donations to get to old vp, but not below threshold_vp
+            goal_vp: uint256 = max(threshold_vp, virtual_price)
+            if new_virtual_price < goal_vp:
                 # new_virtual_price is lower than virtual_price.
                 # We attempt to boost virtual_price by burning some donation shares
                 # This will result in more frequent rebalances.
@@ -1117,7 +1119,7 @@ def tweak_price(
                 #          B   <= donation_shares
 
                 # what would be total supply with (old) virtual_price and new_xcp
-                tweaked_supply: uint256 = 10**18 * new_xcp // virtual_price
+                tweaked_supply: uint256 = 10**18 * new_xcp // goal_vp
                 assert tweaked_supply < total_supply, "tweaked supply must shrink"
                 donation_shares_to_burn = min(
                     unsafe_sub(total_supply, tweaked_supply), # burn the difference between supplies
