@@ -832,7 +832,7 @@ def _withdraw_leftover_donations():
     self.donation_shares = 0
     self.totalSupply = 0
     self.D = 0
-
+    self.donation_protection_expiry_ts = 0
     log RemoveLiquidity(provider=receiver, token_amounts=withdraw_amounts, token_supply=0)
 
 
