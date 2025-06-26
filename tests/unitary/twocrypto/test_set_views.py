@@ -1,5 +1,6 @@
 import boa
 
+
 def test_default_behavior(pool, factory_admin):
     mock_view = boa.env.generate_address()
     pool.set_views(mock_view, sender=factory_admin)
