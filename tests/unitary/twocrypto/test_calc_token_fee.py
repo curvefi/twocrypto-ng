@@ -81,15 +81,26 @@ def test_donation_mode(pool):
 def test_calc_token_fee_view_donation_protection(pool, user_account, bob):
     gm_pool = GodModePool(pool)
     # 1. user_account adds initial liquidity. This seeds the pool.
-    user_adds_amounts = gm_pool.compute_balanced_amounts(INITIAL_LIQUIDITY)
+    user_adds_amounts = gm_pool.compute_balanced_amounts(INITIAL_LIQUIDITY // 20)
     gm_pool.premint_amounts(user_adds_amounts, to=user_account)
     pool.add_liquidity(user_adds_amounts, 0, sender=user_account)
-    assert pool.donation_protection_expiry_ts() == boa.env.evm.patch.timestamp
+    assert pool.donation_protection_expiry_ts() == 0
 
-    # 2. bob adds liquidity right after, triggering protection.
+    # 2. bob adds liquidity right after
     bob_adds_amounts = gm_pool.compute_balanced_amounts(INITIAL_LIQUIDITY)
     gm_pool.premint_amounts(bob_adds_amounts, to=bob)
     pool.add_liquidity(bob_adds_amounts, 0, sender=bob)
+    # still 0, we have no donations in pool
+    assert pool.donation_protection_expiry_ts() == 0
+
+    # donate. Now donation shares are nonzero
+    gm_pool.donate(bob_adds_amounts, 0)
+
+    # 2a. bob adds liquidity right after, triggering protection.
+    bob_adds_amounts = gm_pool.compute_balanced_amounts(INITIAL_LIQUIDITY)
+    gm_pool.premint_amounts(bob_adds_amounts, to=bob)
+    pool.add_liquidity(bob_adds_amounts, 0, sender=bob)
+    # still 0, we have no donations in pool
     assert pool.donation_protection_expiry_ts() > boa.env.evm.patch.timestamp
 
     # 3. charlie is our test case. Prepare his deposit details.
