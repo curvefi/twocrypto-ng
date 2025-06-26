@@ -36,7 +36,6 @@ interface Math:
 interface Factory:
     def admin() -> address: view
     def fee_receiver() -> address: view
-    def views_implementation() -> address: view
 
 interface Views:
     def calc_token_amount(
@@ -51,6 +50,9 @@ interface Views:
 
 
 # ------------------------------- Events -------------------------------------
+
+event SetViews:
+    views: Views
 
 event Transfer:
     sender: indexed(address)
@@ -138,6 +140,8 @@ PRECISIONS: immutable(uint256[N_COINS])
 MATH: public(immutable(Math))
 coins: public(immutable(address[N_COINS]))
 factory: public(immutable(Factory))
+
+view_contract: public(Views)
 
 cached_price_scale: uint256  # <------------------------ Internal price scale.
 cached_price_oracle: uint256  # <------- Price target given by moving average.
@@ -1740,8 +1744,7 @@ def calc_token_amount(amounts: uint256[N_COINS], deposit: bool) -> uint256:
     @param deposit True if it is a deposit action, False if withdrawn.
     @return uint256 Amount of LP tokens deposited or withdrawn.
     """
-    view_contract: address = staticcall factory.views_implementation()
-    return staticcall Views(view_contract).calc_token_amount(amounts, deposit, self)
+    return staticcall self.view_contract.calc_token_amount(amounts, deposit, self)
 
 
 @external
@@ -1755,8 +1758,7 @@ def get_dy(i: uint256, j: uint256, dx: uint256) -> uint256:
     @param dx amount of input coin[i] tokens
     @return uint256 Exact amount of output j tokens for dx amount of i input tokens.
     """
-    view_contract: address = staticcall factory.views_implementation()
-    return staticcall Views(view_contract).get_dy(i, j, dx, self)
+    return staticcall self.view_contract.get_dy(i, j, dx, self)
 
 
 @external
@@ -1773,8 +1775,7 @@ def get_dx(i: uint256, j: uint256, dy: uint256) -> uint256:
     @param dy amount of input coin[j] tokens received
     @return uint256 Approximate amount of input i tokens to get dy amount of j tokens.
     """
-    view_contract: address = staticcall factory.views_implementation()
-    return staticcall Views(view_contract).get_dx(i, j, dy, self)
+    return staticcall self.view_contract.get_dx(i, j, dy, self)
 
 
 @external
@@ -2169,3 +2170,16 @@ def set_admin_fee(admin_fee: uint256):
 
     self.admin_fee = admin_fee
     log SetAdminFee(admin_fee=admin_fee)
+
+@external
+def set_views(views: Views):
+    """
+    @notice Set the view contract.
+    @param views The new view contract.
+    @dev This function is used to set the view contract that will be used
+         to calculate the prices and fees.
+    """
+    self._check_admin()
+    assert views != empty(Views), "views cannot be empty"
+    self.view_contract = views
+    log SetViews(views=views)
