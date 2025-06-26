@@ -1,4 +1,4 @@
-# pragma version 0.4.2
+# pragma version 0.4.3
 """
 @title StableswapMath
 @author Curve.Fi
