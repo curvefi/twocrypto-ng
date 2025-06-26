@@ -150,3 +150,4 @@ node_modules
 docs/
 scripts/experiments/get_p.py
 *.csv
+.claude
