@@ -187,6 +187,7 @@ def params():
 @fixture(scope="module")
 def pool(
     factory,
+    factory_admin,
     coins,
     params,
     deployer,
@@ -208,7 +209,9 @@ def pool(
             params["initial_prices"][1],  # initial_price: uint256
         )
 
-    return POOL_DEPLOYER.at(pool)
+    pool = POOL_DEPLOYER.at(pool)
+    pool.set_views(factory.views_implementation(), sender=factory_admin)
+    return pool
 
 
 @fixture(scope="module")
