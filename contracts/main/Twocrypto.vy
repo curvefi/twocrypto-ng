@@ -272,7 +272,7 @@ def __init__(
     self.admin_fee = 5 * 10**9
 
     self.donation_protection_expiry_ts = 0
-    self.donation_protection_period = 5 * 60   # 5 minutes
+    self.donation_protection_period = 10 * 60   # 10 minutes
     self.donation_protection_lp_threshold = 20 * PRECISION // 100  # 20%
 
     log Transfer(sender=empty(address), receiver=self, value=0)  # <------- Fire empty transfer from
