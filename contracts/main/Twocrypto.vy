@@ -271,9 +271,9 @@ def __init__(
 
     self.admin_fee = 5 * 10**9
 
-    self.donation_protection_expiry_ts = block.timestamp
-    self.donation_protection_period = 5 * 60   # 5 minutes
-    self.donation_protection_lp_threshold = 30 * PRECISION // 100  # 30%
+    self.donation_protection_expiry_ts = 0
+    self.donation_protection_period = 10 * 60   # 10 minutes
+    self.donation_protection_lp_threshold = 20 * PRECISION // 100  # 20%
 
     log Transfer(sender=empty(address), receiver=self, value=0)  # <------- Fire empty transfer from
     #                                       0x0 to self for indexers to catch.
@@ -475,7 +475,7 @@ def _donation_shares(_donation_protection: bool = True) -> uint256:
     protection_factor: uint256 = 0
     expiry: uint256 = self.donation_protection_expiry_ts
     if expiry > block.timestamp:
-        protection_factor = (expiry - block.timestamp) * PRECISION // self.donation_protection_period
+        protection_factor = min((expiry - block.timestamp) * PRECISION // self.donation_protection_period, PRECISION)
 
     return unlocked_shares * (PRECISION - protection_factor) // PRECISION
 
@@ -579,8 +579,8 @@ def add_liquidity(
             # --- Donation Protection & LP Spam Penalty ---
             # Extend protection to shield against donation extraction via sandwich attacks.
             # A penalty is applied for extending the protection to disincentivize spamming.
-            relative_lp_add: uint256 = d_token * PRECISION // token_supply
-            if relative_lp_add > 0:  # sub-precision additions are expensive to stack
+            relative_lp_add: uint256 = d_token * PRECISION // (token_supply + d_token)
+            if relative_lp_add > 0 and self.donation_shares > 0:  # sub-precision additions are expensive to stack
                 # Extend protection period
                 protection_period: uint256 = self.donation_protection_period
                 extension_seconds: uint256 = min(relative_lp_add * protection_period // self.donation_protection_lp_threshold, protection_period)
@@ -832,7 +832,7 @@ def _withdraw_leftover_donations():
     self.donation_shares = 0
     self.totalSupply = 0
     self.D = 0
-
+    self.donation_protection_expiry_ts = 0
     log RemoveLiquidity(provider=receiver, token_amounts=withdraw_amounts, token_supply=0)
 
 
@@ -1104,7 +1104,9 @@ def tweak_price(
             new_virtual_price: uint256 = 10**18 * new_xcp // total_supply
 
             donation_shares_to_burn: uint256 = 0
-            if new_virtual_price < virtual_price:
+            # burn donations to get to old vp, but not below threshold_vp
+            goal_vp: uint256 = max(threshold_vp, virtual_price)
+            if new_virtual_price < goal_vp:
                 # new_virtual_price is lower than virtual_price.
                 # We attempt to boost virtual_price by burning some donation shares
                 # This will result in more frequent rebalances.
@@ -1117,7 +1119,7 @@ def tweak_price(
                 #          B   <= donation_shares
 
                 # what would be total supply with (old) virtual_price and new_xcp
-                tweaked_supply: uint256 = 10**18 * new_xcp // virtual_price
+                tweaked_supply: uint256 = 10**18 * new_xcp // goal_vp
                 assert tweaked_supply < total_supply, "tweaked supply must shrink"
                 donation_shares_to_burn = min(
                     unsafe_sub(total_supply, tweaked_supply), # burn the difference between supplies
