@@ -147,6 +147,7 @@ def pool(
         )
 
     _pool = POOL_DEPLOYER.at(_pool)
+    _pool.set_views(VIEW_DEPLOYER.deploy(), sender=_factory.admin())
 
     note(
         "deployed pool with "
