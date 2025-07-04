@@ -387,9 +387,10 @@ class DonateStateful(ImbalancedLiquidityStateful):
         note("[SUCCESS]")
 
 
+# boa.env.evm.patch.code_size_limit = 1000000
 # TestOnlySwap = OnlySwapStateful.TestCase
 # TestUpOnlyLiquidity = UpOnlyLiquidityStateful.TestCase
 # TestOnlyBalancedLiquidity = OnlyBalancedLiquidityStateful.TestCase
-# TestImbalancedLiquidity = ImbalancedLiquidityStateful.TestCase
-# TestRampingStateful = RampingStateful.TestCase
+TestImbalancedLiquidity = ImbalancedLiquidityStateful.TestCase
+TestRampingStateful = RampingStateful.TestCase
 TestDonateStateful = DonateStateful.TestCase
