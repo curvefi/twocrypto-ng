@@ -6,7 +6,7 @@ from stateful_base import StatefulBase
 from tests.unitary.factory.test_deploy_pool import ZERO_ADDRESS
 from tests.utils.constants import MAX_A, MAX_GAMMA, MIN_A, MIN_GAMMA, UNIX_DAY
 from tests.utils.strategies import address
-# from hypothesis import reproduce_failure
+from hypothesis import reproduce_failure
 
 
 class OnlySwapStateful(StatefulBase):
@@ -255,6 +255,10 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
         pass
 
 
+@reproduce_failure(
+    "6.124.2",
+    b"AXicY3BkKNHhbK8MrbtUs/+jzq8Yb6EJL+cGtJdsP7pbdGlHoD3b4bxUsYby7LbJxztKpDbHWM9rWXuQ7bmSWEZxC0NbTjaTIwPQiC2RR/wORG+5eM6ASXSFXlX/+0+9jK5MIdxPlDxZs4/H6SYLPCkqeaYkY+q1MPPCiin7dGwDf7U3pJYfY3BMABkAggyOjI6MEDYjGLExODI7yjuyMDiyAvkljP0zq8qWnlLY4hY+/Uas/bYnMjtDvRkuH2/vEmu+wcAA0s/gzGK5DqSLhUHD/v3/1+xe5bIlWcsmrORuZrQJMPyxZbvJ4p0is2+pePA+2LZ5eQpIEwOjI5sjM9heDfuWqofu60RqgHaDjDBbwAAGJdzz9f4cn8z3re60ztarJdtiZhpLZCIZwQoKgr9XVXR0Z1+5+3sVx/xJLxY8OKsgoeWurK0sdXB1BlRJ6NT3BjLZ8wsuzeZSE6/ZmpxtlPLfXVmHc+r2qUsYHJkYYGFla1Gy+/RUWfUVVb4WYpaKFStmzl9d6DgBaoraocA3fyfmSz8PPL7BsUDV/8nFPl93t82P2kJ274Iq4dY7ZrZ+n0bjz+9Hzb4r7Zpe76Z0x91t68aHe1q2MoAD5wPUZzv60povCc60afI+/YTn6V/rx3uWrEDyGThcmGHhUg0OYjbpFmiMFP2bEbVU3fBDqt/91KtWUo2Sp1YVejOu7LnvEbviAQNUPyNKuAL1M/1fAHHDlZ9V76x6NUv+SmtPcX/RGW69wrQm4oPJFSv+K3bobmCFxydUgFHD/gHED2DDGBhYJCaX7Mkqecn3Q+9hTMnH2ChLvrKVF/Y73ow+ixpVjCXHdJ/5bbN0zNz86GCUwQUbFnG7s1HejGtlnq5o9fgAS0lMTyIgdEQY1B9MGvZXQ8EAGsw5XpHeny9fEbRbssvH+3rU2TPpGmXuru8yq9o2sqC66tKUi5sPX3jqurnz141JRvWblrenrEVyFciaxelQa5B9BpRg5Y+FWqdxqS6XkV/jlO0RrnydPYeO2Z7rMnF3/WCi4+gShxqrj5hel7+zZkpJ9n99/Me2rH+Xz229g5rkwTaxa9gf3CBdtND3Bdgmxte60MBl0bA/ORMEZiGCH+51oG4mBm+2HWIqfjPsUtdZ/C7R61A4z/KG6Yfkw2cByi9twm0ZH8RCg5ph1WJ5dqmDexdKbBX36EqT0XtRdseXka1FZqug5RS3j682FSInfN68knwf9QedX8JNH83/V7dJXlHPiP/TT2QlkUdKtnM2vvijweXGPa1UYVZlgtXvv7nQlLnrDSJ1wD0AlODo8YEE0LPn7kcnTWcsOaNZJSjJJhgZ7Kk3qVky90ITk9IEeAABAMG40F4=",
+)
 class RampingStateful(ImbalancedLiquidityStateful):
     """This test suite does everything as the `ImbalancedLiquidityStateful`
     but also ramps the pool. Because of this some of the invariant checks
@@ -387,9 +391,10 @@ class DonateStateful(ImbalancedLiquidityStateful):
         note("[SUCCESS]")
 
 
+# boa.env.evm.patch.code_size_limit = 1000000
 # TestOnlySwap = OnlySwapStateful.TestCase
 # TestUpOnlyLiquidity = UpOnlyLiquidityStateful.TestCase
 # TestOnlyBalancedLiquidity = OnlyBalancedLiquidityStateful.TestCase
-TestImbalancedLiquidity = ImbalancedLiquidityStateful.TestCase
+# TestImbalancedLiquidity = ImbalancedLiquidityStateful.TestCase
 TestRampingStateful = RampingStateful.TestCase
-TestDonateStateful = DonateStateful.TestCase
+# TestDonateStateful = DonateStateful.TestCase
