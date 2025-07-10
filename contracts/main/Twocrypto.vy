@@ -1063,7 +1063,7 @@ def tweak_price(
     # Rebalancing condition transformation:
     # virtual_price - 1 > (xcp_profit - 1)/2 + allowed_extra_profit
     # virtual_price > 1 + (xcp_profit - 1)/2 + allowed_extra_profit
-    threshold_vp: uint256 = (xcp_profit + 10**18) // 2
+    threshold_vp: uint256 = max(10**18, (xcp_profit + 10**18) // 2)
 
     # The allowed_extra_profit parameter prevents reverting gas-wasting rebalances
     # by ensuring sufficient profit margin
