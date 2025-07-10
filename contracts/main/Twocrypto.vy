@@ -529,7 +529,7 @@ def add_liquidity(
     old_xp: uint256[N_COINS] = self._xp(old_balances, price_scale)
 
     # --------------------Finalize ramping of empty pool
-    if self.D == 0: # empty pool
+    if self.D == 0:
         self.future_A_gamma_time = block.timestamp
 
     # -------------------- Calculate LP tokens to mint -----------------------
