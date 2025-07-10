@@ -348,7 +348,7 @@ def test_remove_after_rebalancing(gm_pool):
     # A donation is made, which increases the pool's assets without minting
     # corresponding LP tokens for a regular user. This profit is meant
     # to be socialized over time, but this attack tries to capture it.
-    donation_amount = 200_000 * 10**18
+    donation_amount = 40_000 * 10**18
     gm_pool.donate_balanced(donation_amount)
 
     # Phase 2: Unbalance the Pool
@@ -413,3 +413,19 @@ def test_remove_after_rebalancing(gm_pool):
     # else:
     #     print("No profit")
     # print(f"Delta coin0: {delta_coin0}, Delta coin1: {delta_coin1}")
+
+
+def test_donation_cap(gm_pool):
+    # test that we can't donate more than cap
+    initial_amount = 400_000 * 10**18
+    gm_pool.add_liquidity_balanced(initial_amount)
+    cap = gm_pool.donation_shares_max_ratio() / 1e18
+    for i in [0.9, 1.2]:
+        with boa.env.anchor():
+            donation_amount = int(initial_amount * cap * i)
+            print(f"Donation amount: {donation_amount}, cap: {cap}, i: {i}")
+            if i > 1:
+                with boa.reverts():
+                    gm_pool.donate_balanced(donation_amount)
+            else:
+                gm_pool.donate_balanced(donation_amount)

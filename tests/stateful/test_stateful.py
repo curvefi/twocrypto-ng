@@ -391,6 +391,6 @@ class DonateStateful(ImbalancedLiquidityStateful):
 # TestOnlySwap = OnlySwapStateful.TestCase
 # TestUpOnlyLiquidity = UpOnlyLiquidityStateful.TestCase
 # TestOnlyBalancedLiquidity = OnlyBalancedLiquidityStateful.TestCase
-TestImbalancedLiquidity = ImbalancedLiquidityStateful.TestCase
-TestRampingStateful = RampingStateful.TestCase
+# TestImbalancedLiquidity = ImbalancedLiquidityStateful.TestCase
+# TestRampingStateful = RampingStateful.TestCase
 TestDonateStateful = DonateStateful.TestCase

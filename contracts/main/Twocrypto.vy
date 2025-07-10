@@ -127,6 +127,7 @@ event SetDonationDuration:
 event SetDonationProtection:
     donation_protection_period: uint256
     donation_protection_lp_threshold: uint256
+    donation_shares_max_ratio: uint256
 
 event SetAdminFee:
     admin_fee: uint256
@@ -162,6 +163,8 @@ future_A_gamma_time: public(uint256)  # <------ Time when ramping is finished.
 
 # Donation shares balance
 donation_shares: public(uint256)
+donation_shares_max_ratio: public(uint256)
+
 # Donations release parameters:
 donation_duration: public(uint256)
 last_donation_release_ts: public(uint256)
@@ -278,6 +281,7 @@ def __init__(
     self.donation_protection_expiry_ts = 0
     self.donation_protection_period = 10 * 60   # 10 minutes
     self.donation_protection_lp_threshold = 20 * PRECISION // 100  # 20%
+    self.donation_shares_max_ratio = 10 * PRECISION // 100  # 10%
 
     log Transfer(sender=empty(address), receiver=self, value=0)  # <------- Fire empty transfer from
     #                                       0x0 to self for indexers to catch.
@@ -555,6 +559,7 @@ def add_liquidity(
         if donation:
             assert receiver == empty(address), "nonzero receiver"
             new_donation_shares: uint256 = self.donation_shares + d_token
+            assert new_donation_shares * PRECISION // (token_supply + d_token) <= self.donation_shares_max_ratio, "donation above cap!"
 
             # When adding donation, if the previous one hasn't been fully released we preserve
             # the currently unlocked donation [given by `self._donation_shares()`] by updating
@@ -2140,20 +2145,29 @@ def set_donation_duration(duration: uint256):
 def set_donation_protection_params(
     _period: uint256,
     _threshold: uint256,
+    _max_shares_ratio: uint256,
 ):
     """
     @notice Set donation protection parameters.
     @param _period The new donation protection period in seconds.
     @param _threshold The new donation protection threshold with 10**18 precision.
+    @param _max_shares_ratio The new maximum number of shares.
     @dev _threshold = 30 * 10**18//100 means 30%
+    @dev _max_shares_ratio = 10 * 10**18//100 means 10%
     """
 
     self._check_admin()
     assert _period > 0, "period must be positive"
     assert _threshold > 0, "threshold must be positive"
+    assert _max_shares_ratio > 0, "max_shares must be positive"
     self.donation_protection_period = _period
     self.donation_protection_lp_threshold = _threshold
-    log SetDonationProtection(donation_protection_period=_period, donation_protection_lp_threshold=_threshold)
+    self.donation_shares_max_ratio = _max_shares_ratio
+    log SetDonationProtection(
+        donation_protection_period=_period,
+        donation_protection_lp_threshold=_threshold,
+        donation_shares_max_ratio=_max_shares_ratio
+        )
 
 
 @external
