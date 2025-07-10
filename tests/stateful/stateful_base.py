@@ -370,38 +370,35 @@ class StatefulBase(RuleBasedStateMachine):
         else:
             lp_tokens_to_withdraw = int(lp_tokens_balance_pre * percentage)
 
-        # this is a bit convoluted because we want this function
-        # to continue in two scenarios:
-        # 1. the function didn't revert (except block)
-        # 2. the function reverted because the virtual price
-        # decreased (try block + boa.reverts)
         try:
-            with boa.reverts("virtual price decreased"):
-                self.pool.remove_liquidity_one_coin(
-                    lp_tokens_to_withdraw,
-                    coin_idx,
-                    0,  # no slippage checks
-                    sender=user,
-                )
-            # if we end up here something went wrong, so we need to check
-            # if the pool was in a state that justifies a revert
-
-            # we only allow small amounts to make the balance decrease
-            # because of rounding errors
-            assert (
-                lp_tokens_to_withdraw < 1e16
-            ), "virtual price decreased but but the amount was too high"
-            event(
-                "unsuccessful removal of liquidity because of "
-                "loss (this should not happen too often)"
+            self.pool.remove_liquidity_one_coin(
+                lp_tokens_to_withdraw,
+                coin_idx,
+                0,  # no slippage checks
+                sender=user,
             )
-            return
-        except ValueError as e:
-            assert str(e) == "Did not revert"
-            # if the function didn't revert we can continue
-            if lp_tokens_to_withdraw < 1e15:
-                # useful to compare how often this happens compared to failures
-                event("successful removal of liquidity with low amounts")
+        except boa.BoaError as e:
+            error_message = str(e)
+            if "virtual price decreased" in error_message:
+                # only allow for small amounts due to rounding
+                assert (
+                    lp_tokens_to_withdraw < 1e16
+                ), "virtual price decreased but the amount was too high"
+                event("unsuccessful removal: virtual price decreased")
+                return
+            elif "withdrawal results in no tokens" in error_message:
+                print(error_message)
+                # for small amounts, withdrawal can result in 0 tokens
+                assert lp_tokens_to_withdraw < 1e18, "reverted for no tokens on a large withdrawal"
+                event("unsuccessful removal: withdrawal results in no tokens")
+                return
+            else:
+                # any other revert is unexpected
+                raise
+
+        # if we are here, the transaction was successful.
+        if lp_tokens_to_withdraw < 1e15:
+            event("successful removal of liquidity with low amounts")
 
         # compute the change in balances
         user_balances_post = abs(user_balances_pre - self.coins[coin_idx].balanceOf(user))
