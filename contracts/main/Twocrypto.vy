@@ -528,6 +528,10 @@ def add_liquidity(
     xp: uint256[N_COINS] = self._xp(balances, price_scale)
     old_xp: uint256[N_COINS] = self._xp(old_balances, price_scale)
 
+    # --------------------Finalize ramping of empty pool
+    if self.D == 0: # empty pool
+        self.future_A_gamma_time = block.timestamp
+
     # -------------------- Calculate LP tokens to mint -----------------------
 
     A_gamma: uint256[2] = self._A_gamma()
@@ -1367,7 +1371,7 @@ def _fee(xp: uint256[N_COINS]) -> uint256:
 def _get_D(A_gamma: uint256[2], xp: uint256[N_COINS]) -> uint256:
     # Normally we need self.D, however, if A and/or gamma are ramping,
     # we need to recalculate D using the current A and gamma values.
-    if self._is_ramping() and self.D > 0:
+    if self._is_ramping():
         # ongoing ramping, recalculate D
         return staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
     else:
