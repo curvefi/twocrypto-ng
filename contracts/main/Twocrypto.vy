@@ -528,6 +528,10 @@ def add_liquidity(
     xp: uint256[N_COINS] = self._xp(balances, price_scale)
     old_xp: uint256[N_COINS] = self._xp(old_balances, price_scale)
 
+    # --------------------Finalize ramping of empty pool
+    if self.D == 0:
+        self.future_A_gamma_time = block.timestamp
+
     # -------------------- Calculate LP tokens to mint -----------------------
 
     A_gamma: uint256[2] = self._A_gamma()
@@ -1059,7 +1063,7 @@ def tweak_price(
     # Rebalancing condition transformation:
     # virtual_price - 1 > (xcp_profit - 1)/2 + allowed_extra_profit
     # virtual_price > 1 + (xcp_profit - 1)/2 + allowed_extra_profit
-    threshold_vp: uint256 = 10**18 + (xcp_profit - 10**18) // 2
+    threshold_vp: uint256 = max(10**18, (xcp_profit + 10**18) // 2)
 
     # The allowed_extra_profit parameter prevents reverting gas-wasting rebalances
     # by ensuring sufficient profit margin
@@ -1561,9 +1565,11 @@ def _calc_withdraw_fixed_out(
     amounts: uint256[N_COINS] = empty(uint256[N_COINS])
     amounts[i] = amount_i
     if i == 0:
-        amounts[1] = amountsp[1] // PRECISIONS[1] * PRECISION // price_scale
+        amounts[1] = amountsp[1] * PRECISION // PRECISIONS[1] // price_scale
     else:
         amounts[0] = amountsp[0] // PRECISIONS[0]
+
+    assert amounts[0] + amounts[1] > 0, "withdrawal results in no tokens"
     # The only way to compute the fees is to simulate a withdrawal as we have done
     # above and then rewind and apply the fees.
     approx_fee: uint256 = self._calc_token_fee(amounts, xp_new)

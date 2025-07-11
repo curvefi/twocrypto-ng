@@ -3,7 +3,7 @@ from tests.utils.constants import N_COINS
 from pytest import fixture, approx
 import pytest
 
-boa.env.evm.patch.code_size_limit = 1000000  # Increase code size limit for deployment
+# boa.env.evm.patch.code_size_limit = 1000000  # Increase code size limit for deployment
 
 
 def test_cant_donate_on_empty_pool(gm_pool):
