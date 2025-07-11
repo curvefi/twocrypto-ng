@@ -424,9 +424,9 @@ STATEFUL_TEST_CLASSES = {
     # "TestOnlySwap": OnlySwapStateful,
     # "TestUpOnlyLiquidity": UpOnlyLiquidityStateful,
     # "TestOnlyBalancedLiquidity": OnlyBalancedLiquidityStateful,
-    # "TestImbalancedLiquidity": ImbalancedLiquidityStateful,
+    "TestImbalancedLiquidity": ImbalancedLiquidityStateful,
     "TestRampingStateful": RampingStateful,
-    # "TestDonateStateful": DonateStateful,
+    "TestDonateStateful": DonateStateful,
 }
 
 # Dynamically create and register multiple test cases.
