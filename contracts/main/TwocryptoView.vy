@@ -66,7 +66,7 @@ def get_dy(
 @view
 @external
 def get_dx(
-    i: uint256, j: uint256, dy: uint256, swap: address
+    i: uint256, j: uint256, dy: uint256, swap: address, n_iter: uint256 = 5
 ) -> uint256:
 
     dx: uint256 = 0
@@ -75,7 +75,7 @@ def get_dx(
     _dy: uint256 = dy
 
     # for more precise dx (but never exact), increase num loops
-    for k: uint256 in range(5):
+    for k: uint256 in range(n_iter, bound=100):
         dx, xp = self._get_dx_fee(i, j, _dy, swap)
         fee_dy = staticcall Curve(swap).fee_calc(xp) * _dy // 10**10
         _dy = dy + fee_dy + 1
