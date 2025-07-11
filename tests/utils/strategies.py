@@ -122,7 +122,6 @@ def pool(
     Custom strategies can be passed as argument to override the default
     """
     boa.env.evm.patch.timestamp = 1_000_000
-
     # Creates a factory based pool with the following fuzzed parameters:
     _factory = draw(factory())
     mid_fee, out_fee = draw(fees)
