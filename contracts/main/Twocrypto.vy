@@ -45,7 +45,7 @@ interface Views:
         i: uint256, j: uint256, dx: uint256, swap: address
     ) -> uint256: view
     def get_dx(
-        i: uint256, j: uint256, dy: uint256, swap: address
+        i: uint256, j: uint256, dy: uint256, swap: address, n_iter: uint256
     ) -> uint256: view
 
 
@@ -1774,7 +1774,7 @@ def get_dy(i: uint256, j: uint256, dx: uint256) -> uint256:
 
 @external
 @view
-def get_dx(i: uint256, j: uint256, dy: uint256) -> uint256:
+def get_dx(i: uint256, j: uint256, dy: uint256, n_iter: uint256 = 5) -> uint256:
     """
     @notice Get amount of coin[i] tokens to input for swapping out dy amount
             of coin[j]
@@ -1784,9 +1784,10 @@ def get_dx(i: uint256, j: uint256, dy: uint256) -> uint256:
            ith index
     @param j index of output token
     @param dy amount of input coin[j] tokens received
+    @param n_iter number of iterations to run
     @return uint256 Approximate amount of input i tokens to get dy amount of j tokens.
     """
-    return staticcall self.view_contract.get_dx(i, j, dy, self)
+    return staticcall self.view_contract.get_dx(i, j, dy, self, n_iter)
 
 
 @external
