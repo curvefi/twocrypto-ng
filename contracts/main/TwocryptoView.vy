@@ -235,7 +235,7 @@ def _get_dy_nofee(
     ]
 
     y_out: uint256[2] = staticcall math.get_y(A, gamma, xp, D, j)
-
+    assert y_out[0] < xp[j], "unsafe value for y"
     dy: uint256 = xp[j] - y_out[0] - 1
     xp[j] = y_out[0]
     if j > 0:
