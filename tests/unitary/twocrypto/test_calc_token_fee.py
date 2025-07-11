@@ -87,7 +87,7 @@ def test_calc_token_fee_view_donation_protection(pool, user_account, bob):
     assert pool.donation_protection_expiry_ts() == 0
 
     # 2. bob adds liquidity right after
-    bob_adds_amounts = gm_pool.compute_balanced_amounts(INITIAL_LIQUIDITY)
+    bob_adds_amounts = gm_pool.compute_balanced_amounts(int(0.1 * INITIAL_LIQUIDITY // 20))
     gm_pool.premint_amounts(bob_adds_amounts, to=bob)
     pool.add_liquidity(bob_adds_amounts, 0, sender=bob)
     # still 0, we have no donations in pool

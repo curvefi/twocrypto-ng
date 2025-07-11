@@ -14,6 +14,7 @@ dependencies = [
 
 [tool.uv]
 dev-dependencies = [
+    "pytest-forked>=1.6.0",
     "pytest-xdist==3.6.1",
     "mamushi==0.0.4",
     "pre-commit==3.8.0",

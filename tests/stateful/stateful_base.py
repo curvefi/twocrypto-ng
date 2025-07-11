@@ -200,7 +200,13 @@ class StatefulBase(RuleBasedStateMachine):
         # store the amount of lp tokens before the deposit
         lp_tokens = self.pool.balanceOf(user)
 
-        self.pool.add_liquidity(amounts, 0, user, donate, sender=user)
+        try:
+            self.pool.add_liquidity(amounts, 0, user, donate, sender=user)
+        except boa.BoaError as e:
+            if donate and "donation above cap!" in str(e.stack_trace[0]):
+                event("donation refused due to cap")
+                return
+            raise e
 
         # find the increase in lp tokens
         lp_tokens = self.pool.balanceOf(user) - lp_tokens
