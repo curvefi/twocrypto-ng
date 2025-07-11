@@ -332,11 +332,23 @@ class DonateStateful(ImbalancedLiquidityStateful):
     )
     def donate_balanced(self, amount: int, user: str):
         note("[BALANCED DONATION]")
-        # figure out the amount of the second token for a balanced deposit
-        balanced_amounts = self.get_balanced_deposit_amounts(amount)
+        # figure out the amount of the second token for a balanced deposit and below max cap
 
-        # correct amounts to the right number of decimals
-        balanced_amounts = self.correct_all_decimals(balanced_amounts)
+        below_cap = False
+        while not below_cap:
+            balanced_amounts = self.get_balanced_deposit_amounts(amount)
+            # correct amounts to the right number of decimals
+            balanced_amounts = self.correct_all_decimals(balanced_amounts)
+            token_out = self.pool.calc_token_amount(balanced_amounts, True)
+            if (
+                token_out
+                < (token_out + self.pool.totalSupply())
+                * self.pool.donation_shares_max_ratio
+                // 10**18
+            ):
+                below_cap = True
+            else:
+                amount *= 0.9
 
         note(
             "increasing pool liquidity with balanced amounts: "
@@ -364,20 +376,31 @@ class DonateStateful(ImbalancedLiquidityStateful):
             ),
             label="amount",
         )
+        below_cap = False
+        while not below_cap:
+            balanced_amounts = self.get_balanced_deposit_amounts(amount)
+            imbalanced_amounts = [
+                int(balanced_amounts[0] * imbalance_ratio)
+                if imbalance_ratio != 1
+                else balanced_amounts[0],
+                int(balanced_amounts[1] * (1 - imbalance_ratio))
+                if imbalance_ratio != 0
+                else balanced_amounts[1],
+            ]
 
-        balanced_amounts = self.get_balanced_deposit_amounts(amount)
-        imbalanced_amounts = [
-            int(balanced_amounts[0] * imbalance_ratio)
-            if imbalance_ratio != 1
-            else balanced_amounts[0],
-            int(balanced_amounts[1] * (1 - imbalance_ratio))
-            if imbalance_ratio != 0
-            else balanced_amounts[1],
-        ]
-
-        # we correct the decimals of the imbalanced amounts
-        imbalanced_amounts = self.correct_all_decimals(imbalanced_amounts)
-
+            # we correct the decimals of the imbalanced amounts
+            imbalanced_amounts = self.correct_all_decimals(imbalanced_amounts)
+            token_out = self.pool.calc_token_amount(imbalanced_amounts, True)
+            if (
+                token_out
+                < (token_out + self.pool.totalSupply())
+                * self.pool.donation_shares_max_ratio
+                // 10**18
+            ):
+                below_cap = True
+            else:
+                amount *= 0.9
+        print("imbalanced_amounts", imbalanced_amounts)
         note("depositing {:.2e} and {:.2e}".format(*imbalanced_amounts))
         # we add the liquidity
         self.add_liquidity(imbalanced_amounts, user, donate=True)
