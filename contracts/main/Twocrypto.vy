@@ -51,8 +51,9 @@ interface Views:
 
 # ------------------------------- Events -------------------------------------
 
-event SetViews:
+event SetPeriphery:
     views: Views
+    math: Math
 
 event Transfer:
     sender: indexed(address)
@@ -143,6 +144,7 @@ coins: public(immutable(address[N_COINS]))
 factory: public(immutable(Factory))
 
 view_contract: public(Views)
+math_contract: public(Math)
 
 cached_price_scale: uint256  # <------------------------ Internal price scale.
 cached_price_oracle: uint256  # <------- Price target given by moving average.
@@ -2195,7 +2197,7 @@ def set_admin_fee(admin_fee: uint256):
     log SetAdminFee(admin_fee=admin_fee)
 
 @external
-def set_views(views: Views):
+def set_periphery(views: Views, math: Math):
     """
     @notice Set the view contract.
     @param views The new view contract.
@@ -2203,6 +2205,11 @@ def set_views(views: Views):
          to calculate the prices and fees.
     """
     self._check_admin()
-    assert views != empty(Views), "views cannot be empty"
-    self.view_contract = views
-    log SetViews(views=views)
+    # at least one of the two must be set
+    assert views != empty(Views) or math != empty(Math), "empty contract"
+
+    if views != empty(Views):
+        self.view_contract = views
+    if math != empty(Math):
+        self.math_contract = math
+    log SetPeriphery(views=views, math=math)
