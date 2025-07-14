@@ -97,7 +97,7 @@ class StatefulBase(RuleBasedStateMachine):
     def is_ramping(self) -> bool:
         """Check if the pool is currently ramping."""
 
-        return self.pool.future_A_gamma_time() > boa.env.evm.patch.timestamp
+        return self.pool.future_A_gamma_time() > self.pool.last_timestamp()
 
     def correct_decimals(self, amount: int, coin_idx: int) -> int:
         """Takes an amount that uses 18 decimals and reduces its precision"""
