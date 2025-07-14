@@ -210,7 +210,9 @@ def pool(
         )
 
     pool = POOL_DEPLOYER.at(pool)
-    pool.set_views(factory.views_implementation(), sender=factory_admin)
+    pool.set_periphery(
+        factory.views_implementation(), boa.eval("empty(address)"), sender=factory_admin
+    )
     return pool
 
 
