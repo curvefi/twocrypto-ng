@@ -7,6 +7,7 @@ from tests.unitary.factory.test_deploy_pool import ZERO_ADDRESS
 from tests.utils.constants import MAX_A, MAX_GAMMA, MIN_A, MIN_GAMMA, UNIX_DAY
 from tests.utils.strategies import address
 # from hypothesis import reproduce_failure
+# boa.env.evm.patch.code_size_limit = 1000000
 
 
 class OnlySwapStateful(StatefulBase):
@@ -409,8 +410,6 @@ class DonateStateful(ImbalancedLiquidityStateful):
         self.report_equilibrium()
         note("[SUCCESS]")
 
-
-# boa.env.evm.patch.code_size_limit = 1000000
 
 # --- Parallel Test Case Generation ---
 

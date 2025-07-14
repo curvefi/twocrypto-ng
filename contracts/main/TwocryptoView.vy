@@ -25,6 +25,7 @@ interface Curve:
     def totalSupply() -> uint256: view
     def precisions() -> uint256[N_COINS]: view
     def packed_fee_params() -> uint256: view
+    def last_timestamp() -> uint256: view
 
 
 interface Math:
@@ -158,7 +159,7 @@ def _calc_D_ramp(
 
     math: Math = staticcall Curve(swap).MATH()
     D: uint256 = staticcall Curve(swap).D()
-    if staticcall Curve(swap).future_A_gamma_time() > block.timestamp:
+    if staticcall Curve(swap).future_A_gamma_time() > staticcall Curve(swap).last_timestamp():
         _xp: uint256[N_COINS] = xp
         _xp[0] *= precisions[0]
         _xp[1] = _xp[1] * price_scale * precisions[1] // PRECISION

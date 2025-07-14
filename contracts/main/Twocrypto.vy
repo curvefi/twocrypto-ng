@@ -983,6 +983,8 @@ def tweak_price(
     last_prices: uint256 = self.last_prices
     price_scale: uint256 = self.cached_price_scale
     rebalancing_params: uint256[3] = self._unpack_3(self.packed_rebalancing_params)
+    is_ramping: bool = self._is_ramping() # store as we bump the timestamp below
+
     # Contains: allowed_extra_profit, adjustment_step, ma_time. -----^
 
     # ------------------ Update Price Oracle if needed -----------------------
@@ -1053,7 +1055,7 @@ def tweak_price(
     if virtual_price < old_virtual_price:
         # If A and gamma are being ramped, we allow the virtual price to decrease,
         # as changing the shape of the bonding curve causes losses in the pool.
-        assert self._is_ramping(), "virtual price decreased"
+        assert is_ramping, "virtual price decreased"
 
     # xcp_profit follows growth of virtual price (and goes down on ramping)
     xcp_profit: uint256 = self.xcp_profit + virtual_price - old_virtual_price
@@ -1316,7 +1318,7 @@ def _is_ramping() -> bool:
     @notice Checks if A and gamma are ramping.
     @return bool True if A and/or gamma are ramping, False otherwise.
     """
-    return self.future_A_gamma_time > block.timestamp
+    return self.future_A_gamma_time > self.last_timestamp
 
 @internal
 @view
