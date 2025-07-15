@@ -12,6 +12,11 @@ dependencies = [
     "snekmate==0.1.2",
 ]
 
+
+[tool.uv.sources]
+titanoboa = { git = "https://github.com/vyperlang/titanoboa.git", rev = "44d35aaed62d1e2bdfc758fb2de855b85726ae64" }
+
+
 [tool.uv]
 dev-dependencies = [
     "pytest-forked>=1.6.0",

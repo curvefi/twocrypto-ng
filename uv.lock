@@ -2622,7 +2622,7 @@ wheels = [
 [[package]]
 name = "titanoboa"
 version = "0.2.7"
-source = { registry = "https://pypi.org/simple" }
+source = { git = "https://github.com/vyperlang/titanoboa.git?rev=44d35aaed62d1e2bdfc758fb2de855b85726ae64#44d35aaed62d1e2bdfc758fb2de855b85726ae64" }
 dependencies = [
     { name = "eth-abi" },
     { name = "eth-account" },
@@ -2638,10 +2638,6 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "vvm" },
     { name = "vyper" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/9c/85/2cfd05b649cf173714ea7a2b3597228b7a577cab7fe4696e67879b8784b7/titanoboa-0.2.7.tar.gz", hash = "sha256:4fb931747bf9beb05ea39b149878bb7d89525bcfacf1a903e4d14da91f7c49de", size = 99921, upload-time = "2025-06-04T14:24:40.401Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/da/fd/25ccd329bb68c2251b1fbb30aa799cfaca67ab262b2da05c5997e6b73e38/titanoboa-0.2.7-py3-none-any.whl", hash = "sha256:75771f5e8183c073f2c37d8925f583abd2c6b56eae4d087dbf1e33f809ea7ca5", size = 111582, upload-time = "2025-06-04T14:24:38.601Z" },
 ]
 
 [[package]]
@@ -2727,7 +2723,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "snekmate", specifier = "==0.1.2" },
-    { name = "titanoboa", specifier = "==0.2.7" },
+    { name = "titanoboa", git = "https://github.com/vyperlang/titanoboa.git?rev=44d35aaed62d1e2bdfc758fb2de855b85726ae64" },
     { name = "vyper", specifier = "==0.4.3" },
 ]
 
