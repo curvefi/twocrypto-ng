@@ -147,7 +147,7 @@ def pool(
         )
 
     _pool = POOL_DEPLOYER.at(_pool)
-    _pool.set_periphery(VIEW_DEPLOYER.deploy(), boa.eval("empty(address)"), sender=_factory.admin())
+    _pool.set_periphery(VIEW_DEPLOYER.deploy(), MATH_DEPLOYER.deploy(), sender=_factory.admin())
 
     note(
         "deployed pool with "
