@@ -191,6 +191,8 @@ def pool(
     coins,
     params,
     deployer,
+    math_contract,
+    views_contract,
 ):
     with boa.env.prank(deployer):
         pool = factory.deploy_pool(
@@ -210,9 +212,7 @@ def pool(
         )
 
     pool = POOL_DEPLOYER.at(pool)
-    pool.set_periphery(
-        factory.views_implementation(), boa.eval("empty(address)"), sender=factory_admin
-    )
+    pool.set_periphery(views_contract, math_contract, sender=factory_admin)
     return pool
 
 

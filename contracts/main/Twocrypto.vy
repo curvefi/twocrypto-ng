@@ -240,8 +240,6 @@ def __init__(
     initial_price: uint256,
 ):
 
-    self.MATH = Math(_math)
-
     factory = Factory(msg.sender)
     name = _name
     symbol = _symbol
