@@ -240,6 +240,14 @@ def __init__(
     initial_price: uint256,
 ):
 
+    # these setters must be strreplaced at blueprint deploy time
+    # otherwise pool is unusable until set_periphery is called by admin
+    self.VIEW = Views(empty(address))
+    self.MATH = Math(empty(address))
+
+    # this parameter can also be dynamically adjusted at blueprint deployment time
+    self.admin_fee = 10**10 * 50 // 100
+
     factory = Factory(msg.sender)
     name = _name
     symbol = _symbol
@@ -275,7 +283,6 @@ def __init__(
 
     self.donation_duration = 7 * 86400
 
-    self.admin_fee = 5 * 10**9
 
     self.donation_protection_expiry_ts = 0
     self.donation_protection_period = 10 * 60   # 10 minutes
