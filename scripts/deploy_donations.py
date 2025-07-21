@@ -2,6 +2,11 @@ import boa
 import os
 from eth_account import Account
 from boa.explorer import Etherscan
+from eth_utils import keccak
+
+# deploy as blueprints
+DEPLOY = False
+ADMIN_FEE = 10**10 * 25 // 100  # 25%
 
 
 def twocrypto_with_periphery(twocrypto_path, views_address, math_address, admin_fee):
@@ -22,7 +27,7 @@ def twocrypto_with_periphery(twocrypto_path, views_address, math_address, admin_
     return boa.loads_partial(twocrypto_code)
 
 
-rpc_url = "https://bsc-testnet.drpc.org"
+rpc_url = "https://bsc.drpc.org"
 etherscan_api_key = os.environ.get("ETHERSCAN_API_KEY")
 
 private_key = os.environ.get("WEB3_TESTNET_PK")
@@ -47,9 +52,6 @@ twocrypto_path = "contracts/main/Twocrypto.vy"
 math_deployer = boa.load_partial(math_path)
 views_deployer = boa.load_partial(views_path)
 
-# deploy as blueprints
-DEPLOY = True
-ADMIN_FEE = 10**10 * 25 // 100  # 25%
 if DEPLOY:
     math_contract = math_deployer.deploy()
     views_contract = views_deployer.deploy()
@@ -59,9 +61,9 @@ if DEPLOY:
     )
     twocrypto_contract = twocrypto_deployer.deploy_as_blueprint()
 else:
-    math_address = "0x0A0EB5273d75324e8bced686D183e20761Ea1655"
-    views_address = "0x1aEA22093B8a6b2ddfcAa056463e837B3A2E599E"
-    twocrypto_address = "0xf54f07B9aDd82F2E0123Ff479d60017bcaEd8884"
+    math_address = "0x113813f1dc481f1924DE22F77fA69C946393eE99"
+    views_address = "0xCAA015E69eE5afEc0B9AF280C130998aAab03906"
+    twocrypto_address = "0x4Af8E791642051780596eDa40dC84f57ad11683A"
 
     math_contract = math_deployer.at(math_address)
     views_contract = views_deployer.at(views_address)
@@ -87,12 +89,12 @@ for contract in [math_contract, views_contract, twocrypto_contract]:
         print(e)
 
 # get factory
-factory = boa.from_etherscan("0x2AF43209B366A4491CCe0A97C5a7B6059fd21295")
-# # print(factory.admin())
+factory = boa.from_etherscan("0x98EE851a00abeE0d95D08cF4CA2BdCE32aeaAF7F")
+print(factory.admin())
 
 # set pool implementation
-# pool_id = int(keccak(text="fx").hex(), 16)
-# print("Implementation ID:", pool_id)
+pool_id = int(keccak(text="fx").hex(), 16)
+print("Implementation ID:", pool_id)
 # factory.set_pool_implementation(twocrypto_contract.address, pool_id, sender=deployer.address)
 
 # set pool periphery
