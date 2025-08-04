@@ -324,7 +324,7 @@ def _calc_withdraw_one_coin(
     if i == 0:
         price_scale_i = PRECISION * precisions[0]
 
-    if staticcall Curve(swap).future_A_gamma_time() > block.timestamp:
+    if staticcall Curve(swap).future_A_gamma_time() > staticcall Curve(swap).last_timestamp():
         D0 = staticcall math.newton_D(A, gamma, xp, 0)
     else:
         D0 = staticcall Curve(swap).D()
