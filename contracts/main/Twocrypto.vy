@@ -1162,7 +1162,6 @@ def tweak_price(
                     # we burned some donation shares, update related state
                     self.donation_shares -= donation_shares_to_burn
                     self.totalSupply -= donation_shares_to_burn
-                    self.last_donation_release_ts = block.timestamp
                 return p_new
 
     # If we end up here price_scale was not adjusted. So we update the state
