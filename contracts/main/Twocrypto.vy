@@ -75,6 +75,7 @@ event TokenExchange:
     price_scale: uint256
 
 event AddLiquidity:
+    provider: indexed(address)
     receiver: indexed(address)
     token_amounts: uint256[N_COINS]
     fee: uint256
@@ -637,6 +638,7 @@ def add_liquidity(
     # ---------------------------------------------- Log and claim admin fees.
 
     log AddLiquidity(
+        provider=msg.sender,
         receiver=receiver,
         token_amounts=amounts_received,
         fee=d_token_fee,
