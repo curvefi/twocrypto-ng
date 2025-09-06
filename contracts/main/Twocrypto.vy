@@ -812,9 +812,14 @@ def _remove_liquidity_fixed_out(
 
     price_scale: uint256 = self.tweak_price(A_gamma, xp, D)
 
-    self._transfer_out(i, amount_i, receiver)
+    if amount_i != 0:
+        # one-sided withdrawals call with amount_i = 0, save extcall here
+        self._transfer_out(i, amount_i, receiver)
+
     j: uint256 = 1 - i
-    self._transfer_out(j, dy, receiver)
+
+    if dy != 0:
+        self._transfer_out(j, dy, receiver)
 
     token_amounts: uint256[N_COINS] = empty(uint256[N_COINS])
     token_amounts[i] = amount_i
@@ -826,7 +831,7 @@ def _remove_liquidity_fixed_out(
             token_amount=token_amount,
             coin_index=j,
             coin_amount=dy,
-            approx_fee=approx_fee, # TODO unsure this is in the right unit
+            approx_fee=approx_fee * token_amount // 10**10 + 1, # LP units, not coins!
             packed_price_scale=price_scale
         )
     else:
@@ -834,7 +839,7 @@ def _remove_liquidity_fixed_out(
             provider=msg.sender,
             lp_token_amount=token_amount,
             token_amounts=token_amounts,
-            approx_fee=approx_fee * token_amount // 10**10 + 1,
+            approx_fee=approx_fee * token_amount // 10**10 + 1, # LP units
             price_scale=price_scale
         )
 
