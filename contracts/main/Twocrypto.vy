@@ -90,6 +90,16 @@ event RemoveLiquidity:
     token_amounts: uint256[N_COINS]
     token_supply: uint256
 
+
+event RemoveLiquidityOne:
+    provider: indexed(address)
+    token_amount: uint256
+    coin_index: uint256
+    coin_amount: uint256
+    approx_fee: uint256
+    packed_price_scale: uint256
+
+
 event RemoveLiquidityImbalance:
     provider: indexed(address)
     lp_token_amount: uint256
@@ -803,19 +813,30 @@ def _remove_liquidity_fixed_out(
     price_scale: uint256 = self.tweak_price(A_gamma, xp, D)
 
     self._transfer_out(i, amount_i, receiver)
-    self._transfer_out(1 - i, dy, receiver)
+    j: uint256 = 1 - i
+    self._transfer_out(j, dy, receiver)
 
     token_amounts: uint256[N_COINS] = empty(uint256[N_COINS])
     token_amounts[i] = amount_i
-    token_amounts[1-i] = dy
+    token_amounts[j] = dy
 
-    log RemoveLiquidityImbalance(
-        provider=msg.sender,
-        lp_token_amount=token_amount,
-        token_amounts=token_amounts,
-        approx_fee=approx_fee * token_amount // 10**10 + 1,
-        price_scale=price_scale
-    )
+    if amount_i == 0:
+        log RemoveLiquidityOne(
+            provider=msg.sender,
+            token_amount=token_amount,
+            coin_index=j,
+            coin_amount=dy,
+            approx_fee=approx_fee, # TODO unsure this is in the right unit
+            packed_price_scale=price_scale
+        )
+    else:
+        log RemoveLiquidityImbalance(
+            provider=msg.sender,
+            lp_token_amount=token_amount,
+            token_amounts=token_amounts,
+            approx_fee=approx_fee * token_amount // 10**10 + 1,
+            price_scale=price_scale
+        )
 
     # Take care of leftover donations (only if all LP left)
     self._withdraw_leftover_donations()
