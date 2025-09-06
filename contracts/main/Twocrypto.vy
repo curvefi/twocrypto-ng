@@ -1187,9 +1187,17 @@ def tweak_price(
                 self.virtual_price = new_virtual_price
                 self.cached_price_scale = p_new
                 if donation_shares_to_burn > 0:
-                    # we burned some donation shares, update related state
-                    self.donation_shares -= donation_shares_to_burn
+                    # shift the release timestamp to preserve currently released donation shares
+                    new_donation_shares_total: uint256 = self.donation_shares - donation_shares_to_burn
+                    new_donation_shares_released: uint256 = self._donation_shares(False) - donation_shares_to_burn
+                    new_elapsed: uint256 = 0
+                    if new_donation_shares_total > 0:
+                        new_elapsed = new_donation_shares_released * self.donation_duration // new_donation_shares_total
+                    self.last_donation_release_ts = block.timestamp - new_elapsed
+                    # update donation shares state
+                    self.donation_shares = new_donation_shares_total
                     self.totalSupply -= donation_shares_to_burn
+
                 return p_new
 
     # If we end up here price_scale was not adjusted. So we update the state
