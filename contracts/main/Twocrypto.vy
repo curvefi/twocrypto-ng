@@ -91,7 +91,6 @@ event RemoveLiquidity:
     token_amounts: uint256[N_COINS]
     token_supply: uint256
 
-
 event RemoveLiquidityOne:
     provider: indexed(address)
     token_amount: uint256
@@ -99,7 +98,6 @@ event RemoveLiquidityOne:
     coin_amount: uint256
     approx_fee: uint256
     packed_price_scale: uint256
-
 
 event RemoveLiquidityImbalance:
     provider: indexed(address)
@@ -1190,7 +1188,6 @@ def tweak_price(
                     # we burned some donation shares, update related state
                     self.donation_shares -= donation_shares_to_burn
                     self.totalSupply -= donation_shares_to_burn
-
                 return p_new
 
     # If we end up here price_scale was not adjusted. So we update the state
