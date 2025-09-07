@@ -1184,10 +1184,38 @@ def tweak_price(
                 self.D = new_D
                 self.virtual_price = new_virtual_price
                 self.cached_price_scale = p_new
+
                 if donation_shares_to_burn > 0:
-                    # we burned some donation shares, update related state
-                    self.donation_shares -= donation_shares_to_burn
+                    # Invariant to hold immediately after the burn (measured after protection):
+                    #   _donation_shares()' = _donation_shares() - donation_shares_to_burn
+                    # We shoud carry forward self.last_donation_release_ts to satisfy the invariant
+
+                    # Get pre-burn state:
+                    shares_unlocked: uint256 = self._donation_shares(False)     # time‑unlocked, ignores protection
+                    shares_available: uint256 = donation_shares                 # available after protection (computed above self._donation_shares(True))
+
+                    # Invariant: shares_available_new = shares_available - donation_shares_to_burn
+                    # Definition: shares_available = shares_unlocked * (1 - protection) [Note: (1 - protection) = shares_available / shares_unlocked]
+
+                    # To reduce shares_available_new by donation_shares_to_burn (B), we should reduce the shares_unlocked_new proportionally:
+                    # shares_available_new = shares_available - B = shares_unlocked * (1 - protection) - B = (shares_unlocked - B/(1 - protection)) * (1 - protection)
+                    # => shares_unlocked_new = shares_unlocked - B/(1 - protection) = shares_unlocked - B * shares_unlocked / shares_available
+
+                    shares_unlocked_new: uint256 = shares_unlocked - donation_shares_to_burn * shares_unlocked // shares_available
+
+                    #  Definition: shares_unlocked_new = new_total * new_elapsed // donation_duration
+                    #  => new_elapsed = shares_unlocked_new * donation_duration // new_total
+
+                    new_total: uint256 = self.donation_shares - donation_shares_to_burn
+                    new_elapsed: uint256 = 0
+                    if new_total > 0 and shares_unlocked_new > 0:
+                        new_elapsed = (shares_unlocked_new * self.donation_duration) // new_total
+
+                    # Apply the burn: update the state and shift the release timestamp
+                    self.donation_shares = new_total
                     self.totalSupply -= donation_shares_to_burn
+                    self.last_donation_release_ts = block.timestamp - new_elapsed
+
                 return p_new
 
     # If we end up here price_scale was not adjusted. So we update the state
