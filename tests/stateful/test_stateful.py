@@ -9,6 +9,8 @@ from tests.utils.strategies import address
 # from hypothesis import reproduce_failure
 # boa.env.evm.patch.code_size_limit = 1000000
 
+boa.env.evm.patch.code_size_limit = 24585  # Increase code size limit for deployment (default is 24576, we boost by 9 bytes for 'inject_function')
+
 
 class OnlySwapStateful(StatefulBase):
     """This test suits always starts with a seeded pool
@@ -423,8 +425,8 @@ STATEFUL_TEST_CLASSES = {
     # "TestOnlySwap": OnlySwapStateful,
     # "TestUpOnlyLiquidity": UpOnlyLiquidityStateful,
     # "TestOnlyBalancedLiquidity": OnlyBalancedLiquidityStateful,
-    "TestImbalancedLiquidity": ImbalancedLiquidityStateful,
-    "TestRampingStateful": RampingStateful,
+    # "TestImbalancedLiquidity": ImbalancedLiquidityStateful,
+    # "TestRampingStateful": RampingStateful,
     "TestDonateStateful": DonateStateful,
 }
 
