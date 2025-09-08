@@ -15,7 +15,7 @@ def test_withdraw_more_than_supply(gm_pool, method):
     lp_tokens = gm_pool.balanceOf(boa.env.eoa)
     amount_to_withdraw = lp_tokens + 1
 
-    with boa.reverts("withdraw > supply"):
+    with boa.reverts("!amount"):
         if method == "fixed_out":
             gm_pool.calc_withdraw_fixed_out(amount_to_withdraw, 0, 0)
         else:
