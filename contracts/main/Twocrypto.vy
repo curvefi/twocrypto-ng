@@ -818,8 +818,7 @@ def _remove_liquidity_fixed_out(
 
     j: uint256 = 1 - i
 
-    if dy != 0:
-        self._transfer_out(j, dy, receiver)
+    self._transfer_out(j, dy, receiver)
 
     token_amounts: uint256[N_COINS] = empty(uint256[N_COINS])
     token_amounts[i] = amount_i
