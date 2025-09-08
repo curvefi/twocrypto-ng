@@ -1,4 +1,5 @@
 # pragma version 0.4.3
+# pragma optimize gas
 """
 @title Twocrypto
 @author Curve.Fi
@@ -227,7 +228,7 @@ MAX_GAMMA: constant(uint256) = 199 * 10**15 # 1.99 * 10**17
 name: public(immutable(String[64]))
 symbol: public(immutable(String[32]))
 decimals: public(constant(uint8)) = 18
-version: public(constant(String[8])) = "v2.1.0"
+version: public(constant(String[8])) = "v3.0.0"
 
 balanceOf: public(HashMap[address, uint256])
 allowance: public(HashMap[address, HashMap[address, uint256]])
@@ -335,7 +336,7 @@ def _transfer_in(
         # If we checked for received_amounts == dx, an extra transfer without a
         # call to exchange_received will break the method.
         dx: uint256 = coin_balance - self.balances[_coin_idx]
-        assert dx >= _dx, "user didn't give us coins"
+        assert dx >= _dx, "!coins"
 
         # Adjust balances
         self.balances[_coin_idx] += dx
@@ -350,7 +351,7 @@ def _transfer_in(
         self,
         _dx,
         default_return_value=True
-    ), "transferFrom failed"
+    ), "!transferFrom"
 
     dx: uint256 = staticcall IERC20(coins[_coin_idx]).balanceOf(self) - coin_balance
     self.balances[_coin_idx] += dx
@@ -374,7 +375,7 @@ def _transfer_out(_coin_idx: uint256, _amount: uint256, receiver: address):
         receiver,
         _amount,
         default_return_value=True
-    ), "transfer failed"
+    ), "!transfer"
 
 
 # -------------------------- AMM Main Functions ------------------------------
@@ -521,7 +522,7 @@ def add_liquidity(
     """
 
 
-    assert amounts[0] + amounts[1] > 0, "no coins to add"
+    assert amounts[0] + amounts[1] > 0, "!amounts"
 
     # --------------------- Get prices, balances -----------------------------
 
@@ -1586,7 +1587,7 @@ def _calc_withdraw_fixed_out(
     """
 
     token_supply: uint256 = self.totalSupply
-    assert lp_token_amount <= token_supply, "withdraw > supply"
+    assert lp_token_amount <= token_supply, "!amount"
 
     # Since N_COINS = 2, we don't need to check if i < N_COINS
     # because j = 1 - i will underflow for any i > 1
@@ -1634,7 +1635,7 @@ def _calc_withdraw_fixed_out(
     else:
         amounts[0] = amountsp[0] // PRECISIONS[0]
 
-    assert amounts[0] + amounts[1] > 0, "withdrawal results in no tokens"
+    assert amounts[0] + amounts[1] > 0, "!tokens"
     # The only way to compute the fees is to simulate a withdrawal as we have done
     # above and then rewind and apply the fees.
     approx_fee: uint256 = self._calc_token_fee(amounts, xp_new)
@@ -1661,7 +1662,7 @@ def _approve(_owner: address, _spender: address, _value: uint256):
 
 @internal
 def _transfer(_from: address, _to: address, _value: uint256):
-    assert _to not in [self, empty(address)], "invalid receiver"
+    assert _to not in [self, empty(address)], "!receiver"
 
     self.balanceOf[_from] -= _value
     self.balanceOf[_to] += _value
@@ -2055,7 +2056,7 @@ def ramp_A_gamma(
     @param future_time The timestamp at which the ramping will end.
     """
     self._check_admin()
-    assert not self._is_ramping(), "ramp undergoing"
+    assert not self._is_ramping(), "!ramp"
     assert future_time > block.timestamp + MIN_RAMP_TIME - 1, "ramp time<min"
 
     A_gamma: uint256[2] = self._A_gamma()
@@ -2068,12 +2069,12 @@ def ramp_A_gamma(
     assert future_gamma < MAX_GAMMA + 1, "gamme>max"
 
     ratio: uint256 = 10**18 * future_A // A_gamma[0]
-    assert ratio < 10**18 * MAX_PARAM_CHANGE + 1, "A change too high"
-    assert ratio > 10**18 // MAX_PARAM_CHANGE - 1, "A change too low"
+    assert ratio < 10**18 * MAX_PARAM_CHANGE + 1, "A too high"
+    assert ratio > 10**18 // MAX_PARAM_CHANGE - 1, "A too low"
 
     ratio = 10**18 * future_gamma // A_gamma[1]
-    assert ratio < 10**18 * MAX_PARAM_CHANGE + 1, "gamma change too high"
-    assert ratio > 10**18 // MAX_PARAM_CHANGE - 1, "gamma change too low"
+    assert ratio < 10**18 * MAX_PARAM_CHANGE + 1, "gamma too high"
+    assert ratio > 10**18 // MAX_PARAM_CHANGE - 1, "gamma too low"
 
     self.initial_A_gamma = initial_A_gamma
     self.initial_A_gamma_time = block.timestamp
@@ -2145,16 +2146,16 @@ def apply_new_parameters(
     current_fee_params: uint256[3] = self._unpack_3(self.packed_fee_params)
 
     if new_out_fee < MAX_FEE + 1:
-        assert new_out_fee > MIN_FEE - 1, "fee is out of range"
+        assert new_out_fee > MIN_FEE - 1, "!fee"
     else:
         new_out_fee = current_fee_params[1]
 
     if new_mid_fee > MAX_FEE:
         new_mid_fee = current_fee_params[0]
-    assert new_mid_fee <= new_out_fee, "mid-fee is too high"
+    assert new_mid_fee <= new_out_fee, "!mid-fee"
 
     if new_fee_gamma < 10**18:
-        assert new_fee_gamma > 0, "fee_gamma out of range [1 .. 10**18]"
+        assert new_fee_gamma > 0, "!fee_gamma"
     else:
         new_fee_gamma = current_fee_params[2]
 
@@ -2175,7 +2176,7 @@ def apply_new_parameters(
         new_adjustment_step = current_rebalancing_params[1]
 
     if new_ma_time < 872542:  # <----- Calculated as: 7 * 24 * 60 * 60 / ln(2)
-        assert new_ma_time > 86, "MA time should be longer than 60/ln(2)"
+        assert new_ma_time > 86, "MA<60/ln(2)"
     else:
         new_ma_time = current_rebalancing_params[2]
 
@@ -2203,7 +2204,7 @@ def set_donation_duration(duration: uint256):
     @dev The time required for donations to fully release from locked state.
     """
     self._check_admin()
-    assert duration > 0, "duration must be positive"
+    assert duration > 0, "!duration"
     self.donation_duration = duration
     log SetDonationDuration(duration=duration)
 
@@ -2224,9 +2225,9 @@ def set_donation_protection_params(
     """
 
     self._check_admin()
-    assert _period > 0, "period must be positive"
-    assert _threshold > 0, "threshold must be positive"
-    assert _max_shares_ratio > 0, "max_shares must be positive"
+    assert _period > 0, "!period"
+    assert _threshold > 0, "!threshold"
+    assert _max_shares_ratio > 0, "!max_shares"
     self.donation_protection_period = _period
     self.donation_protection_lp_threshold = _threshold
     self.donation_shares_max_ratio = _max_shares_ratio
@@ -2262,7 +2263,7 @@ def set_periphery(views: Views, math: Math):
     """
     self._check_admin()
     # at least one of the two must be set
-    assert views != empty(Views) or math != empty(Math), "empty contract"
+    assert views != empty(Views) or math != empty(Math), "!contract"
 
     if views != empty(Views):
         self.VIEW = views
