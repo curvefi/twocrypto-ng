@@ -425,8 +425,8 @@ STATEFUL_TEST_CLASSES = {
     # "TestOnlySwap": OnlySwapStateful,
     # "TestUpOnlyLiquidity": UpOnlyLiquidityStateful,
     # "TestOnlyBalancedLiquidity": OnlyBalancedLiquidityStateful,
-    # "TestImbalancedLiquidity": ImbalancedLiquidityStateful,
-    # "TestRampingStateful": RampingStateful,
+    "TestImbalancedLiquidity": ImbalancedLiquidityStateful,
+    "TestRampingStateful": RampingStateful,
     "TestDonateStateful": DonateStateful,
 }
 
