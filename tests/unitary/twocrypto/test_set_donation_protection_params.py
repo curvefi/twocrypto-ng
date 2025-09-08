@@ -32,9 +32,9 @@ def test_only_owner(pool):
 @pytest.mark.parametrize("period,threshold,max_shares", [(0, 1, 1), (1, 0, 1), (1, 1, 0)])
 def test_invalid_params(pool, owner, period, threshold, max_shares):
     revert_msgs = {
-        (0, 1, 1): "period must be positive",
-        (1, 0, 1): "threshold must be positive",
-        (1, 1, 0): "max_shares must be positive",
+        (0, 1, 1): "!period",
+        (1, 0, 1): "!threshold",
+        (1, 1, 0): "!max_shares",
     }
     with boa.reverts(revert_msgs[(period, threshold, max_shares)]):
         pool.set_donation_protection_params(

@@ -60,7 +60,7 @@ def test_update_existing_contracts(pool, factory_admin):
 
 def test_revert_both_empty(pool, factory_admin):
     """Test that setting both contracts to empty reverts"""
-    with boa.reverts("empty contract"):
+    with boa.reverts("!contract"):
         pool.set_periphery(
             boa.eval("empty(address)"), boa.eval("empty(address)"), sender=factory_admin
         )
