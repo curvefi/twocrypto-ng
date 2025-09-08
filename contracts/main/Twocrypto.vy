@@ -1,4 +1,5 @@
 # pragma version 0.4.3
+# pragma optimize gas
 """
 @title Twocrypto
 @author Curve.Fi
@@ -227,7 +228,7 @@ MAX_GAMMA: constant(uint256) = 199 * 10**15 # 1.99 * 10**17
 name: public(immutable(String[64]))
 symbol: public(immutable(String[32]))
 decimals: public(constant(uint8)) = 18
-version: public(constant(String[8])) = "v2.1.0"
+version: public(constant(String[8])) = "v3.0.0"
 
 balanceOf: public(HashMap[address, uint256])
 allowance: public(HashMap[address, HashMap[address, uint256]])
