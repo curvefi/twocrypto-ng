@@ -1112,8 +1112,8 @@ def tweak_price(
     # this is approximate condition that preliminary indicates readiness for rebalancing
     vp_boosted: uint256 = 10**18 * xcp // locked_supply
     assert vp_boosted >= virtual_price, "negative donation"
-    if vp_boosted  > threshold_vp + rebalancing_params[0]:
-        #             allowed_extra_profit --------^
+    if (vp_boosted  > threshold_vp + rebalancing_params[0]) and (last_timestamp < block.timestamp):
+        #        allowed_extra_profit --------^               #   ^ only rebalance once per block (first tx)
         norm: uint256 = unsafe_div(
             unsafe_mul(price_oracle, 10**18), price_scale
         )
