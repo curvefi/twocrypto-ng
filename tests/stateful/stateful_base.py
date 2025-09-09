@@ -392,7 +392,7 @@ class StatefulBase(RuleBasedStateMachine):
                 ), "virtual price decreased but the amount was too high"
                 event("unsuccessful removal: virtual price decreased")
                 return
-            elif "withdrawal results in no tokens" in error_message:
+            elif "!tokens" in error_message:
                 print(error_message)
                 # for small amounts, withdrawal can result in 0 tokens
                 assert lp_tokens_to_withdraw < 1e18, "reverted for no tokens on a large withdrawal"
