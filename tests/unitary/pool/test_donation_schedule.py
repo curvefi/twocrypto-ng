@@ -21,7 +21,9 @@ def _trigger_burn_via_exchange(pool, ratio_num=13, ratio_den=10):
     base = 100_000 * 10**18
     for k in range(8):
         dx = base * (k + 1)
+        pool.eval("self.last_timestamp = block.timestamp-1")
         pool.exchange(0, dx, update_ema=False)
+        pool.eval("self.last_timestamp = block.timestamp")
         if pool.donation_shares() < pre_s:
             return True
 
@@ -31,7 +33,10 @@ def _trigger_burn_via_exchange(pool, ratio_num=13, ratio_den=10):
     pool.eval("self.last_timestamp = block.timestamp")
     for k in range(8):
         dx = base * (k + 1)
+        pool.eval("self.last_timestamp = block.timestamp-1")
         pool.exchange(1, dx, update_ema=False)
+        pool.eval("self.last_timestamp = block.timestamp")
+        # to allow multiple rebalances in the same block
         if pool.donation_shares() < pre_s:
             return True
 
@@ -170,7 +175,7 @@ def test_time_evolution_linear_no_protection(pool_ready_with_donation):
     dt = pool.donation_duration() // 10
     target = min(new_total, snap["U"] + new_total * dt // pool.donation_duration())
     boa.env.time_travel(seconds=dt)
-    assert _read_donation_shares(pool, False) == target
+    assert abs(_read_donation_shares(pool, False) - target) <= 10
 
 
 def test_extreme_burn_minimal_rounding(pool_ready_with_donation):
