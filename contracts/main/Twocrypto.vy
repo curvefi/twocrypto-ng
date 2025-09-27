@@ -1535,8 +1535,14 @@ def _calc_token_fee(amounts: uint256[N_COINS],
             # The penalty is proportional to the remaining protection time and the current pool fee.
             protection_factor: uint256 = min((current_expiry - block.timestamp) * PRECISION // self.donation_protection_period, PRECISION)
             # Penalty is also proportional to donation shares amount relative to max donations ratio.
-            lp_spam_penalty_fee = unsafe_div(protection_factor * fee * self.donation_shares // self.totalSupply, self.donation_shares_max_ratio)
-    return fee * Sdiff // S + NOISE_FEE + min(fee, lp_spam_penalty_fee)
+            lp_spam_penalty_fee = min(
+                fee, # it can't be larger than fee
+                unsafe_div(
+                    protection_factor * fee * self.donation_shares // self.totalSupply,
+                    self.donation_shares_max_ratio # unsafe div because ratio > 0
+                    )
+            )
+    return fee * Sdiff // S + NOISE_FEE + lp_spam_penalty_fee
 
 @view
 @external
