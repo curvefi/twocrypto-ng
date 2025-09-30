@@ -10,8 +10,6 @@ from twocrypto_abi import abi
 
 
 RPC_URL = os.environ.get("WEB3_PROVIDER_URL")
-RPC_URL = "https://lb.drpc.org/ethereum/AohYxdoKok53iRKt2O9xAcVOR6FEf6sR7aqHAkKsEQAD"
-RPC_URL = "https://lb.drpc.org/ethereum/AjChmXR1REONnrj1N60gVt9WYwvIkzcR8LjVwg8TMB_n"
 if not RPC_URL:
     raise RuntimeError("Set WEB3_PROVIDER_URL before running this script")
 
