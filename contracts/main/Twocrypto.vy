@@ -295,8 +295,8 @@ def __init__(
 
 
     self.donation_protection_expiry_ts = 0
-    self.donation_protection_period = 10 * 60   # 10 minutes
-    self.donation_protection_lp_threshold = 20 * PRECISION // 100  # 20%
+    self.donation_protection_period =  60   # decay of protection factor in seconds
+    self.donation_protection_lp_threshold = 50 * PRECISION // 100  # 50%
     self.donation_shares_max_ratio = 10 * PRECISION // 100  # 10%
 
     log Transfer(sender=empty(address), receiver=self, value=0)  # <------- Fire empty transfer from
@@ -1534,8 +1534,14 @@ def _calc_token_fee(amounts: uint256[N_COINS],
         if current_expiry > block.timestamp:
             # The penalty is proportional to the remaining protection time and the current pool fee.
             protection_factor: uint256 = min((current_expiry - block.timestamp) * PRECISION // self.donation_protection_period, PRECISION)
-            lp_spam_penalty_fee = protection_factor * fee // PRECISION
-
+            # Penalty is also proportional to donation shares amount relative to max donations ratio.
+            lp_spam_penalty_fee = min(
+                fee, # it can't be larger than fee
+                unsafe_div(
+                    protection_factor * fee * self.donation_shares // self.totalSupply,
+                    self.donation_shares_max_ratio # unsafe div because ratio > 0
+                    )
+            )
     return fee * Sdiff // S + NOISE_FEE + lp_spam_penalty_fee
 
 @view
