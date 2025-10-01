@@ -1,8 +1,10 @@
 import csv
+import json
 import os
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+
 from web3 import Web3
 from web3mc import Multicall
 
@@ -10,11 +12,9 @@ from twocrypto_abi import abi
 
 
 RPC_URL = os.environ.get("WEB3_PROVIDER_URL")
-
 if not RPC_URL:
     raise RuntimeError("Set WEB3_PROVIDER_URL before running this script")
 
-# Pool configuration lives up here so tweaking addresses or start blocks is easy.
 POOL_CONFIG = [
     {
         "name": "yb_wBTC",
@@ -33,7 +33,6 @@ POOL_CONFIG = [
     },
 ]
 
-# Calls we read from each pool every block.
 FUNCTION_NAMES = (
     "virtual_price",
     "xcp_profit",
@@ -48,17 +47,17 @@ FUNCTION_NAMES = (
     "D",
 )
 
-# Parallel tuning knobs.
+ABI = json.loads(abi) if isinstance(abi, str) else abi
+
+EVENT_NAMES = [entry.get("name", "") for entry in ABI if entry.get("type") == "event"]
+
 MAX_WORKERS = 50
-SAVE_EVERY = 50  # write progress to disk every N finished blocks
+SAVE_EVERY = 25
+LOG_CHUNK = 10_000
 
 WEB3 = Web3(Web3.HTTPProvider(RPC_URL))
 LATEST_BLOCK = WEB3.eth.get_block("latest")["number"]
-BLOCK_START = min(pool["start_block"] for pool in POOL_CONFIG)
-BLOCK_END = LATEST_BLOCK
-BLOCK_STEP = 1
 
-# Multicall options; tweak if RPC complains.
 MULTICALL_OPTIONS = {
     "provider_url": RPC_URL,
     "batch": 100,
@@ -67,7 +66,7 @@ MULTICALL_OPTIONS = {
     "_semaphore": 500,
 }
 
-DATA_DIR = Path(__file__).resolve().parent / "data"
+DATA_DIR = Path(__file__).resolve().parent / "data_events"
 
 thread_local = threading.local()
 
@@ -93,15 +92,15 @@ def prepare_calls():
 
     for pool in POOL_CONFIG:
         address = checksum(pool["address"])
-        contract = WEB3.eth.contract(address=address, abi=abi)
+        contract = WEB3.eth.contract(address=address, abi=ABI)
         contracts.append(contract)
         pool_info[address] = {"start_block": pool["start_block"]}
 
         for fn_name in FUNCTION_NAMES:
             if fn_name == "balances_0":
-                call = getattr(contract.functions, "balances")(0)
+                call = contract.functions.balances(0)
             elif fn_name == "balances_1":
-                call = getattr(contract.functions, "balances")(1)
+                call = contract.functions.balances(1)
             else:
                 call = getattr(contract.functions, fn_name)()
             calls.append(call)
@@ -119,7 +118,6 @@ def load_existing_data():
         csv_path = DATA_DIR / f"{address}.csv"
 
         pool_data = {}
-
         if not csv_path.exists():
             data[address] = pool_data
             continue
@@ -145,8 +143,10 @@ def load_existing_data():
                             payload["timestamp"] = timestamp_str
                     else:
                         payload["timestamp"] = None
+
                     for fn_name in FUNCTION_NAMES:
                         payload[fn_name] = row.get(fn_name)
+
                     pool_data[block_number] = payload
 
                 data[address] = pool_data
@@ -157,18 +157,80 @@ def load_existing_data():
     return data
 
 
-def compute_missing_blocks(results):
-    missing = set()
+def collect_event_blocks(contract, start_block):
+    if start_block > LATEST_BLOCK:
+        return set()
 
+    address = contract.address
+    block_numbers = set()
+
+    chunk_size = LOG_CHUNK
+    current = start_block
+
+    while current <= LATEST_BLOCK:
+        chunk_end = min(current + chunk_size - 1, LATEST_BLOCK)
+        params = {
+            "address": address,
+            "fromBlock": current,
+            "toBlock": chunk_end,
+        }
+
+        logs = WEB3.eth.get_logs(params)
+
+        for log in logs:
+            block = log["blockNumber"]
+            block_numbers.add(block)
+            # add preceding block (for decaying values checkpointing)
+            if block - 1 >= start_block:
+                block_numbers.add(block - 1)
+            # add sparse future blocks (for nonlinear values like ema oracle)
+            for future_delta in [25, 50, 100, 200]:
+                if block + future_delta <= LATEST_BLOCK:
+                    block_numbers.add(block + future_delta)
+
+        current = chunk_end + 1
+
+    block_numbers.add(LATEST_BLOCK)
+    return block_numbers
+
+
+def compute_event_starts(results):
+    starts = {}
+    for contract in CONTRACTS:
+        base_start = POOL_INFO[contract.address]["start_block"]
+        pool_blocks = results.get(contract.address, {})
+        if pool_blocks:
+            last_recorded = max(pool_blocks)
+            starts[contract.address] = max(base_start, last_recorded + 1)
+        else:
+            starts[contract.address] = base_start
+    return starts
+
+
+def gather_blocks(event_starts):
+    combined = set()
+
+    for contract in CONTRACTS:
+        combined.add(POOL_INFO[contract.address]["start_block"])
+        start_block = event_starts.get(contract.address, POOL_INFO[contract.address]["start_block"])
+        blocks = collect_event_blocks(contract, start_block)
+        combined.update(blocks)
+        print(
+            f"Pool {contract.address}: {len(blocks)} candidate blocks starting from block {start_block}"
+        )
+
+    filtered = sorted(block for block in combined if block <= LATEST_BLOCK)
+    return filtered
+
+
+def block_needs_fetch(block, results):
     for pool_address, info in POOL_INFO.items():
-        start_block = info["start_block"]
+        if block < info["start_block"]:
+            continue
         pool_blocks = results.get(pool_address, {})
-
-        for block in range(start_block, BLOCK_END + 1, BLOCK_STEP):
-            if block not in pool_blocks:
-                missing.add(block)
-
-    return sorted(missing)
+        if block not in pool_blocks or pool_blocks[block].get("timestamp") in (None, ""):
+            return True
+    return False
 
 
 def fetch_block(block_number, calls, addresses):
@@ -189,9 +251,6 @@ def build_block_payload(result, block_timestamp, block_data):
         pool_entry[fn_name] = value
         pool_entry["timestamp"] = block_timestamp
     return block_data
-
-
-CONTRACTS, CALLS, CALL_ADDRESSES, CALL_METADATA, POOL_INFO = prepare_calls()
 
 
 def write_all_csv(data):
@@ -218,35 +277,35 @@ def write_all_csv(data):
                 writer.writerow(row)
 
 
+CONTRACTS, CALLS, CALL_ADDRESSES, CALL_METADATA, POOL_INFO = prepare_calls()
+
+
 def main():
+    print(f"Tracking events: {', '.join(EVENT_NAMES)}")
+
     existing_data = load_existing_data()
     results = {
         contract.address: dict(existing_data.get(contract.address, {})) for contract in CONTRACTS
     }
 
-    for contract in CONTRACTS:
-        pool_blocks = results[contract.address]
-        if pool_blocks:
-            highest = max(pool_blocks)
-            lowest = min(pool_blocks)
-            print(
-                f"Pool {contract.address}: {len(pool_blocks)} blocks stored ({lowest} -> {highest})"
-            )
-        else:
-            print(f"Pool {contract.address}: no cached data yet")
+    event_starts = compute_event_starts(results)
 
-    blocks = compute_missing_blocks(results)
-    total_blocks = len(blocks)
-    if not total_blocks:
-        print("Data already covers the latest block, nothing to fetch")
+    target_blocks = gather_blocks(event_starts)
+
+    missing_blocks = [block for block in target_blocks if block_needs_fetch(block, results)]
+    total_missing = len(missing_blocks)
+
+    if not total_missing:
+        print("No missing blocks detected. Nothing to fetch.")
         write_all_csv(results)
         return
 
-    print(f"Fetching {total_blocks} missing blocks (newest target {BLOCK_END})")
+    print(f"Fetching {total_missing} event-driven blocks (latest target {LATEST_BLOCK})")
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = {
-            executor.submit(fetch_block, block, CALLS, CALL_ADDRESSES): block for block in blocks
+            executor.submit(fetch_block, block, CALLS, CALL_ADDRESSES): block
+            for block in missing_blocks
         }
 
         completed = 0
@@ -254,7 +313,7 @@ def main():
             block_number = futures[future]
             try:
                 finished_block, block_timestamp, block_payload = future.result()
-            except Exception as exc:  # noqa: BLE001 - logging the failure is enough here
+            except Exception as exc:  # noqa: BLE001
                 print(f"Block {block_number} failed: {exc}")
                 continue
 
@@ -262,20 +321,20 @@ def main():
                 start_block = POOL_INFO[pool_address]["start_block"]
                 if finished_block < start_block:
                     continue
-                results[pool_address][finished_block] = pool_values
+                results.setdefault(pool_address, {})[finished_block] = pool_values
 
             completed += 1
 
-            if completed % 10 == 0 or completed == total_blocks:
+            if completed % 10 == 0 or completed == total_missing:
                 print(
-                    f"Processed {completed}/{total_blocks} blocks (latest done: {finished_block})"
+                    f"Processed {completed}/{total_missing} blocks (latest done: {finished_block})"
                 )
 
             if completed % SAVE_EVERY == 0:
                 write_all_csv(results)
 
     write_all_csv(results)
-    print(f"Saved data to {DATA_DIR}")
+    print(f"Saved sparse event data to {DATA_DIR}")
 
 
 if __name__ == "__main__":
