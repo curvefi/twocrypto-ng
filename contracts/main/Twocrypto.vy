@@ -295,8 +295,8 @@ def __init__(
 
 
     self.donation_protection_expiry_ts = 0
-    self.donation_protection_period =  60   # 10 minutes
-    self.donation_protection_lp_threshold = 50 * PRECISION // 100  # 20%
+    self.donation_protection_period =  60   # decay of protection factor in seconds
+    self.donation_protection_lp_threshold = 50 * PRECISION // 100  # 50%
     self.donation_shares_max_ratio = 10 * PRECISION // 100  # 10%
 
     log Transfer(sender=empty(address), receiver=self, value=0)  # <------- Fire empty transfer from
