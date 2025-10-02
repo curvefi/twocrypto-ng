@@ -487,7 +487,7 @@ def _donation_shares(_donation_protection: bool = True) -> uint256:
 
     # --- Time-based release of donation shares ---
     elapsed: uint256 = block.timestamp - self.last_donation_release_ts
-    unlocked_shares: uint256 = min(donation_shares, donation_shares * elapsed // self.donation_duration)
+    unlocked_shares: uint256 = min(donation_shares, unsafe_div(donation_shares * elapsed, self.donation_duration))
 
     if not _donation_protection:
         # if donation protection is disabled, return the total amount of unlocked donation shares
@@ -499,9 +499,11 @@ def _donation_shares(_donation_protection: bool = True) -> uint256:
     protection_factor: uint256 = 0
     expiry: uint256 = self.donation_protection_expiry_ts
     if expiry > block.timestamp:
-        protection_factor = min((expiry - block.timestamp) * PRECISION // self.donation_protection_period, PRECISION)
+        protection_factor = min(
+            unsafe_div((expiry - block.timestamp) * PRECISION, self.donation_protection_period),
+            PRECISION)
 
-    return unlocked_shares * (PRECISION - protection_factor) // PRECISION
+    return unsafe_div(unlocked_shares * (PRECISION - protection_factor), PRECISION)
 
 
 @external
@@ -608,11 +610,13 @@ def add_liquidity(
             # --- Donation Protection & LP Spam Penalty ---
             # Extend protection to shield against donation extraction via sandwich attacks.
             # A penalty is applied for extending the protection to disincentivize spamming.
-            relative_lp_add: uint256 = d_token * PRECISION // (token_supply + d_token)
+            relative_lp_add: uint256 = unsafe_div(d_token * PRECISION, token_supply + d_token) #d_token > 0
             if relative_lp_add > 0 and self.donation_shares > 0:  # sub-precision additions are expensive to stack
                 # Extend protection period
                 protection_period: uint256 = self.donation_protection_period
-                extension_seconds: uint256 = min(relative_lp_add * protection_period // self.donation_protection_lp_threshold, protection_period)
+                extension_seconds: uint256 = min(
+                    unsafe_div(relative_lp_add * protection_period, self.donation_protection_lp_threshold),
+                    protection_period)
                 current_expiry: uint256 = max(self.donation_protection_expiry_ts, block.timestamp)
                 new_expiry: uint256 = min(current_expiry + extension_seconds, block.timestamp + protection_period)
                 self.donation_protection_expiry_ts = new_expiry
@@ -1533,7 +1537,10 @@ def _calc_token_fee(amounts: uint256[N_COINS],
         current_expiry: uint256 = self.donation_protection_expiry_ts
         if current_expiry > block.timestamp:
             # The penalty is proportional to the remaining protection time and the current pool fee.
-            protection_factor: uint256 = min((current_expiry - block.timestamp) * PRECISION // self.donation_protection_period, PRECISION)
+            protection_factor: uint256 = min(
+                unsafe_div((current_expiry - block.timestamp) * PRECISION, self.donation_protection_period),
+                PRECISION
+                )
             # Penalty is also proportional to donation shares amount relative to max donations ratio.
             lp_spam_penalty_fee = min(
                 fee, # it can't be larger than fee
