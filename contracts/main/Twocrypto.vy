@@ -500,7 +500,7 @@ def _donation_shares(_donation_protection: bool = True) -> uint256:
     expiry: uint256 = self.donation_protection_expiry_ts
     if expiry > block.timestamp:
         protection_factor = min(
-            unsafe_div((expiry - block.timestamp) * PRECISION, self.donation_protection_period),
+            unsafe_div((unsafe_sub(expiry, block.timestamp) * PRECISION), self.donation_protection_period),
             PRECISION)
 
     return unsafe_div(unlocked_shares * (PRECISION - protection_factor), PRECISION)
@@ -1538,7 +1538,7 @@ def _calc_token_fee(amounts: uint256[N_COINS],
         if current_expiry > block.timestamp:
             # The penalty is proportional to the remaining protection time and the current pool fee.
             protection_factor: uint256 = min(
-                unsafe_div((current_expiry - block.timestamp) * PRECISION, self.donation_protection_period),
+                unsafe_div(unsafe_sub(current_expiry, block.timestamp) * PRECISION, self.donation_protection_period),
                 PRECISION
                 )
             # Penalty is also proportional to donation shares amount relative to max donations ratio.
