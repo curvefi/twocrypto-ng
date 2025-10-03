@@ -499,6 +499,7 @@ def _donation_shares(_donation_protection: bool = True) -> uint256:
     protection_factor: uint256 = 0
     expiry: uint256 = self.donation_protection_expiry_ts
     if expiry > block.timestamp:
+        # unsafe_sub is safe due to if condition
         protection_factor = min(
             unsafe_div((unsafe_sub(expiry, block.timestamp) * PRECISION), self.donation_protection_period),
             PRECISION)
@@ -569,7 +570,7 @@ def add_liquidity(
         d_token = self._xcp(D, price_scale)  # <----- Making initial virtual price equal to 1.
 
     assert d_token > 0, "nothing minted"
-
+    # this assert is reused for unsafe_div later
 
     d_token_fee: uint256 = 0
     if old_D > 0:
@@ -2238,6 +2239,7 @@ def set_donation_protection_params(
     """
 
     self._check_admin()
+    # > 0 asserts are critical as unsafe_div is used throughout the code. Change cautiously!
     assert _period > 0, "!period"
     assert _threshold > 0, "!threshold"
     assert _max_shares_ratio > 0, "!max_shares"
