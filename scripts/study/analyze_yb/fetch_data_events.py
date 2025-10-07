@@ -8,7 +8,7 @@ from pathlib import Path
 from web3 import Web3
 from web3mc import Multicall
 
-from twocrypto_abi import abi
+from abis import twocrypto_abi
 
 
 RPC_URL = os.environ.get("WEB3_PROVIDER_URL")
@@ -47,7 +47,7 @@ FUNCTION_NAMES = (
     "D",
 )
 
-ABI = json.loads(abi) if isinstance(abi, str) else abi
+ABI = json.loads(twocrypto_abi) if isinstance(twocrypto_abi, str) else twocrypto_abi
 
 EVENT_NAMES = [entry.get("name", "") for entry in ABI if entry.get("type") == "event"]
 
@@ -194,12 +194,12 @@ def collect_event_blocks(contract, start_block):
     return block_numbers
 
 
-def compute_event_starts(results):
+def compute_event_starts(results, use_latest=True):
     starts = {}
     for contract in CONTRACTS:
         base_start = POOL_INFO[contract.address]["start_block"]
         pool_blocks = results.get(contract.address, {})
-        if pool_blocks:
+        if pool_blocks and use_latest:
             last_recorded = max(pool_blocks)
             starts[contract.address] = max(base_start, last_recorded + 1)
         else:
@@ -288,7 +288,7 @@ def main():
         contract.address: dict(existing_data.get(contract.address, {})) for contract in CONTRACTS
     }
 
-    event_starts = compute_event_starts(results)
+    event_starts = compute_event_starts(results, use_latest=True)
 
     target_blocks = gather_blocks(event_starts)
 
