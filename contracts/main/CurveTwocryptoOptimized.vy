@@ -118,6 +118,8 @@ event ClaimAdminFee:
     admin: indexed(address)
     tokens: uint256[N_COINS]
 
+event SetAdminFee:
+    admin_fee: uint256
 
 # ----------------------- Storage/State Variables ----------------------------
 
@@ -1931,3 +1933,4 @@ def set_admin_fee(_admin_fee: uint256):
 
     self.admin_fee = _admin_fee
 
+    log SetAdminFee(_admin_fee)
