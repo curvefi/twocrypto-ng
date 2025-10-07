@@ -1,5 +1,5 @@
 import boa
-from eth_utils import to_checksum_address
+from eth_utils.address import to_checksum_address
 
 
 def mint_for_testing(token_contract, addr, amount, mint_eth=False):
@@ -11,6 +11,5 @@ def mint_for_testing(token_contract, addr, amount, mint_eth=False):
             with boa.env.prank(addr):
                 token_contract.deposit(value=amount)
     else:
-        token_contract.eval(f"self.totalSupply += {amount}")
-        token_contract.eval(f"self.balanceOf[{addr}] += {amount}")
-        token_contract.eval(f"log Transfer(empty(address), {addr}, {amount})")
+        with boa.env.prank(addr):
+            token_contract._mint_for_testing(addr, amount)

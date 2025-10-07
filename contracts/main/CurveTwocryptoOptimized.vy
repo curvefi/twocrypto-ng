@@ -161,13 +161,13 @@ packed_rebalancing_params: public(uint256)  # <---------- Contains rebalancing
 # Fee params that determine dynamic fees:
 packed_fee_params: public(uint256)  # <---- Packs mid_fee, out_fee, fee_gamma.
 
-ADMIN_FEE: public(constant(uint256)) = 5 * 10**9  # <----- 50% of earned fees.
 MIN_FEE: constant(uint256) = 5 * 10**5  # <-------------------------- 0.5 BPS.
 MAX_FEE: constant(uint256) = 10 * 10**9
 NOISE_FEE: constant(uint256) = 10**5  # <---------------------------- 0.1 BPS.
 
 # ----------------------- Admin params ---------------------------------------
 
+admin_fee: public(uint256)
 last_admin_fee_claim_timestamp: uint256
 admin_lp_virtual_balance: uint256
 
@@ -186,7 +186,7 @@ MAX_GAMMA: constant(uint256) = 199 * 10**15 # 1.99 * 10**17
 name: public(immutable(String[64]))
 symbol: public(immutable(String[32]))
 decimals: public(constant(uint8)) = 18
-version: public(constant(String[8])) = "v2.1.0"
+version: public(constant(String[8])) = "v2.1.1"
 
 balanceOf: public(HashMap[address, uint256])
 allowance: public(HashMap[address, HashMap[address, uint256]])
@@ -275,6 +275,7 @@ def __init__(
         )
     )
 
+    self.admin_fee = 5 * 10**9 # 50%
     log Transfer(empty(address), self, 0)  # <------- Fire empty transfer from
     #                                       0x0 to self for indexers to catch.
 
@@ -540,7 +541,7 @@ def add_liquidity(
         d_token -= d_token_fee
         token_supply += d_token
         self.mint(receiver, d_token)
-        self.admin_lp_virtual_balance += unsafe_div(ADMIN_FEE * d_token_fee, 10**10)
+        self.admin_lp_virtual_balance += unsafe_div(self.admin_fee * d_token_fee, 10**10)
 
         price_scale = self.tweak_price(A_gamma, xp, D, 0)
 
@@ -1051,7 +1052,7 @@ def _claim_admin_fees():
     #         are left with half; so divide by 2.
 
     fees: uint256 = unsafe_div(
-        unsafe_sub(xcp_profit, xcp_profit_a) * ADMIN_FEE, 2 * 10**10
+        unsafe_sub(xcp_profit, xcp_profit_a) * self.admin_fee, 2 * 10**10
     )
 
     # ------------------------------ Claim admin fees by minting admin's share
@@ -1915,3 +1916,18 @@ def apply_new_parameters(
         new_adjustment_step,
         new_ma_time,
     )
+
+
+
+@external
+def set_admin_fee(_admin_fee: uint256):
+    """
+    @notice Set the percentage of fee for the admin.
+    @dev Only accessible by factory admin.
+    @param _admin_fee The new admin fee.
+    """
+    assert msg.sender == factory.admin()  # dev: only owner
+    assert _admin_fee <= 10**10
+
+    self.admin_fee = _admin_fee
+
