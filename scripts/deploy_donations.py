@@ -3,9 +3,10 @@ import os
 from eth_account import Account
 from boa.explorer import Etherscan
 from secure_key_utils import decrypt_private_key, getpass
+import time
 
 # deploy as blueprints
-DEPLOY = True
+DEPLOY = False
 ADMIN_FEE = 10**10 * 50 // 100
 
 
@@ -27,6 +28,7 @@ def twocrypto_with_periphery(twocrypto_path, views_address, math_address, admin_
     return boa.loads_partial(twocrypto_code)
 
 
+# rpc_url = "https://bsc-dataseed.bnbchain.org"
 rpc_url = "https://eth.drpc.org"
 etherscan_api_key = os.environ.get("ETHERSCAN_API_KEY")
 
@@ -57,22 +59,31 @@ math_deployer = boa.load_partial(math_path)
 views_deployer = boa.load_partial(views_path)
 
 if DEPLOY:
+    # print("Deploying math contract...")
     # math_contract = math_deployer.deploy()
+    # time.sleep(5)
+    # print("Deploying views contract...")
     # views_contract = views_deployer.deploy()
-    math_address = "0x79839c2D74531A8222C0F555865aAc1834e82e51"
-    views_address = "0x35048188c02cbc9239e1e5ecb3761eF9dfDcD31f"
+    # time.sleep(5)
+    # math_address = math_contract.address
+    # views_address = views_contract.address
+    math_address = "0x79839c2D74531A8222C0F555865aAc1834e82e51"  # eth
+    views_address = "0x35048188c02cbc9239e1e5ecb3761eF9dfDcD31f"  # eth
 
+    # math_address = "0xd908A6ed4DCE4139f9b0F0E9c6c769539a9D7601" #bsc
+    # views_address = "0x068712A87FFCB06cd1069Ad7526bDA8Bd564A910" #bsc
     math_contract = math_deployer.at(math_address)
     views_contract = views_deployer.at(views_address)
-
+    print("Deploying twocrypto contract...")
     twocrypto_deployer = twocrypto_with_periphery(
         twocrypto_path, views_contract.address, math_contract.address, ADMIN_FEE
     )
     twocrypto_contract = twocrypto_deployer.deploy_as_blueprint()
+    time.sleep(5)
 else:
     math_address = "0x79839c2D74531A8222C0F555865aAc1834e82e51"
     views_address = "0x35048188c02cbc9239e1e5ecb3761eF9dfDcD31f"
-    twocrypto_address = "0x7D3ba8D1143e5f6CeE71C659375DcB95B3302D62"
+    twocrypto_address = "0xD1FAeCA80d6FDd1DF4CBcCe4b2551b6Ee63Ae3D6"
 
     math_contract = math_deployer.at(math_address)
     views_contract = views_deployer.at(views_address)

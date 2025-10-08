@@ -8,6 +8,7 @@ from tests.utils.god_mode import GodModePool
 
 PRECISION = 10**18
 INITIAL_LIQUIDITY = 1000 * PRECISION
+# boa.env.evm.patch.code_size_limit = 1000000  # Increase code size limit for deployment
 
 
 @pytest.fixture(scope="module")
@@ -187,3 +188,30 @@ def test_add_liquidity_donation(pool, user_account, bob):
     assert pool.donation_shares() == initial_donation_shares + minted_lp
     assert pool.balanceOf(user_account) == 0  # No LP tokens for donor
     assert pool.balanceOf(bob) == initial_total_supply  # Bob's balance is unchanged
+
+
+# def test_add_liquidity_ape_tax(pool, user_account, bob):
+#     gm_pool = GodModePool(pool)
+#     # small initial liquidity
+#     initial_amounts = gm_pool.compute_balanced_amounts(INITIAL_LIQUIDITY // 10)
+#     gm_pool.premint_amounts(initial_amounts, to=user_account)
+#     pool.add_liquidity(initial_amounts, 0, sender=user_account)
+
+#     bob_amounts = gm_pool.compute_balanced_amounts(INITIAL_LIQUIDITY)
+#     gm_pool.premint_amounts(bob_amounts, to=bob)
+#     with boa.env.anchor():
+#         lp_no_tax = pool.add_liquidity(bob_amounts, 0, sender=bob)
+
+#     with boa.env.anchor():
+#         current_ts = boa.env.evm.patch.timestamp
+#         current_protection_period = pool.donation_protection_period()
+#         pool.eval(f'self.donation_protection_expiry_ts = {current_ts + current_protection_period}')
+#         lp_with_tax = pool.add_liquidity(bob_amounts, 0, sender=bob)
+
+#     print(f'lp_no_tax: {lp_no_tax}, lp_with_tax: {lp_with_tax}, ratio: {lp_with_tax / lp_no_tax}')
+# with boa.env.anchor():
+#     # boost protection_factor by adding liq
+# # bob adds liquidity
+# bob_adds_amounts = gm_pool.compute_balanced_amounts(INITIAL_LIQUIDITY // 10)
+# gm_pool.premint_amounts(bob_adds_amounts, to=bob)
+# pool.add_liquidity(bob_adds_amounts, 0, sender=bob)
