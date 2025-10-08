@@ -14,11 +14,12 @@ dependencies = [
     "keyring>=25.6.0",
     "base58>=2.1.1",
     "cryptography>=45.0.5",
+    "web3mc>=0.1.11",
 ]
 
 
 [tool.uv.sources]
-titanoboa = { git = "https://github.com/vyperlang/titanoboa.git", rev = "44d35aaed62d1e2bdfc758fb2de855b85726ae64" }
+titanoboa = { git = "https://github.com/vyperlang/titanoboa.git", rev = "3747d27952d022ccfa495fc63fafc65204d48eca" }
 
 
 [tool.uv]
