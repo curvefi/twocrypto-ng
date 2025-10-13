@@ -45,13 +45,16 @@ FUNCTION_NAMES = (
     "balances_0",
     "balances_1",
     "D",
+    "lp_price",
+    "last_prices",
+    "spot_price",
 )
 
 ABI = json.loads(twocrypto_abi) if isinstance(twocrypto_abi, str) else twocrypto_abi
 
 EVENT_NAMES = [entry.get("name", "") for entry in ABI if entry.get("type") == "event"]
 
-MAX_WORKERS = 50
+MAX_WORKERS = 150
 SAVE_EVERY = 25
 LOG_CHUNK = 10_000
 
@@ -101,6 +104,8 @@ def prepare_calls():
                 call = contract.functions.balances(0)
             elif fn_name == "balances_1":
                 call = contract.functions.balances(1)
+            elif fn_name == "spot_price":
+                call = contract.functions.get_dy(0, 1, 10**18)
             else:
                 call = getattr(contract.functions, fn_name)()
             calls.append(call)
@@ -184,7 +189,7 @@ def collect_event_blocks(contract, start_block):
             if block - 1 >= start_block:
                 block_numbers.add(block - 1)
             # add sparse future blocks (for nonlinear values like ema oracle)
-            for future_delta in [25, 50, 100, 200]:
+            for future_delta in [25, 50, 100]:
                 if block + future_delta <= LATEST_BLOCK:
                     block_numbers.add(block + future_delta)
 
