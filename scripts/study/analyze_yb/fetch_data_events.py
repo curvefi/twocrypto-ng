@@ -20,16 +20,19 @@ POOL_CONFIG = [
         "name": "yb_wBTC",
         "address": "0xD9FF8396554A0d18B2CFbeC53e1979b7ecCe8373",
         "start_block": 23_434_000,
+        "decimals": 8,
     },
     {
         "name": "yb_tBTC",
         "address": "0xf1F435B05D255a5dBdE37333C0f61DA6F69c6127",
         "start_block": 23_434_000,
+        "decimals": 18,
     },
     {
         "name": "yb_cbBTC",
         "address": "0x83f24023d15d835a213df24fd309c47dAb5BEb32",
         "start_block": 23_434_000,
+        "decimals": 8,
     },
 ]
 
@@ -47,7 +50,8 @@ FUNCTION_NAMES = (
     "D",
     "lp_price",
     "last_prices",
-    "spot_price",
+    "spot_price_in",
+    "spot_price_out",
 )
 
 ABI = json.loads(twocrypto_abi) if isinstance(twocrypto_abi, str) else twocrypto_abi
@@ -97,15 +101,19 @@ def prepare_calls():
         address = checksum(pool["address"])
         contract = WEB3.eth.contract(address=address, abi=ABI)
         contracts.append(contract)
-        pool_info[address] = {"start_block": pool["start_block"]}
+        pool_info[address] = {"start_block": pool["start_block"], "decimals": pool["decimals"]}
 
         for fn_name in FUNCTION_NAMES:
             if fn_name == "balances_0":
                 call = contract.functions.balances(0)
             elif fn_name == "balances_1":
                 call = contract.functions.balances(1)
-            elif fn_name == "spot_price":
+            elif fn_name == "spot_price_in":  # trade 1 usd in
                 call = contract.functions.get_dy(0, 1, 10**18)
+            elif fn_name == "spot_price_out":  # trade 1e-5 btc in
+                call = contract.functions.get_dy(
+                    1, 0, int(1e-5 * 10 ** pool_info[address]["decimals"])
+                )
             else:
                 call = getattr(contract.functions, fn_name)()
             calls.append(call)
