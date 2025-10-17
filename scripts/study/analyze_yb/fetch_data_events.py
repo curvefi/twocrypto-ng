@@ -203,7 +203,7 @@ def collect_event_blocks(contract, start_block):
 
         current = chunk_end + 1
 
-    block_numbers.add(LATEST_BLOCK)
+    # block_numbers.add(LATEST_BLOCK)
     return block_numbers
 
 
