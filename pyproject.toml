@@ -8,7 +8,7 @@ requires-python = ">=3.12"
 # Requirements
 dependencies = [
     "vyper==0.4.3",
-    "titanoboa==0.2.7", # Keep this as a placeholder in the dependencies array
+    "titanoboa==0.2.8", # Keep this as a placeholder in the dependencies array
     "snekmate==0.1.2",
     "web3>=7.12.1",
     "keyring>=25.6.0",
@@ -19,7 +19,7 @@ dependencies = [
 
 
 [tool.uv.sources]
-titanoboa = { git = "https://github.com/vyperlang/titanoboa.git", rev = "3747d27952d022ccfa495fc63fafc65204d48eca" }
+# titanoboa = { git = "https://github.com/vyperlang/titanoboa.git", rev = "3747d27952d022ccfa495fc63fafc65204d48eca" }
 
 
 [tool.uv]

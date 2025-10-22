@@ -9,6 +9,7 @@ from web3 import Web3
 from web3mc import Multicall
 
 from abis import twocrypto_abi
+from collections import defaultdict
 
 
 RPC_URL = os.environ.get("WEB3_PROVIDER_URL")
@@ -55,6 +56,26 @@ FUNCTION_NAMES = (
 )
 
 ABI = json.loads(twocrypto_abi) if isinstance(twocrypto_abi, str) else twocrypto_abi
+
+
+def _build_event_topic_map(abi):
+    mapping = {}
+    for entry in abi:
+        if entry.get("type") == "event":
+            name = entry.get("name", "")
+            inputs = entry.get("inputs", [])
+            try:
+                types = [i.get("type", "") for i in inputs]
+                signature = f"{name}({','.join(types)})"
+                topic = Web3.keccak(text=signature).hex()
+                mapping[topic] = name
+            except Exception:
+                # Be defensive: skip malformed entries
+                continue
+    return mapping
+
+
+TOPIC0_TO_EVENT = _build_event_topic_map(ABI)
 
 EVENT_NAMES = [entry.get("name", "") for entry in ABI if entry.get("type") == "event"]
 
@@ -176,6 +197,7 @@ def collect_event_blocks(contract, start_block):
 
     address = contract.address
     block_numbers = set()
+    event_counts = defaultdict(int)
 
     chunk_size = LOG_CHUNK
     current = start_block
@@ -193,6 +215,18 @@ def collect_event_blocks(contract, start_block):
         for log in logs:
             block = log["blockNumber"]
             block_numbers.add(block)
+            # count event by topic0 signature
+            topic0 = None
+            try:
+                # HexBytes supports .hex()
+                topic0 = log.get("topics", [None])[0]
+                if topic0 is not None:
+                    topic0 = topic0.hex() if hasattr(topic0, "hex") else str(topic0)
+            except Exception:
+                topic0 = None
+            if topic0 is not None:
+                evt_name = TOPIC0_TO_EVENT.get(topic0, topic0)
+                event_counts[evt_name] += 1
             # add preceding block (for decaying values checkpointing)
             if block - 1 >= start_block:
                 block_numbers.add(block - 1)
@@ -202,6 +236,14 @@ def collect_event_blocks(contract, start_block):
                     block_numbers.add(block + future_delta)
 
         current = chunk_end + 1
+
+    # Print event occurrence summary for this pool
+    if event_counts:
+        # Show top events by count
+        sorted_counts = sorted(event_counts.items(), key=lambda kv: kv[1], reverse=True)
+        pool_addr = contract.address
+        summary = ", ".join([f"{name}: {count}" for name, count in sorted_counts])
+        print(f"Event counts for pool {pool_addr}: {summary}")
 
     # block_numbers.add(LATEST_BLOCK)
     return block_numbers
