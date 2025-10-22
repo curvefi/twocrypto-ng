@@ -1880,6 +1880,25 @@ def lp_price() -> uint256:
 @external
 @view
 @nonreentrant
+def lp_price_lower_bound() -> uint256:
+    """
+    @notice Calculates the lower bound of the LP token price w.r.t coin at the
+            0th index
+    @return uint256 Lower bound of LP price.
+    """
+    xcp_profit: uint256 = self.xcp_profit
+    xcp_profit_half: uint256 = (xcp_profit + 10**18) // 2 # defines lower bound for virtual price after rebalancings
+    xcp_profit_admin_fee: uint256 = (xcp_profit - self.xcp_profit_a) * self.admin_fee // (10**10 * 2) # defines lower bound for virtual price after admin fees
+    # after full rebalancing and admin fee claim virtual_price can go as low as
+    vp_lower_bound: uint256 = xcp_profit_half - xcp_profit_admin_fee
+    # Note that if pool uses donations this formula is not enough! Further dips are possible!
+    return 2 * vp_lower_bound * isqrt(self.internal_price_oracle() * 10**18) // 10**18
+
+
+
+@external
+@view
+@nonreentrant
 def get_virtual_price() -> uint256:
     """
     @notice Calculates the current virtual price of the pool LP token.
