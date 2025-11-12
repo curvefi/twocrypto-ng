@@ -79,7 +79,7 @@ TOPIC0_TO_EVENT = _build_event_topic_map(ABI)
 
 EVENT_NAMES = [entry.get("name", "") for entry in ABI if entry.get("type") == "event"]
 
-MAX_WORKERS = 150
+MAX_WORKERS = 64
 SAVE_EVERY = 25
 LOG_CHUNK = 10_000
 
