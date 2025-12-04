@@ -27,7 +27,7 @@ def twocrypto_with_periphery(twocrypto_path, views_address, math_address, admin_
     return boa.loads_partial(twocrypto_code)
 
 
-rpc_url = "https://eth.drpc.org"
+rpc_url = "https://polygon.drpc.org"
 etherscan_api_key = os.environ.get("ETHERSCAN_API_KEY")
 
 # private_key = os.environ.get("WEB3_TESTNET_PK")
@@ -57,10 +57,12 @@ math_deployer = boa.load_partial(math_path)
 views_deployer = boa.load_partial(views_path)
 
 if DEPLOY:
-    # math_contract = math_deployer.deploy()
-    # views_contract = views_deployer.deploy()
-    math_address = "0x79839c2D74531A8222C0F555865aAc1834e82e51"
-    views_address = "0x35048188c02cbc9239e1e5ecb3761eF9dfDcD31f"
+    math_contract = math_deployer.deploy()
+    views_contract = views_deployer.deploy()
+    math_address = math_contract.address
+    views_address = views_contract.address
+    # math_address = "0x79839c2D74531A8222C0F555865aAc1834e82e51"
+    # views_address = "0x35048188c02cbc9239e1e5ecb3761eF9dfDcD31f"
 
     math_contract = math_deployer.at(math_address)
     views_contract = views_deployer.at(views_address)
