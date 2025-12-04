@@ -7,7 +7,7 @@ import time
 from eth_utils import keccak
 
 # deploy as blueprints
-DEPLOY = False
+DEPLOY = True
 ADMIN_FEE = 10**10 * 50 // 100
 
 
@@ -31,7 +31,8 @@ def twocrypto_with_periphery(twocrypto_path, views_address, math_address, admin_
 
 # rpc_url = "https://bsc-dataseed.bnbchain.org"
 # rpc_url = "https://eth.drpc.org"
-rpc_url = "https://mainnet.base.org"
+# rpc_url = "https://mainnet.base.org"
+rpc_url = "https://polygon-rpc.com"
 etherscan_api_key = os.environ.get("ETHERSCAN_API_KEY")
 
 # private_key = os.environ.get("WEB3_TESTNET_PK")
@@ -70,6 +71,9 @@ if DEPLOY:
     elif boa.env.evm.patch.chain_id == 8453:
         math_address = "0x2Bd498ae431dC98694010950fcF8ACd3599f5512"
         views_address = "0xFcBA2D0133F705DD8bAf250a64f1DE0d7091F5Bd"  # base
+    elif boa.env.evm.patch.chain_id == 137:
+        math_address = "0xe3AA3639BA550bED6ba5Fb9635bE89f9e35b9745"
+        views_address = "0x5183A4dFC1adbfFDbf28293ce923fD4F844Cb216"  # polygon
     else:
         print("Deploying math contract...")
         math_contract = math_deployer.deploy()
@@ -101,6 +105,10 @@ else:
         math_address = "0x2Bd498ae431dC98694010950fcF8ACd3599f5512"
         views_address = "0xFcBA2D0133F705DD8bAf250a64f1DE0d7091F5Bd"  # base
         twocrypto_address = "0x56545b4640e5f0937e56843ad8f0a3cd44fc0785"
+    elif boa.env.evm.patch.chain_id == 137:
+        math_address = "0xe3AA3639BA550bED6ba5Fb9635bE89f9e35b9745"
+        views_address = "0x5183A4dFC1adbfFDbf28293ce923fD4F844Cb216"  # polygon
+        twocrypto_address = "0xE6Ea1975544c1b4E56C900f600d7786D76Ea5944"
     else:
         raise ValueError(f"Chain ID {boa.env.evm.patch.chain_id} not supported")
     math_contract = math_deployer.at(math_address)
