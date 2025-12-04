@@ -28,6 +28,8 @@ exports: (
     params.factory,
     params.admin,
     params.fee_receiver,
+    params.pool_fee_receiver,
+    params.set_fee_receiver,
     params.apply_new_parameters,
     # Affect the shape of the bonding curve
     params.A,
