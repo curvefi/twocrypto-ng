@@ -45,3 +45,4 @@ UNIX_DAY = 86400
 MIN_FEE = c._constants.MIN_FEE
 MAX_FEE = c._constants.MAX_FEE
 MIN_RAMP_TIME = c._constants.MIN_RAMP_TIME
+ZERO_ADDRESS = boa.eval("empty(address)")

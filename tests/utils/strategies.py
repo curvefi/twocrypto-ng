@@ -9,7 +9,6 @@ from boa.test import strategy
 from hypothesis import assume, note
 from hypothesis.strategies import composite, integers, just, sampled_from
 
-from tests.unitary.factory.test_deploy_pool import ZERO_ADDRESS
 from tests.utils.constants import (
     MAX_A,
     MAX_FEE,
@@ -23,6 +22,7 @@ from tests.utils.constants import (
     MATH_DEPLOYER,
     GAUGE_DEPLOYER,
     VIEW_DEPLOYER,
+    ZERO_ADDRESS,
 )
 from tests.utils.pool_presets import all_presets
 

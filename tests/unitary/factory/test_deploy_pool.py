@@ -3,9 +3,7 @@ import pytest
 
 from tests.utils.constants import FACTORY_DEPLOYER
 from tests.utils.constants import packing_utils
-
-# TODO move this to constants
-ZERO_ADDRESS = boa.eval("empty(address)")
+from tests.utils.constants import ZERO_ADDRESS
 
 
 @pytest.fixture(scope="module")
