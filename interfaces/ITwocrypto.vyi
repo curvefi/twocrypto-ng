@@ -72,6 +72,10 @@ event ClaimAdminFee:
     tokens: uint256[2]
 
 
+event SetAdminFee:
+    admin_fee: uint256
+
+
 event UpdatePoolFeeReceiver:
     old_receiver: address
     new_receiver: address
@@ -443,7 +447,12 @@ def packed_fee_params() -> uint256:
 
 @view
 @external
-def ADMIN_FEE() -> uint256:
+def admin_fee() -> uint256:
+    ...
+
+
+@external
+def set_admin_fee(_admin_fee: uint256):
     ...
 
 
