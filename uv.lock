@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.12"
 
 [[package]]
@@ -3017,8 +3017,8 @@ wheels = [
 
 [[package]]
 name = "titanoboa"
-version = "0.2.7"
-source = { git = "https://github.com/vyperlang/titanoboa.git?rev=44d35aaed62d1e2bdfc758fb2de855b85726ae64#44d35aaed62d1e2bdfc758fb2de855b85726ae64" }
+version = "0.2.8"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "eth-abi" },
     { name = "eth-account" },
@@ -3034,6 +3034,10 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "vvm" },
     { name = "vyper" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/cb/0a/972bcf38b6b2b138a6ddabc8f2ad9cbb2b2ca7a46acc9592a84ac3a6beb1/titanoboa-0.2.8.tar.gz", hash = "sha256:8f7ef143beae29b43e7e91f5d61b24cfb6b877a8ffa2e51510293d7142e063cb", size = 101204, upload-time = "2025-10-08T07:35:23.139Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/47/58/a55d0422a6db2bd50fa6ec1e983c71afff416a1928e19c48ae40974c4086/titanoboa-0.2.8-py3-none-any.whl", hash = "sha256:4e02f8fa1c743d95ace9e0cf3f27a88dd1f8ee27db5ed1a5c0f071bced2624d2", size = 112642, upload-time = "2025-10-08T07:35:21.263Z" },
 ]
 
 [[package]]
@@ -3126,7 +3130,7 @@ requires-dist = [
     { name = "cryptography", specifier = ">=45.0.5" },
     { name = "keyring", specifier = ">=25.6.0" },
     { name = "snekmate", specifier = "==0.1.2" },
-    { name = "titanoboa", git = "https://github.com/vyperlang/titanoboa.git?rev=44d35aaed62d1e2bdfc758fb2de855b85726ae64" },
+    { name = "titanoboa", specifier = "==0.2.8" },
     { name = "vyper", specifier = "==0.4.3" },
     { name = "web3", specifier = ">=7.12.1" },
 ]
