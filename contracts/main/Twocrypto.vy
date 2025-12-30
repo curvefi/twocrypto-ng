@@ -1126,6 +1126,8 @@ def tweak_price(
             norm = unsafe_sub(norm, 10**18)
         else:
             norm = unsafe_sub(10**18, norm)
+
+        # if norm/5 exceeds adjustment_step, use adjustment_step (upper boundary of price adjustment)
         adjustment_step: uint256 = min(
             rebalancing_params[1], unsafe_div(norm, 5)
         )  #           ^------------------------------------- adjustment_step.
