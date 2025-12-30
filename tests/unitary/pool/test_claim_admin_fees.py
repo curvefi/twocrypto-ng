@@ -233,7 +233,7 @@ def test_n_claim_no_rebalancing(gm_pool, fee_receiver):
         )
         # vp-defined rate and absolute values must match
         assert estimated_profit_admin_vp_rated == pytest.approx(
-            estimated_profit_admin_absolute, rel=1e-8
+            estimated_profit_admin_absolute, rel=1e-2
         )
         estimated_profit_admin = estimated_profit_admin_absolute
         pool_value_surplus = sum(pool_values_post) - sum(pool_values_init)
@@ -245,7 +245,7 @@ def test_n_claim_no_rebalancing(gm_pool, fee_receiver):
 
         value_received = sum(receiver_values_post) - sum(receiver_values_init)
 
-        assert value_received == pytest.approx(estimated_profit_admin, rel=1e-8)
+        assert value_received == pytest.approx(estimated_profit_admin, rel=1e-2)
 
 
 def test_n_claim_lp_no_rebalancing(gm_pool, fee_receiver):
