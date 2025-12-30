@@ -186,7 +186,7 @@ def test_donation_improves_rebalance(gm_pool):
     R_SWAP = 0.9
     R_SWAP_BACK = 0.9
     T_FWD = 86_400 * 7
-    R_DONATE = 0.01
+    R_DONATE = 0.001
     n_rb = []
     ps = []
     res_dict = {}
@@ -233,7 +233,7 @@ def test_donation_improves_rebalance_onesided(gm_pool):
     R_SWAP = 0.9
     R_SWAP_BACK = 0.9
     T_FWD = 86_400
-    R_DONATE = 0.01
+    R_DONATE = 0.001
     n_rb = []
     ps = []
     res_dict = {}
@@ -348,7 +348,7 @@ def test_remove_after_rebalancing(gm_pool):
     # A donation is made, which increases the pool's assets without minting
     # corresponding LP tokens for a regular user. This profit is meant
     # to be socialized over time, but this attack tries to capture it.
-    donation_amount = 40_000 * 10**18
+    donation_amount = 4_000 * 10**18
     gm_pool.donate_balanced(donation_amount)
 
     # Phase 2: Unbalance the Pool

@@ -178,7 +178,7 @@ def params():
         "out_fee": 45000000,
         "allowed_extra_profit": 2000000000000,
         "fee_gamma": 230000000000000,
-        "adjustment_step": 146000000000000,
+        "adjustment_step": int(10 / 100 * 10**18),  # 10%
         "ma_time": 866,  # # 600 seconds//math.log(2)
         "initial_prices": INITIAL_PRICES,
     }

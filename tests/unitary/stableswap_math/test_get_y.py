@@ -23,7 +23,7 @@ class PoolParams:
     out_fee: int = 45000000
     fee_gamma: int = 230000000000000
     allowed_extra_profit: int = 2000000000000
-    adjustment_step: int = 146000000000000
+    adjustment_step: int = int(10 / 100 * 10**18)  # 10%
     ma_exp_time: int = 866
     name: str = "crypto"
     description: str = "frontend preset for volatile assets"
