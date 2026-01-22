@@ -16,7 +16,6 @@ MAX_A_CHANGE: constant(uint256) = 10
 MAX_GAMMA_CHANGE: constant(uint256) = 10
 
 # Fee constants
-ADMIN_FEE: public(constant(uint256)) = 5 * 10**9  # 50% of the fee
 MIN_FEE: constant(uint256) = 5 * 10**5  # 0.5 BPS.
 MAX_FEE: constant(uint256) = 10**10
 # TODO explain where this is used and why
