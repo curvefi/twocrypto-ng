@@ -1,4 +1,5 @@
 # pragma version 0.4.3
+# pragma optimize gas
 """
 @title FXSwapLPOracle
 @author Curve.Fi
