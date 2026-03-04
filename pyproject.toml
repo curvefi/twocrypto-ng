@@ -14,6 +14,7 @@ dependencies = [
     "keyring>=25.6.0",
     "base58>=2.1.1",
     "cryptography>=45.0.5",
+    "curve-std",
 ]
 
 
@@ -37,6 +38,9 @@ dev-dependencies = [
     "numpy",
     "matplotlib",
 ]
+
+[tool.uv.sources]
+curve-std = { git = "https://github.com/curvefi/curve-std", rev = "ecaf0b70694cc6b116a38dcc1f9ef7ec2f3bcca9" }
 
 [tool.ruff]
 line-length = 100
