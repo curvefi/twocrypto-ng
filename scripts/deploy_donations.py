@@ -5,9 +5,10 @@ from boa.explorer import Etherscan
 from secure_key_utils import decrypt_private_key, getpass
 import time
 from eth_utils import keccak
+from boa.verifiers import Blockscout
 
 # deploy as blueprints
-DEPLOY = True
+DEPLOY = False
 ADMIN_FEE = 10**10 * 50 // 100
 
 
@@ -32,7 +33,8 @@ def twocrypto_with_periphery(twocrypto_path, views_address, math_address, admin_
 # rpc_url = "https://bsc-dataseed.bnbchain.org"
 # rpc_url = "https://eth.drpc.org"
 # rpc_url = "https://mainnet.base.org"
-rpc_url = "https://polygon-rpc.com"
+# rpc_url = "https://polygon-rpc.com"
+rpc_url = "https://rpc.ankr.com/etherlink_mainnet"
 etherscan_api_key = os.environ.get("ETHERSCAN_API_KEY")
 
 # private_key = os.environ.get("WEB3_TESTNET_PK")
@@ -74,6 +76,9 @@ if DEPLOY:
     elif boa.env.evm.patch.chain_id == 137:
         math_address = "0xe3AA3639BA550bED6ba5Fb9635bE89f9e35b9745"
         views_address = "0x5183A4dFC1adbfFDbf28293ce923fD4F844Cb216"  # polygon
+    elif boa.env.evm.patch.chain_id == 42793:
+        math_address = "0xAE25375012a380D1a9B7C57021aCe72D83Cb5565"
+        views_address = "0x2f39Fc9c39E99588dae8f822ce5886D395858FA7"  # etherlink
     else:
         print("Deploying math contract...")
         math_contract = math_deployer.deploy()
@@ -109,6 +114,10 @@ else:
         math_address = "0xe3AA3639BA550bED6ba5Fb9635bE89f9e35b9745"
         views_address = "0x5183A4dFC1adbfFDbf28293ce923fD4F844Cb216"  # polygon
         twocrypto_address = "0xE6Ea1975544c1b4E56C900f600d7786D76Ea5944"
+    elif boa.env.evm.patch.chain_id == 42793:
+        math_address = "0xAE25375012a380D1a9B7C57021aCe72D83Cb5565"
+        views_address = "0x2f39Fc9c39E99588dae8f822ce5886D395858FA7"  # etherlink
+        twocrypto_address = "0xC6644d4CEDd3700d4b977635e623bF531D59F39C"
     else:
         raise ValueError(f"Chain ID {boa.env.evm.patch.chain_id} not supported")
     math_contract = math_deployer.at(math_address)
@@ -122,7 +131,7 @@ print(f"Math: {math_contract.address}")
 print(f"Views: {views_contract.address}")
 print(f"Twocrypto: {twocrypto_contract.address}")
 
-# verify contracts
+# verify contracts on etherscan
 etherscan_url = "https://api.etherscan.io/v2/api?chainid=" + str(boa.env.evm.patch.chain_id)
 boa.set_etherscan(etherscan_url, etherscan_api_key)
 verifier = Etherscan(etherscan_url, etherscan_api_key)
@@ -134,6 +143,14 @@ for contract in [math_contract, views_contract, twocrypto_contract]:
     except Exception as e:
         print(e)
 
+# verify on blockscout (must change uri)
+custom_verifier = Blockscout(uri="https://explorer.etherlink.com", api_key="")
+for contract in [math_contract, views_contract, twocrypto_contract]:
+    contract.ctor_calldata = b""
+    try:
+        boa.verify(contract, verifier=custom_verifier)
+    except Exception as e:
+        print(e)
 # get factory
 # factory = boa.from_etherscan("0x98EE851a00abeE0d95D08cF4CA2BdCE32aeaAF7F")
 # print(factory.admin())
