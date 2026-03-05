@@ -34,7 +34,9 @@ class LPOracleRampingStateful(RuleBasedStateMachine):
 
     @initialize(
         pool=pool_from_preset(
-            preset=sampled_from([{**p, "ma_exp_time": 87} for p in all_presets])  # price_oracle = last_price
+            preset=sampled_from(
+                [{**p, "ma_exp_time": 87} for p in all_presets]
+            )  # price_oracle = last_price
         ),
         amount=integers(min_value=int(1e20), max_value=int(1e30)),
     )
@@ -124,7 +126,9 @@ class LPOracleRampingStateful(RuleBasedStateMachine):
             note(f"[ADD_LIQUIDITY][SUCCESS] minted={minted}")
         except boa.BoaError as exc:
             err = self._err_msg(exc)
-            if any(msg in err for msg in ("unsafe value for y", "unsafe values x[i]", "nothing minted")):
+            if any(
+                msg in err for msg in ("unsafe value for y", "unsafe values x[i]", "nothing minted")
+            ):
                 note("[ADD_LIQUIDITY][ALLOWED FAILURE]")
                 return
             raise
@@ -173,7 +177,10 @@ class LPOracleRampingStateful(RuleBasedStateMachine):
 
             token_out = self.pool.calc_token_amount(amounts, True)
             below_cap = (
-                token_out < (token_out + self.pool.totalSupply()) * self.pool.donation_shares_max_ratio() // 10**18
+                token_out
+                < (token_out + self.pool.totalSupply())
+                * self.pool.donation_shares_max_ratio()
+                // 10**18
             )
             if not below_cap:
                 amount = max(1, amount * 9 // 10)
