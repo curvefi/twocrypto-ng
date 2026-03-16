@@ -1,4 +1,4 @@
-# pragma version 0.4.1
+# pragma version 0.4.2
 """
 @title TwocryptoMath
 @author Curve.Fi
@@ -11,7 +11,7 @@
 from snekmate.utils import math
 
 from interfaces import ITwocryptoMath
-implements: ITwocryptoMath
+#implements: ITwocryptoMath
 
 import constants as c
 # Trick until the compiler supports `from constants import N_COINS`
@@ -199,7 +199,6 @@ def _newton_y(ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: 
     raise "Did not converge"
 
 
-@external
 @pure
 def newton_y(ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: uint256) -> uint256:
 
@@ -218,7 +217,6 @@ def newton_y(ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: u
     return y
 
 
-@external
 @pure
 def get_y(
     _ANN: uint256,
@@ -365,7 +363,6 @@ def get_y(
     return y_out
 
 
-@external
 @view
 def newton_D(ANN: uint256, gamma: uint256, x_unsorted: uint256[N_COINS], K0_prev: uint256 = 0) -> uint256:
     """
@@ -454,7 +451,6 @@ def newton_D(ANN: uint256, gamma: uint256, x_unsorted: uint256[N_COINS], K0_prev
     raise "Did not converge"
 
 
-@external
 @view
 def get_p(
     _xp: uint256[N_COINS], _D: uint256, _A_gamma: uint256[N_COINS]
@@ -506,7 +502,6 @@ def get_p(
     )
 
 
-@external
 @pure
 def wad_exp(x: int256) -> uint256:
     return convert(math._wad_exp(x), uint256)

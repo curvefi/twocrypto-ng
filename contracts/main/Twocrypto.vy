@@ -1,4 +1,4 @@
-# pragma version 0.4.1
+# pragma version 0.4.2
 """
 @title Twocrypto
 @author Curve.Fi
@@ -6,11 +6,10 @@
 @notice A Curve AMM pool for 2 unpegged assets (e.g. WETH, USD).
 @dev All prices in the AMM are with respect to the first token in the pool.
 """
-
 from interfaces import ITwocrypto
-from interfaces import ITwocryptoMath
 from interfaces import ITwocryptoFactory
 from interfaces import ITwocryptoView
+from interfaces import ITwocryptoMath
 
 implements: ITwocrypto
 
@@ -72,6 +71,8 @@ uses: erc20 # erc20 is initialized by the lp_token module.
 import packing_utils as utils
 import constants as c
 
+from . import TwocryptoMath as curve_math
+
 # Trick until the compiler supports `from constants import N_COINS`
 N_COINS: constant(uint256) = c.N_COINS
 WAD: constant(uint256) = c.WAD
@@ -79,7 +80,6 @@ WAD: constant(uint256) = c.WAD
 # ----------------------- Storage/State Variables ----------------------------
 
 PRECISIONS: immutable(uint256[N_COINS])
-_MATH: immutable(ITwocryptoMath)
 coins: public(immutable(address[N_COINS]))
 
 cached_price_scale: uint256  # <------------------------ Internal price scale.
@@ -116,7 +116,7 @@ def __init__(
     _name: String[64],
     _symbol: String[32],
     _coins: address[N_COINS],
-    _math: address,
+    _math: address, # not used, left compatibility for legacy factory
     _salt: bytes32, # not used, left for compatibility with legacy factory
     packed_precisions: uint256,
     packed_gamma_A: uint256,
@@ -124,8 +124,6 @@ def __init__(
     packed_rebalancing_params: uint256,
     initial_price: uint256,
 ):
-
-    _MATH = ITwocryptoMath(_math)
 
     params.__init__(
         msg.sender,
@@ -377,11 +375,11 @@ def add_liquidity(
     if params._is_ramping():
         # Recalculate D if A and/or gamma are ramping because the shape of
         # the bonding curve is changing.
-        old_D = staticcall _MATH.newton_D(A_gamma[0], A_gamma[1], old_xp, 0)
+        old_D = curve_math.newton_D(A_gamma[0], A_gamma[1], old_xp, 0)
     else:
         old_D = self.D
 
-    D: uint256 = staticcall _MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
+    D: uint256 = curve_math.newton_D(A_gamma[0], A_gamma[1], xp, 0)
 
     token_supply: uint256 = erc20.totalSupply
     d_token: uint256 = 0
@@ -640,13 +638,13 @@ def _exchange(
 
         x1: uint256 = xp[i]  # <------------------ Back up old value in xp ...
         xp[i] = x0                                                         # |
-        self.D = staticcall _MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)   # |
+        self.D = curve_math.newton_D(A_gamma[0], A_gamma[1], xp, 0)   # |
         xp[i] = x1  # <-------------------------------------- ... and restore.
 
     # ----------------------- Calculate dy and fees --------------------------
 
     D: uint256 = self.D
-    y_out: uint256[2] = staticcall _MATH.get_y(A_gamma[0], A_gamma[1], xp, D, j)
+    y_out: uint256[2] = curve_math.get_y(A_gamma[0], A_gamma[1], xp, D, j)
     dy = xp[j] - y_out[0]
     xp[j] -= dy
     dy -= 1
@@ -669,7 +667,7 @@ def _exchange(
 
     # Technically a swap wouldn't require to recompute D, however since we're taking
     # fees, we need to update D to reflect the new balances.
-    D = staticcall _MATH.newton_D(A_gamma[0], A_gamma[1], xp, y_out[1])
+    D = curve_math.newton_D(A_gamma[0], A_gamma[1], xp, y_out[1])
 
     price_scale = self.tweak_price(A_gamma, xp, D)
 
@@ -713,7 +711,7 @@ def tweak_price(
 
         # ------------------ Calculate moving average params -----------------
 
-        alpha = staticcall _MATH.wad_exp(
+        alpha = curve_math.wad_exp(
             -convert(
                 unsafe_div(
                     unsafe_sub(block.timestamp, last_timestamp) * 10**18,
@@ -744,7 +742,7 @@ def tweak_price(
     # Here we update the spot price, please notice that this value is unsafe
     # and can be manipulated.
     self.last_prices = unsafe_div(
-        staticcall _MATH.get_p(_xp, D, A_gamma) * price_scale,
+        curve_math.get_p(_xp, D, A_gamma) * price_scale,
         10**18
     )
 
@@ -830,7 +828,7 @@ def tweak_price(
             ]
 
             # ------------------------------------------ Update D with new xp.
-            new_D: uint256 = staticcall _MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
+            new_D: uint256 = curve_math.newton_D(A_gamma[0], A_gamma[1], xp, 0)
 
             # ------------------------------------- Convert xp to real prices.
 
@@ -1142,7 +1140,7 @@ def _calc_withdraw_fixed_out(
 
     D: uint256 = 0
     if params._is_ramping():
-        D = staticcall _MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
+        D = curve_math.newton_D(A_gamma[0], A_gamma[1], xp, 0)
     else:
         D = self.D
 
@@ -1165,7 +1163,7 @@ def _calc_withdraw_fixed_out(
     # We compute the position on the y axis after a withdrawal of dD with the constraint
     # that xp_new[i] has been reduced by amountsp[i]. This is the new position on the curve
     # after the withdrawal without applying fees.
-    y: uint256 = (staticcall _MATH.get_y(A_gamma[0], A_gamma[1], xp_new, D - dD, j))[0]
+    y: uint256 = (curve_math.get_y(A_gamma[0], A_gamma[1], xp_new, D - dD, j))[0]
     amountsp[j] = xp[j] - y
     xp_new[j] = y
 
@@ -1177,7 +1175,7 @@ def _calc_withdraw_fixed_out(
     # We reduce D by the withdrawn + fees.
     D -= dD
     # Same reasoning as before except now we're charging fees.
-    y = (staticcall _MATH.get_y(A_gamma[0], A_gamma[1], xp_new, D, j))[0]
+    y = (curve_math.get_y(A_gamma[0], A_gamma[1], xp_new, D, j))[0]
     # We descale y to obtain the amount dy in balances and not scaled balances.
     dy: uint256 = (xp[j] - y) * WAD // price_scales[j]
     xp_new[j] = y
@@ -1208,7 +1206,7 @@ def internal_price_oracle() -> uint256:
 
         last_prices: uint256 = self.last_prices
         ma_time: uint256 = params._ma_time()
-        alpha: uint256 = staticcall _MATH.wad_exp(
+        alpha: uint256 = curve_math.wad_exp(
             -convert(
                 unsafe_sub(block.timestamp, last_prices_timestamp) * 10**18 // ma_time,
                 int256,
@@ -1373,15 +1371,8 @@ def fee_calc(xp: uint256[N_COINS]) -> uint256:  # <----- For by view contract.
     """
     return self._fee(xp)
 
-
 @external
 @view
 def MATH() -> ITwocryptoMath:
-    """
-    @notice Returns the address of the math library.
-    @return address Address of the math library.
-    @dev This could be implemented by marking MATH as public,
-    however there's a small compiler issue:
-    https://github.com/vyperlang/vyper/issues/3954
-    """
-    return _MATH
+    # for interface compliance, unused
+    return empty(ITwocryptoMath)
