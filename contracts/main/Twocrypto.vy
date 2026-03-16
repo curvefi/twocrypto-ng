@@ -28,6 +28,10 @@ exports: (
     params.factory,
     params.admin,
     params.fee_receiver,
+    params.pool_fee_receiver,
+    params.set_fee_receiver,
+    params.admin_fee,
+    params.set_admin_fee,
     params.apply_new_parameters,
     # Affect the shape of the bonding curve
     params.A,
@@ -95,9 +99,6 @@ xcp_profit_a: public(uint256)  # <--- Full profit at last claim of admin fees.
 
 virtual_price: public(uint256)  # <------ Cached (fast to read) virtual price.
 #                          The cached `virtual_price` is also used internally.
-
-# TODO admin fee shouldn't be hardcoded
-ADMIN_FEE: public(constant(uint256)) = 5 * 10**9  # 50% of the fee
 
 # ----------------------- Admin params ---------------------------------------
 
@@ -402,7 +403,7 @@ def add_liquidity(
         d_token -= d_token_fee
         token_supply += d_token
         erc20._mint(receiver, d_token)
-        self.admin_lp_virtual_balance += unsafe_div(ADMIN_FEE * d_token_fee, 10**10)
+        self.admin_lp_virtual_balance += unsafe_div(params.admin_fee * d_token_fee, 10**10)
 
         price_scale = self.tweak_price(A_gamma, xp, D)
 
@@ -917,7 +918,7 @@ def _claim_admin_fees():
     #         are left with half; so divide by 2.
 
     fees: uint256 = unsafe_div(
-        unsafe_sub(xcp_profit, xcp_profit_a) * ADMIN_FEE, 2 * 10**10
+        unsafe_sub(xcp_profit, xcp_profit_a) * params.admin_fee, 2 * 10**10
     )
 
     # ------------------------------ Claim admin fees by minting admin's share

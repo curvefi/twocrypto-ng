@@ -14,6 +14,8 @@ initial_A_gamma: public(uint256)
 initial_A_gamma_time: public(uint256)
 future_A_gamma: public(uint256)
 future_A_gamma_time: public(uint256)
+pool_fee_receiver: public(address)
+admin_fee: public(uint256)
 
 @deploy
 def __init__(_factory: address, packed_gamma_A: uint256, packed_fee_params: uint256, packed_rebalancing_params: uint256):
@@ -36,6 +38,8 @@ def __init__(_factory: address, packed_gamma_A: uint256, packed_fee_params: uint
 
     self.initial_A_gamma = packed_gamma_A
     self.future_A_gamma = packed_gamma_A
+
+    self.admin_fee = 5 * 10**9  # 50%
 
 
 @external
@@ -223,6 +227,9 @@ def admin() -> address:
 @view
 @internal
 def _fee_receiver() -> address:
+    pool_receiver: address = self.pool_fee_receiver
+    if pool_receiver != empty(address):
+        return pool_receiver
     return staticcall factory.fee_receiver()
 
 
@@ -234,6 +241,36 @@ def fee_receiver() -> address:
     @return address Fee receiver.
     """
     return self._fee_receiver()
+
+
+@external
+def set_fee_receiver(_fee_receiver: address):
+    """
+    @notice Set per-pool fee receiver (overrides factory default).
+    @dev Only callable by admin. Set to empty(address) to revert to factory receiver.
+    @param _fee_receiver Address to receive admin fees for this pool.
+    """
+    assert msg.sender == self._admin(), "only owner"
+
+    old_receiver: address = self.pool_fee_receiver
+    self.pool_fee_receiver = _fee_receiver
+
+    log ITwocrypto.UpdatePoolFeeReceiver(old_receiver=old_receiver, new_receiver=_fee_receiver)
+
+
+@external
+def set_admin_fee(_admin_fee: uint256):
+    """
+    @notice Set the percentage of fee for the admin.
+    @dev Only accessible by factory admin.
+    @param _admin_fee The new admin fee.
+    """
+    assert msg.sender == self._admin(), "only owner"
+    assert _admin_fee <= 10**10
+
+    self.admin_fee = _admin_fee
+
+    log ITwocrypto.SetAdminFee(admin_fee=_admin_fee)
 
 
 @view
