@@ -40,7 +40,7 @@ dev-dependencies = [
 ]
 
 [tool.uv.sources]
-curve-std = { git = "https://github.com/curvefi/curve-std", rev = "ecaf0b70694cc6b116a38dcc1f9ef7ec2f3bcca9" }
+curve-std = { git = "https://github.com/curvefi/curve-std", rev = "e2101dc898591fb5e95b1f79e6163b2a7927bd63" }
 
 [tool.ruff]
 line-length = 100
