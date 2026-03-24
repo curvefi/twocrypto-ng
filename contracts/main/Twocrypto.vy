@@ -200,6 +200,9 @@ packed_rebalancing_params: public(uint256)  # <---------- Contains rebalancing
 # Fee params that determine dynamic fees:
 packed_fee_params: public(uint256)  # <---- Packs mid_fee, out_fee, fee_gamma.
 
+# Split between rebalancing budget and admin/LP share
+lp_profit_fraction: public(uint256)
+
 admin_fee: public(uint256)
 MAX_ADMIN_FEE: constant(uint256) = 10**10
 MIN_FEE: constant(uint256) = 5 * 10**5  # <-------------------------- 0.5 BPS.
@@ -228,7 +231,7 @@ MAX_GAMMA: constant(uint256) = 199 * 10**15 # 1.99 * 10**17
 name: public(immutable(String[64]))
 symbol: public(immutable(String[32]))
 decimals: public(constant(uint8)) = 18
-version: public(constant(String[8])) = "v2.1.0d"
+version: public(constant(String[8])) = "v2.2.0"
 
 balanceOf: public(HashMap[address, uint256])
 allowance: public(HashMap[address, HashMap[address, uint256]])
@@ -257,6 +260,9 @@ def __init__(
 
     # this parameter can also be dynamically adjusted at blueprint deployment time
     self.admin_fee = 10**10 * 50 // 100
+
+    # Split between rebalancing budget and admin/LP share
+    self.lp_profit_fraction = PRECISION * 50 // 100
 
     factory = Factory(msg.sender)
     name = _name
@@ -1105,9 +1111,9 @@ def tweak_price(
     # 2. We reserve half of the growth for LPs and admin, rest is used to rebalance the pool
 
     # Rebalancing condition transformation:
-    # virtual_price - 1 > (xcp_profit - 1)/2 + allowed_extra_profit
-    # virtual_price > 1 + (xcp_profit - 1)/2 + allowed_extra_profit
-    threshold_vp: uint256 = max(10**18, (xcp_profit + 10**18) // 2)
+    # virtual_price > 1 + (xcp_profit - 1) * lp_profit_fraction + allowed_extra_profit
+    # virtual_price > 1 + xcp_profit * lp_profit_fraction - lp_profit_fraction + allowed_extra_profit
+    threshold_vp: uint256 = max(10**18, 10**18 + xcp_profit * self.lp_profit_fraction // PRECISION - self.lp_profit_fraction)
 
     # The allowed_extra_profit parameter prevents reverting gas-wasting rebalances
     # by ensuring sufficient profit margin
@@ -1286,7 +1292,7 @@ def _claim_admin_fees():
     #         are left with half; so divide by 2.
 
     fees: uint256 = unsafe_div(
-        unsafe_sub(xcp_profit, xcp_profit_a) * self.admin_fee, 2 * 10**10
+        unsafe_sub(xcp_profit, xcp_profit_a) * self.admin_fee * self.lp_profit_fraction, 10**10 * PRECISION
     )
     # ------------------------------ Claim admin fees by minting admin's share
     #                                                of the pool in LP tokens.

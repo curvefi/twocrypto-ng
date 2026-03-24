@@ -1,14 +1,17 @@
+import boa
 from pytest import fixture
-from tests.utils.god_mode import GodModePool
+
 from tests.utils.constants import (
-    MATH_DEPLOYER,
+    ERC20_DEPLOYER,
+    FACTORY_DEPLOYER,
     GAUGE_DEPLOYER,
+    MATH_DEPLOYER,
     POOL_DEPLOYER,
     VIEW_DEPLOYER,
-    FACTORY_DEPLOYER,
-    ERC20_DEPLOYER,
 )
-import boa
+from tests.utils.god_mode import GodModePool
+
+boa.env.evm.patch.code_size_limit = 56_000
 
 # Constants
 INITIAL_PRICES = [10**18, 1500 * 10**18]  # price relative to coin_id = 0
