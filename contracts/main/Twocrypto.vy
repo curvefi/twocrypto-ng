@@ -49,7 +49,8 @@ interface Views:
         i: uint256, j: uint256, dy: uint256, swap: address, n_iter: uint256
     ) -> uint256: view
 
-
+interface ExternalFee:
+    def fetch_fee() -> uint256: view
 # ------------------------------- Events -------------------------------------
 
 event SetPeriphery:
@@ -153,6 +154,7 @@ PRECISIONS: immutable(uint256[N_COINS])
 
 MATH: public(Math)
 VIEW: public(Views)
+EXT_FEE: public(ExternalFee)
 
 coins: public(immutable(address[N_COINS]))
 factory: public(immutable(Factory))
@@ -259,6 +261,7 @@ def __init__(
     # otherwise pool is unusable until set_periphery is called by admin
     self.VIEW = Views(empty(address))
     self.MATH = Math(empty(address))
+    self.EXT_FEE = ExternalFee(empty(address))
 
     # this parameter can also be dynamically adjusted at blueprint deployment time
     self.admin_fee = FEE_PRECISION * 50 // 100
@@ -1428,6 +1431,9 @@ def _A_gamma() -> uint256[2]:
 @internal
 @view
 def _fee(xp: uint256[N_COINS]) -> uint256:
+
+    if self.EXT_FEE != empty(ExternalFee):
+        return staticcall self.EXT_FEE.fetch_fee()
 
     # unpack mid_fee, out_fee, fee_gamma
     fee_params: uint256[3] = self._unpack_3(self.packed_fee_params)

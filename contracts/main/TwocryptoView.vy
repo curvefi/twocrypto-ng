@@ -12,6 +12,7 @@ from ethereum.ercs import IERC20
 
 interface Curve:
     def MATH() -> Math: view
+    def EXT_FEE() -> ExternalFee: view
     def A() -> uint256: view
     def gamma() -> uint256: view
     def price_scale() -> uint256: view
@@ -43,6 +44,8 @@ interface Math:
         i: uint256,
     ) -> uint256[2]: view
 
+interface ExternalFee:
+    def fetch_fee() -> uint256: view
 
 N_COINS: constant(uint256) = 2
 PRECISION: constant(uint256) = 10**18
@@ -349,6 +352,9 @@ def _calc_withdraw_one_coin(
 @internal
 @view
 def _fee(xp: uint256[N_COINS], swap: address) -> uint256:
+    ext_fee_contract: ExternalFee = staticcall Curve(swap).EXT_FEE()
+    if ext_fee_contract != empty(ExternalFee):
+        return staticcall ext_fee_contract.fetch_fee()
 
     packed_fee_params: uint256 = staticcall Curve(swap).packed_fee_params()
     fee_params: uint256[3] = self._unpack_3(packed_fee_params)
