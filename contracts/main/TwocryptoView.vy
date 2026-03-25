@@ -46,6 +46,7 @@ interface Math:
 
 N_COINS: constant(uint256) = 2
 PRECISION: constant(uint256) = 10**18
+FEE_PRECISION: constant(uint256) = 10**10
 
 
 @external
@@ -59,7 +60,7 @@ def get_dy(
 
     # dy = (get_y(x + dx) - y) * (1 - fee)
     dy, xp = self._get_dy_nofee(i, j, dx, swap)
-    dy -= staticcall Curve(swap).fee_calc(xp) * dy // 10**10
+    dy -= staticcall Curve(swap).fee_calc(xp) * dy // FEE_PRECISION
 
     return dy
 
@@ -78,7 +79,7 @@ def get_dx(
     # for more precise dx (but never exact), increase num loops
     for k: uint256 in range(n_iter, bound=100):
         dx, xp = self._get_dx_fee(i, j, _dy, swap)
-        fee_dy = staticcall Curve(swap).fee_calc(xp) * _dy // 10**10
+        fee_dy = staticcall Curve(swap).fee_calc(xp) * _dy // FEE_PRECISION
         _dy = dy + fee_dy + 1
 
     return dx
@@ -105,7 +106,7 @@ def calc_token_amount(
 
     d_token, amountsp, xp = self._calc_dtoken_nofee(amounts, deposit, swap)
     d_token -= (
-        staticcall Curve(swap).calc_token_fee(amounts, xp, donation, deposit) * d_token // 10**10 + 1
+        staticcall Curve(swap).calc_token_fee(amounts, xp, donation, deposit) * d_token // FEE_PRECISION + 1
     )
 
     return d_token
@@ -120,8 +121,7 @@ def calc_fee_get_dy(i: uint256, j: uint256, dx: uint256, swap: address
     xp: uint256[N_COINS] = empty(uint256[N_COINS])
     dy, xp = self._get_dy_nofee(i, j, dx, swap)
 
-    return (staticcall Curve(swap).fee_calc(xp)) * dy // 10**10
-
+    return (staticcall Curve(swap).fee_calc(xp)) * dy // FEE_PRECISION
 
 @external
 @view
@@ -143,7 +143,7 @@ def calc_fee_token_amount(
     xp: uint256[N_COINS] = empty(uint256[N_COINS])
     d_token, amountsp, xp = self._calc_dtoken_nofee(amounts, deposit, swap)
 
-    return (staticcall Curve(swap).calc_token_fee(amounts, xp, donation, deposit)) * d_token // 10**10 + 1
+    return (staticcall Curve(swap).calc_token_fee(amounts, xp, donation, deposit)) * d_token // FEE_PRECISION + 1
 
 
 @internal
@@ -334,7 +334,7 @@ def _calc_withdraw_one_coin(
     fee: uint256 = self._fee(xp, swap)
     dD: uint256 = token_amount * D // token_supply
 
-    D_fee: uint256 = fee * dD // (2 * 10**10) + 1
+    D_fee: uint256 = fee * dD // (2 * FEE_PRECISION) + 1
     approx_fee: uint256 = N_COINS * D_fee * xx[i] // D
 
     D -= (dD - D_fee)

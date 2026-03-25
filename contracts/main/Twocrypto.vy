@@ -147,6 +147,8 @@ event SetAdminFee:
 
 N_COINS: constant(uint256) = 2
 PRECISION: constant(uint256) = 10**18  # <------- The precision to convert to.
+FEE_PRECISION: constant(uint256) = 10**10 # <-- Fee calculations use lower precision
+
 PRECISIONS: immutable(uint256[N_COINS])
 
 MATH: public(Math)
@@ -204,10 +206,10 @@ packed_fee_params: public(uint256)  # <---- Packs mid_fee, out_fee, fee_gamma.
 lp_profit_fraction: public(uint256)
 
 admin_fee: public(uint256)
-MAX_ADMIN_FEE: constant(uint256) = 10**10
-MIN_FEE: constant(uint256) = 5 * 10**5  # <-------------------------- 0.5 BPS.
-MAX_FEE: constant(uint256) = 10 * 10**9
-NOISE_FEE: constant(uint256) = 10**5  # <---------------------------- 0.1 BPS.
+MAX_ADMIN_FEE: constant(uint256) = FEE_PRECISION
+MIN_FEE: constant(uint256) = FEE_PRECISION * 1 // 2 // 10_000  # <-------------------------- 0.5 BPS.
+MAX_FEE: constant(uint256) = FEE_PRECISION
+NOISE_FEE: constant(uint256) = FEE_PRECISION * 1 // 10 // 10_000  # <---------------------------- 0.1 BPS.
 
 # ----------------------- Admin params ---------------------------------------
 
@@ -259,7 +261,7 @@ def __init__(
     self.MATH = Math(empty(address))
 
     # this parameter can also be dynamically adjusted at blueprint deployment time
-    self.admin_fee = 10**10 * 50 // 100
+    self.admin_fee = FEE_PRECISION * 50 // 100
 
     # Split between rebalancing budget and admin/LP share
     self.lp_profit_fraction = PRECISION * 50 // 100
@@ -581,7 +583,7 @@ def add_liquidity(
     d_token_fee: uint256 = 0
     if old_D > 0:
         d_token_fee = (
-            self._calc_token_fee(amounts_received, xp, donation, True) * d_token // 10**10 + 1
+            self._calc_token_fee(amounts_received, xp, donation, True) * d_token // FEE_PRECISION + 1
         ) # for donations - we only take NOISE_FEE (check _calc_token_fee)
         d_token -= d_token_fee
 
@@ -842,7 +844,7 @@ def _remove_liquidity_fixed_out(
             token_amount=token_amount,
             coin_index=j,
             coin_amount=dy,
-            approx_fee=approx_fee * token_amount // 10**10 + 1, # LP units, not coins!
+            approx_fee=approx_fee * token_amount // FEE_PRECISION + 1, # LP units, not coins!
             packed_price_scale=price_scale
         )
     else:
@@ -850,7 +852,7 @@ def _remove_liquidity_fixed_out(
             provider=msg.sender,
             lp_token_amount=token_amount,
             token_amounts=token_amounts,
-            approx_fee=approx_fee * token_amount // 10**10 + 1, # LP units
+            approx_fee=approx_fee * token_amount // FEE_PRECISION + 1, # LP units
             price_scale=price_scale
         )
 
@@ -981,7 +983,7 @@ def _exchange(
         dy = dy * PRECISION // price_scale
     dy //= PRECISIONS[j]
 
-    fee: uint256 = unsafe_div(self._fee(xp) * dy, 10**10)
+    fee: uint256 = unsafe_div(self._fee(xp) * dy, FEE_PRECISION)
     dy -= fee  # <--------------------- Subtract fee from the outgoing amount.
     assert dy >= min_dy, "slippage"
     y -= dy
@@ -1292,7 +1294,7 @@ def _claim_admin_fees():
     #         are left with half; so divide by 2.
 
     fees: uint256 = unsafe_div(
-        unsafe_sub(xcp_profit, xcp_profit_a) * self.admin_fee * self.lp_profit_fraction, 10**10 * PRECISION
+        unsafe_sub(xcp_profit, xcp_profit_a) * self.admin_fee * self.lp_profit_fraction, FEE_PRECISION * PRECISION
     )
     # ------------------------------ Claim admin fees by minting admin's share
     #                                                of the pool in LP tokens.
@@ -1661,7 +1663,7 @@ def _calc_withdraw_fixed_out(
     # The only way to compute the fees is to simulate a withdrawal as we have done
     # above and then rewind and apply the fees.
     approx_fee: uint256 = self._calc_token_fee(amounts, xp_new)
-    dD -= dD * approx_fee // 10**10 + 1
+    dD -= dD * approx_fee // FEE_PRECISION + 1
 
     # Same reasoning as before except now we're charging fees.
     y = (staticcall self.MATH.get_y(A_gamma[0], A_gamma[1], xp_new, D - dD, j))[0]
