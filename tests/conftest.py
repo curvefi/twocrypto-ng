@@ -4,6 +4,7 @@ from pytest import fixture
 from tests.utils.constants import (
     ERC20_DEPLOYER,
     FACTORY_DEPLOYER,
+    FEE_DEPLOYER,
     GAUGE_DEPLOYER,
     MATH_DEPLOYER,
     POOL_DEPLOYER,
@@ -53,6 +54,25 @@ def _crypto_swap_with_deposit(
         twocrypto_swap.add_liquidity(quantities, 0)
 
     return twocrypto_swap
+
+
+def _deploy_pool(factory, params, coins, deployer):
+    with boa.env.prank(deployer):
+        return factory.deploy_pool(
+            "Curve.fi USD<>WETH",  # _name: String[64]
+            "USD<>WETH",  # _symbol: String[32]
+            [coin.address for coin in coins],  # _coins: address[N_COINS]
+            0,  # implementation_id: uint256
+            params["A"],  # A: uint256
+            params["gamma"],  # gamma: uint256
+            params["mid_fee"],  # mid_fee: uint256
+            params["out_fee"],  # out_fee: uint256
+            params["fee_gamma"],  # fee_gamma: uint256
+            params["allowed_extra_profit"],  # allowed_extra_profit: uint256
+            params["adjustment_step"],  # adjustment_step: uint256
+            params["ma_time"],  # ma_exp_time: uint256
+            params["initial_prices"][1],  # initial_price: uint256
+        )
 
 
 # Account fixtures
@@ -149,6 +169,12 @@ def views_contract(deployer):
 
 
 @fixture(scope="module")
+def fee_contract(deployer):
+    with boa.env.prank(deployer):
+        return FEE_DEPLOYER.deploy()
+
+
+@fixture(scope="module")
 def factory(
     deployer,
     fee_receiver,
@@ -197,25 +223,25 @@ def pool(
     math_contract,
     views_contract,
 ):
-    with boa.env.prank(deployer):
-        pool = factory.deploy_pool(
-            "Curve.fi USD<>WETH",  # _name: String[64]
-            "USD<>WETH",  # _symbol: String[32]
-            [coin.address for coin in coins],  # _coins: address[N_COINS]
-            0,  # implementation_id: uint256
-            params["A"],  # A: uint256
-            params["gamma"],  # gamma: uint256
-            params["mid_fee"],  # mid_fee: uint256
-            params["out_fee"],  # out_fee: uint256
-            params["fee_gamma"],  # fee_gamma: uint256
-            params["allowed_extra_profit"],  # allowed_extra_profit: uint256
-            params["adjustment_step"],  # adjustment_step: uint256
-            params["ma_time"],  # ma_exp_time: uint256
-            params["initial_prices"][1],  # initial_price: uint256
-        )
-
-    pool = POOL_DEPLOYER.at(pool)
+    pool = POOL_DEPLOYER.at(_deploy_pool(factory, params, coins, deployer))
     pool.set_periphery(views_contract, math_contract, sender=factory_admin)
+    return pool
+
+
+@fixture(scope="module")
+def pool_with_fee_contract(
+    factory,
+    factory_admin,
+    coins,
+    params,
+    deployer,
+    fee_contract,
+    math_contract,
+    views_contract,
+):
+    pool = POOL_DEPLOYER.at(_deploy_pool(factory, params, coins, deployer))
+    pool.set_periphery(views_contract, math_contract, sender=factory_admin)
+    pool.set_fee_contract(fee_contract, sender=factory_admin)
     return pool
 
 

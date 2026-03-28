@@ -45,7 +45,7 @@ interface Math:
     ) -> uint256[2]: view
 
 interface ExternalFee:
-    def fetch_fee() -> uint256: view
+    def get_fee(xp: uint256[N_COINS], packed_fee_params: uint256) -> uint256: view
 
 N_COINS: constant(uint256) = 2
 PRECISION: constant(uint256) = 10**18
@@ -354,7 +354,9 @@ def _calc_withdraw_one_coin(
 def _fee(xp: uint256[N_COINS], swap: address) -> uint256:
     ext_fee_contract: ExternalFee = staticcall Curve(swap).EXT_FEE()
     if ext_fee_contract != empty(ExternalFee):
-        return staticcall ext_fee_contract.fetch_fee()
+        fee: uint256 = staticcall ext_fee_contract.get_fee(xp, staticcall Curve(swap).packed_fee_params())
+        assert fee <= FEE_PRECISION, "fee>MAX"
+        return fee
 
     packed_fee_params: uint256 = staticcall Curve(swap).packed_fee_params()
     fee_params: uint256[3] = self._unpack_3(packed_fee_params)

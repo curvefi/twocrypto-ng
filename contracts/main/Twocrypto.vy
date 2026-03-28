@@ -50,7 +50,7 @@ interface Views:
     ) -> uint256: view
 
 interface ExternalFee:
-    def fetch_fee() -> uint256: view
+    def get_fee(xp: uint256[N_COINS], packed_fee_params: uint256) -> uint256: view
 # ------------------------------- Events -------------------------------------
 
 event SetPeriphery:
@@ -143,6 +143,9 @@ event SetDonationProtection:
 
 event SetAdminFee:
     admin_fee: uint256
+
+event SetFeeContract:
+    ext_fee: ExternalFee
 
 # ----------------------- Storage/State Variables ----------------------------
 
@@ -1433,7 +1436,9 @@ def _A_gamma() -> uint256[2]:
 def _fee(xp: uint256[N_COINS]) -> uint256:
 
     if self.EXT_FEE != empty(ExternalFee):
-        return staticcall self.EXT_FEE.fetch_fee()
+        fee: uint256 = staticcall self.EXT_FEE.get_fee(xp, self.packed_fee_params)
+        assert fee <= MAX_FEE, "fee>MAX"
+        return fee
 
     # unpack mid_fee, out_fee, fee_gamma
     fee_params: uint256[3] = self._unpack_3(self.packed_fee_params)
@@ -2283,6 +2288,18 @@ def set_admin_fee(admin_fee: uint256):
 
     self.admin_fee = admin_fee
     log SetAdminFee(admin_fee=admin_fee)
+
+
+@external
+def set_fee_contract(ext_fee: ExternalFee):
+    """
+    @notice Set the external fee contract.
+    @param ext_fee The new external fee contract. Use empty(address) to disable.
+    """
+    self._check_admin()
+    self.EXT_FEE = ext_fee
+    log SetFeeContract(ext_fee=ext_fee)
+
 
 @external
 def set_periphery(views: Views, math: Math):
