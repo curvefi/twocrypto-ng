@@ -10,6 +10,10 @@ from hypothesis import assume, note
 from hypothesis.strategies import composite, integers, just, sampled_from
 
 from tests.utils.constants import (
+    ERC20_DEPLOYER,
+    FACTORY_DEPLOYER,
+    GAUGE_DEPLOYER,
+    MATH_DEPLOYER,
     MAX_A,
     MAX_FEE,
     MAX_GAMMA,
@@ -17,10 +21,6 @@ from tests.utils.constants import (
     MIN_FEE,
     MIN_GAMMA,
     POOL_DEPLOYER,
-    ERC20_DEPLOYER,
-    FACTORY_DEPLOYER,
-    MATH_DEPLOYER,
-    GAUGE_DEPLOYER,
     VIEW_DEPLOYER,
 )
 from tests.utils.pool_presets import all_presets
@@ -86,8 +86,8 @@ def fees(draw):
     return mid_fee, out_fee
 
 
-allowed_extra_profit = integers(min_value=0, max_value=1e18)
-adjustment_step = integers(min_value=1, max_value=1e18)
+adjustment_step_min = integers(min_value=1, max_value=1e18 - 1)
+adjustment_step_max = integers(min_value=1, max_value=1e18)
 ma_exp_time = integers(min_value=87, max_value=872541)
 
 # 1e26 is less than the maximum amount allowed by the factory
@@ -113,8 +113,8 @@ def pool(
     gamma=gamma,
     fees=fees(),
     fee_gamma=fee_gamma,
-    allowed_extra_profit=allowed_extra_profit,
-    adjustment_step=adjustment_step,
+    adjustment_step_min=adjustment_step_min,
+    adjustment_step_max=adjustment_step_max,
     ma_exp_time=ma_exp_time,
     price=price,
 ):
@@ -140,8 +140,8 @@ def pool(
             mid_fee,
             out_fee,
             draw(fee_gamma),
-            draw(allowed_extra_profit),
-            draw(adjustment_step),
+            draw(adjustment_step_min),
+            draw(adjustment_step_max),
             draw(ma_exp_time),
             draw(price),
         )
@@ -155,8 +155,8 @@ def pool(
         + ", gamma: {:.2e}".format(_pool.gamma())
         + ", price: {:.2e}".format(_pool.price_oracle())
         + ", fee_gamma: {:.2e}".format(_pool.fee_gamma())
-        + ", allowed_extra_profit: {:.2e}".format(_pool.allowed_extra_profit())
-        + ", adjustment_step: {:.2e}".format(_pool.adjustment_step())
+        + ", adjustment_step_min: {:.2e}".format(_pool.adjustment_step_min())
+        + ", adjustment_step_max: {:.2e}".format(_pool.adjustment_step_max())
         + "\n    coin 0 has {} decimals".format(tokens[0].decimals())
         + "\n    coin 1 has {} decimals".format(tokens[1].decimals())
     )
@@ -175,8 +175,8 @@ def pool_from_preset(draw, preset=sampled_from(all_presets)):
             gamma=just(params["gamma"]),
             fees=just((params["mid_fee"], params["out_fee"])),
             fee_gamma=just(params["fee_gamma"]),
-            allowed_extra_profit=just(params["allowed_extra_profit"]),
-            adjustment_step=just(params["adjustment_step"]),
+            adjustment_step_min=just(params["adjustment_step_min"]),
+            adjustment_step_max=just(params["adjustment_step_max"]),
             ma_exp_time=just(params["ma_exp_time"]),
         )
     )

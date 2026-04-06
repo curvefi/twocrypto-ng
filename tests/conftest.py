@@ -68,8 +68,8 @@ def _deploy_pool(factory, params, coins, deployer):
             params["mid_fee"],  # mid_fee: uint256
             params["out_fee"],  # out_fee: uint256
             params["fee_gamma"],  # fee_gamma: uint256
-            params["allowed_extra_profit"],  # allowed_extra_profit: uint256
-            params["adjustment_step"],  # adjustment_step: uint256
+            params["adjustment_step_min"],  # adjustment_step_min: uint256
+            params["adjustment_step_max"],  # adjustment_step_max: uint256
             params["ma_time"],  # ma_exp_time: uint256
             params["initial_prices"][1],  # initial_price: uint256
         )
@@ -205,9 +205,9 @@ def params():
         "gamma": 145000000000000,
         "mid_fee": 26000000,
         "out_fee": 45000000,
-        "allowed_extra_profit": 2000000000000,
         "fee_gamma": 230000000000000,
-        "adjustment_step": int(10 / 100 * 10**18),  # 10%
+        "adjustment_step_min": int(0.0001 / 100 * 10**18),  # 1%
+        "adjustment_step_max": int(10 / 100 * 10**18),  # 10%
         "ma_time": 866,  # # 600 seconds//math.log(2)
         "initial_prices": INITIAL_PRICES,
     }

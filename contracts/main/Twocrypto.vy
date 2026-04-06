@@ -121,8 +121,8 @@ event NewParameters:
     mid_fee: uint256
     out_fee: uint256
     fee_gamma: uint256
-    allowed_extra_profit: uint256
-    adjustment_step: uint256
+    adjustment_step_min: uint256
+    adjustment_step_max: uint256
     ma_time: uint256
 
 event RampAgamma:
@@ -212,7 +212,7 @@ virtual_price: public(uint256)  # <------ Cached (fast to read) virtual price.
 
 # Params that affect how price_scale get adjusted :
 packed_rebalancing_params: public(uint256)  # <---------- Contains rebalancing
-#               parameters allowed_extra_profit, adjustment_step, and ma_time.
+#               parameters adjustment_step_min, adjustment_step_max, and ma_time.
 
 # Fee params that determine dynamic fees:
 packed_fee_params: public(uint256)  # <---- Packs mid_fee, out_fee, fee_gamma.
@@ -316,7 +316,7 @@ def __init__(
     # ------------------------------------------------------------------------
 
     self.packed_rebalancing_params = packed_rebalancing_params  # <-- Contains
-    #               rebalancing params: allowed_extra_profit, adjustment_step,
+    #               rebalancing params: adjustment_step_min, adjustment_step_max,
     #                                                         and ma_exp_time.
 
     self.packed_fee_params = packed_fee_params  # <-------------- Contains Fee
@@ -1056,10 +1056,10 @@ def tweak_price(
     last_prices: uint256 = self.last_prices
     price_scale: uint256 = self.cached_price_scale
     rebalancing_params: uint256[3] = self._unpack_3(self.packed_rebalancing_params)
+    # Contains: adjustment_step_min, adjustment_step_max, ma_time. -----^
     is_ramping: bool = self._is_ramping() # store as we bump the timestamp below
     policy: Policy = self.POLICY
 
-    # Contains: allowed_extra_profit, adjustment_step, ma_time. -----^
 
     # ------------------ Update Price Oracle if needed -----------------------
 
@@ -1142,20 +1142,17 @@ def tweak_price(
     # 2. We reserve half of the growth for LPs and admin, rest is used to rebalance the pool
 
     # Rebalancing condition transformation:
-    # virtual_price > 1 + (xcp_profit - 1) * lp_profit_fraction + allowed_extra_profit
-    # virtual_price > 1 + xcp_profit * lp_profit_fraction - lp_profit_fraction + allowed_extra_profit
+    # virtual_price > 1 + (xcp_profit - 1) * lp_profit_fraction
+    # virtual_price > 1 + xcp_profit * lp_profit_fraction - lp_profit_fraction
     threshold_vp: uint256 = max(10**18, 10**18 + xcp_profit * self.lp_profit_fraction // PRECISION - self.lp_profit_fraction)
-
-    # The allowed_extra_profit parameter prevents reverting gas-wasting rebalances
-    # by ensuring sufficient profit margin
 
     # user_supply < total_supply => vp_boosted > virtual_price
     # by not accounting for donation shares, virtual_price is boosted leading to rebalance trigger
     # this is approximate condition that preliminary indicates readiness for rebalancing
     vp_boosted: uint256 = 10**18 * xcp // locked_supply
     assert vp_boosted >= virtual_price, "negative donation"
-    if (vp_boosted  > threshold_vp + rebalancing_params[0]) and (last_timestamp < block.timestamp):
-        #        allowed_extra_profit --------^               #   ^ only rebalance once per block (first tx)
+    if (vp_boosted  > threshold_vp) and (last_timestamp < block.timestamp):
+        #                                  ^ only rebalance once per block (first tx)
         norm: uint256 = unsafe_div(
             unsafe_mul(price_oracle, 10**18), price_scale
         )
@@ -1164,25 +1161,34 @@ def tweak_price(
         else:
             norm = unsafe_sub(10**18, norm)
 
-        # if norm/5 exceeds adjustment_step, use adjustment_step (upper boundary of price adjustment)
+        # if norm/5 exceeds adjustment_step_max, cap with adjustment_step_max
         adjustment_step: uint256 = min(
-            rebalancing_params[1], unsafe_div(norm, 5)
-        )  #           ^------------------------------------- adjustment_step.
+            unsafe_div(norm, 5), rebalancing_params[1]
+        )  #                        ^------ adjustment_step_max.
 
-        # We only adjust prices if the vector distance between price_oracle
+        # warm up p_policy with current price_scale
+        p_policy: uint256 = price_scale
+        if policy != empty(Policy):
+            p_policy = staticcall policy.get_price_scale()
+
+        # We only adjust prices if distance between price_oracle
         # and price_scale is large enough. This check ensures that no rebalancing
-        # occurs if the distance is low i.e. the pool prices are pegged to the
+        # occurs if the distance is low i.e. the pool prices are close to the
         # oracle prices.
-        if norm > adjustment_step:
-            # Calculate new price scale.
-            if policy != empty(Policy):
-                p_new: uint256 = staticcall policy.get_price_scale()
+        # If policy, however, deems necessary to adjust price_scale, it
+        # can bypass the distance check and trigger rebalancing whenever it wants.
+        if adjustment_step > rebalancing_params[0] or p_policy != price_scale:
+            p_new: uint256 = price_scale
+            if p_policy != price_scale:
+                # If policy triggers rebalance, we set price_scale to p_policy, without smoothing.
+                p_new = p_policy
             else:
-                p_new: uint256 = unsafe_div(
+                # Calculate new price scale using internal oracle.
+                p_new = unsafe_div(
                     price_scale * unsafe_sub(norm, adjustment_step) +
                     adjustment_step * price_oracle,
-                    norm
-            )  # <---- norm is non-zero and gt adjustment_step; unsafe = safe.
+                    norm # <---- norm is non-zero and gt adjustment_step; unsafe = safe.
+                )
 
             # ---------------- Update stale xp (using price_scale) with p_new.
 
@@ -2066,22 +2072,12 @@ def fee_gamma() -> uint256:
 
 @view
 @external
-def allowed_extra_profit() -> uint256:
-    """
-    @notice Returns the current allowed extra profit
-    @return uint256 allowed_extra_profit value.
-    """
-    return self._unpack_3(self.packed_rebalancing_params)[0]
-
-
-@view
-@external
-def adjustment_step() -> uint256:
+def adjustment_step() -> uint256[2]:
     """
     @notice Returns the current adjustment step
     @return uint256 adjustment_step value.
     """
-    return self._unpack_3(self.packed_rebalancing_params)[1]
+    return [self._unpack_3(self.packed_rebalancing_params)[0], self._unpack_3(self.packed_rebalancing_params)[1]]
 
 
 @view
@@ -2197,8 +2193,8 @@ def apply_new_parameters(
     _new_mid_fee: uint256,
     _new_out_fee: uint256,
     _new_fee_gamma: uint256,
-    _new_allowed_extra_profit: uint256,
-    _new_adjustment_step: uint256,
+    _new_adjustment_step_min: uint256,
+    _new_adjustment_step_max: uint256,
     _new_ma_time: uint256,
 ):
     """
@@ -2207,8 +2203,8 @@ def apply_new_parameters(
     @param _new_mid_fee The new mid fee.
     @param _new_out_fee The new out fee.
     @param _new_fee_gamma The new fee gamma.
-    @param _new_allowed_extra_profit The new allowed extra profit.
-    @param _new_adjustment_step The new adjustment step.
+    @param _new_adjustment_step_min The new minimum adjustment step.
+    @param _new_adjustment_step_max The new maximum adjustment step.
     @param _new_ma_time The new ma time. ma_time is time_in_seconds/ln(2).
     """
     self._check_admin()
@@ -2239,17 +2235,17 @@ def apply_new_parameters(
 
     # ----------------- Set liquidity rebalancing parameters -----------------
 
-    new_allowed_extra_profit: uint256 = _new_allowed_extra_profit
-    new_adjustment_step: uint256 = _new_adjustment_step
+    new_adjustment_step_min: uint256 = _new_adjustment_step_min
+    new_adjustment_step_max: uint256 = _new_adjustment_step_max
     new_ma_time: uint256 = _new_ma_time
 
     current_rebalancing_params: uint256[3] = self._unpack_3(self.packed_rebalancing_params)
 
-    if new_allowed_extra_profit > 10**18:
-        new_allowed_extra_profit = current_rebalancing_params[0]
+    if new_adjustment_step_min > 10**18:
+        new_adjustment_step_min = current_rebalancing_params[0]
 
-    if new_adjustment_step > 10**18:
-        new_adjustment_step = current_rebalancing_params[1]
+    if new_adjustment_step_max > 10**18:
+        new_adjustment_step_max = current_rebalancing_params[1]
 
     if new_ma_time < 872542:  # <----- Calculated as: 7 * 24 * 60 * 60 / ln(2)
         assert new_ma_time > 86, "MA<60/ln(2)"
@@ -2257,7 +2253,7 @@ def apply_new_parameters(
         new_ma_time = current_rebalancing_params[2]
 
     self.packed_rebalancing_params = self._pack_3(
-        [new_allowed_extra_profit, new_adjustment_step, new_ma_time]
+        [new_adjustment_step_min, new_adjustment_step_max, new_ma_time]
     )
 
     # ---------------------------------- LOG ---------------------------------
@@ -2266,8 +2262,8 @@ def apply_new_parameters(
         mid_fee=new_mid_fee,
         out_fee=new_out_fee,
         fee_gamma=new_fee_gamma,
-        allowed_extra_profit=new_allowed_extra_profit,
-        adjustment_step=new_adjustment_step,
+        adjustment_step_min=new_adjustment_step_min,
+        adjustment_step_max=new_adjustment_step_max,
         ma_time=new_ma_time
     )
 

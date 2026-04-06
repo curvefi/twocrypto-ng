@@ -28,8 +28,8 @@ def test_round_trip_swaps(pool_with_deposit, coins, user, fee_gamma, initial_bal
             params["mid_fee"],
             params["out_fee"],
             fee_gamma,
-            params["allowed_extra_profit"],
-            params["adjustment_step"],
+            params["adjustment_step_min"],
+            params["adjustment_step_max"],
             params["ma_time"],
         )
 
