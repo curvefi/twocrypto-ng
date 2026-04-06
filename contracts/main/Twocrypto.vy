@@ -1088,8 +1088,8 @@ def tweak_price(
         # ----------------- We cap state price that goes into the EMA with
         #                                                 2 x price_scale.
         price_oracle = unsafe_div(
-            min(last_prices, 2 * price_scale) * (10**18 - alpha) +
-            price_oracle * alpha,  # ^-------- Cap spot price into EMA.
+            min(max(last_prices, price_scale // 2), 2 * price_scale) * (10**18 - alpha) +
+            price_oracle * alpha,  # ^-------- Cap (both ways) spot price into EMA.
             10**18
         )
 
@@ -1103,10 +1103,11 @@ def tweak_price(
 
     # Here we update the spot price, please notice that this value is unsafe
     # and can be manipulated.
-    self.last_prices = unsafe_div(
+    last_prices = unsafe_div(
         staticcall self.MATH.get_p(_xp, D, A_gamma) * price_scale,
         10**18
     )
+    self.last_prices = last_prices
 
     # ---------- Update profit numbers without price adjustment first --------
 
