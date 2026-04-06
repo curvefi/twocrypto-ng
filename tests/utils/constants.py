@@ -17,8 +17,8 @@ MATH_DEPLOYER = boa.load_partial(
 VIEW_DEPLOYER = boa.load_partial(
     "contracts/main/TwocryptoView.vy", compiler_args={"experimental_codegen": VENOM_FLAG}
 )
-FEE_DEPLOYER = boa.load_partial(
-    "contracts/main/TwocryptoFee.vy", compiler_args={"experimental_codegen": VENOM_FLAG}
+POLICY_DEPLOYER = boa.load_partial(
+    "contracts/main/TwocryptoPolicy.vy", compiler_args={"experimental_codegen": VENOM_FLAG}
 )
 FACTORY_DEPLOYER = boa.load_partial(
     "contracts/main/TwocryptoFactory.vy", compiler_args={"experimental_codegen": VENOM_FLAG}

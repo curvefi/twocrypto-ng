@@ -49,8 +49,17 @@ interface Views:
         i: uint256, j: uint256, dy: uint256, swap: address, n_iter: uint256
     ) -> uint256: view
 
-interface ExternalFee:
+interface Policy:
     def get_fee(xp: uint256[N_COINS], packed_fee_params: uint256) -> uint256: view
+    def get_price_scale() -> uint256: view
+    def update_pool_state(xp: uint256[N_COINS],
+                            price_scale: uint256,
+                            price_oracle: uint256,
+                            last_prices: uint256,
+                            virtual_price: uint256,
+                            xcp_profit: uint256,
+                            D: uint256): nonpayable
+
 # ------------------------------- Events -------------------------------------
 
 event SetPeriphery:
@@ -144,10 +153,11 @@ event SetDonationProtection:
 event SetAdminFee:
     admin_fee: uint256
 
-event SetFeeContract:
-    ext_fee: ExternalFee
+event SetPolicyContract:
+    policy: Policy
 
 # ----------------------- Storage/State Variables ----------------------------
+
 
 N_COINS: constant(uint256) = 2
 PRECISION: constant(uint256) = 10**18  # <------- The precision to convert to.
@@ -157,7 +167,7 @@ PRECISIONS: immutable(uint256[N_COINS])
 
 MATH: public(Math)
 VIEW: public(Views)
-EXT_FEE: public(ExternalFee)
+POLICY: public(Policy)
 
 coins: public(immutable(address[N_COINS]))
 factory: public(immutable(Factory))
@@ -244,6 +254,19 @@ balanceOf: public(HashMap[address, uint256])
 allowance: public(HashMap[address, HashMap[address, uint256]])
 totalSupply: public(uint256)
 
+
+# --------------------- State struct for fee calculation ---------------------
+struct PoolState:
+    xp: uint256[N_COINS]
+    price_scale: uint256
+    price_oracle: uint256
+    last_prices: uint256
+    virtual_price: uint256
+    xcp_profit: uint256
+    D: uint256
+    total_supply: uint256
+
+
 # ----------------------- Contract -------------------------------------------
 
 @deploy
@@ -264,7 +287,7 @@ def __init__(
     # otherwise pool is unusable until set_periphery is called by admin
     self.VIEW = Views(empty(address))
     self.MATH = Math(empty(address))
-    self.EXT_FEE = ExternalFee(empty(address))
+    self.POLICY = Policy(empty(address))
 
     # this parameter can also be dynamically adjusted at blueprint deployment time
     self.admin_fee = FEE_PRECISION * 50 // 100
@@ -1006,7 +1029,6 @@ def _exchange(
     D = staticcall self.MATH.newton_D(A_gamma[0], A_gamma[1], xp, y_out[1])
 
     price_scale = self.tweak_price(A_gamma, xp, D)
-
     return [dy, fee, price_scale]
 
 
@@ -1035,6 +1057,7 @@ def tweak_price(
     price_scale: uint256 = self.cached_price_scale
     rebalancing_params: uint256[3] = self._unpack_3(self.packed_rebalancing_params)
     is_ramping: bool = self._is_ramping() # store as we bump the timestamp below
+    policy: Policy = self.POLICY
 
     # Contains: allowed_extra_profit, adjustment_step, ma_time. -----^
 
@@ -1152,10 +1175,13 @@ def tweak_price(
         # oracle prices.
         if norm > adjustment_step:
             # Calculate new price scale.
-            p_new: uint256 = unsafe_div(
-                price_scale * unsafe_sub(norm, adjustment_step) +
-                adjustment_step * price_oracle,
-                norm
+            if policy != empty(Policy):
+                p_new: uint256 = staticcall policy.get_price_scale()
+            else:
+                p_new: uint256 = unsafe_div(
+                    price_scale * unsafe_sub(norm, adjustment_step) +
+                    adjustment_step * price_oracle,
+                    norm
             )  # <---- norm is non-zero and gt adjustment_step; unsafe = safe.
 
             # ---------------- Update stale xp (using price_scale) with p_new.
@@ -1236,6 +1262,14 @@ def tweak_price(
                     self.donation_shares = new_total
                     self.totalSupply -= donation_shares_to_burn
                     self.last_donation_release_ts = block.timestamp - new_elapsed
+                if self.POLICY != empty(Policy):
+                    extcall self.POLICY.update_pool_state(xp,
+                                                    p_new,
+                                                    price_oracle,
+                                                    last_prices,
+                                                    new_virtual_price,
+                                                    xcp_profit,
+                                                    D)
 
                 return p_new
 
@@ -1243,7 +1277,14 @@ def tweak_price(
     # with the virtual price and D we calculated before attempting a rebalance.
     self.D = D
     self.virtual_price = virtual_price
-
+    if self.POLICY != empty(Policy):
+        extcall self.POLICY.update_pool_state(_xp,
+                                        price_scale,
+                                        price_oracle,
+                                        last_prices,
+                                        virtual_price,
+                                        xcp_profit,
+                                        D)
     return price_scale
 
 
@@ -1435,8 +1476,8 @@ def _A_gamma() -> uint256[2]:
 @view
 def _fee(xp: uint256[N_COINS]) -> uint256:
 
-    if self.EXT_FEE != empty(ExternalFee):
-        fee: uint256 = staticcall self.EXT_FEE.get_fee(xp, self.packed_fee_params)
+    if self.POLICY != empty(Policy):
+        fee: uint256 = staticcall self.POLICY.get_fee(xp, self.packed_fee_params)
         assert fee <= MAX_FEE, "fee>MAX"
         return fee
 
@@ -2291,14 +2332,14 @@ def set_admin_fee(admin_fee: uint256):
 
 
 @external
-def set_fee_contract(ext_fee: ExternalFee):
+def set_policy_contract(policy: Policy):
     """
-    @notice Set the external fee contract.
-    @param ext_fee The new external fee contract. Use empty(address) to disable.
+    @notice Set the external policy contract.
+    @param policy The new policy contract. Use empty(address) to disable.
     """
     self._check_admin()
-    self.EXT_FEE = ext_fee
-    log SetFeeContract(ext_fee=ext_fee)
+    self.POLICY = policy
+    log SetPolicyContract(policy=policy)
 
 
 @external

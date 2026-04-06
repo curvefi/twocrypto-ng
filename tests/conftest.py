@@ -4,9 +4,9 @@ from pytest import fixture
 from tests.utils.constants import (
     ERC20_DEPLOYER,
     FACTORY_DEPLOYER,
-    FEE_DEPLOYER,
     GAUGE_DEPLOYER,
     MATH_DEPLOYER,
+    POLICY_DEPLOYER,
     POOL_DEPLOYER,
     VIEW_DEPLOYER,
 )
@@ -169,9 +169,9 @@ def views_contract(deployer):
 
 
 @fixture(scope="module")
-def fee_contract(deployer):
+def policy_contract(deployer):
     with boa.env.prank(deployer):
-        return FEE_DEPLOYER.deploy()
+        return POLICY_DEPLOYER.deploy()
 
 
 @fixture(scope="module")
@@ -229,19 +229,19 @@ def pool(
 
 
 @fixture(scope="module")
-def pool_with_fee_contract(
+def pool_with_policy_contract(
     factory,
     factory_admin,
     coins,
     params,
     deployer,
-    fee_contract,
+    policy_contract,
     math_contract,
     views_contract,
 ):
     pool = POOL_DEPLOYER.at(_deploy_pool(factory, params, coins, deployer))
     pool.set_periphery(views_contract, math_contract, sender=factory_admin)
-    pool.set_fee_contract(fee_contract, sender=factory_admin)
+    pool.set_policy_contract(policy_contract, sender=factory_admin)
     return pool
 
 
