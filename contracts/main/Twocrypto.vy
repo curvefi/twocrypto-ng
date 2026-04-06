@@ -56,6 +56,7 @@ interface Policy:
                             price_scale: uint256,
                             price_oracle: uint256,
                             last_prices: uint256,
+                            last_timestamp: uint256,
                             virtual_price: uint256,
                             xcp_profit: uint256,
                             D: uint256): nonpayable
@@ -1274,9 +1275,10 @@ def tweak_price(
                                                     p_new,
                                                     price_oracle,
                                                     last_prices,
+                                                    last_timestamp,
                                                     new_virtual_price,
                                                     xcp_profit,
-                                                    D)
+                                                    new_D)
 
                 return p_new
 
@@ -1289,6 +1291,7 @@ def tweak_price(
                                         price_scale,
                                         price_oracle,
                                         last_prices,
+                                        last_timestamp,
                                         virtual_price,
                                         xcp_profit,
                                         D)
@@ -1861,7 +1864,7 @@ def internal_price_oracle() -> uint256:
 
         # ---- We cap state price that goes into the EMA with 2 x price_scale.
         return (
-            min(last_prices, 2 * price_scale) * (10**18 - alpha) +
+            min(max(last_prices, price_scale // 2), price_scale * 2) * (10**18 - alpha) +
             price_oracle * alpha
         ) // 10**18
 

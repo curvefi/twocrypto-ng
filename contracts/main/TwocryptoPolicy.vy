@@ -29,6 +29,7 @@ struct PoolState:
     price_scale: uint256
     price_oracle: uint256
     last_prices: uint256
+    last_timestamp: uint256
     virtual_price: uint256
     xcp_profit: uint256
     D: uint256
@@ -76,6 +77,7 @@ def update_pool_state(xp: uint256[N_COINS],
                         price_scale: uint256,
                         price_oracle: uint256,
                         last_prices: uint256,
+                        last_timestamp: uint256,
                         virtual_price: uint256,
                         xcp_profit: uint256,
                         D: uint256):
@@ -85,6 +87,7 @@ def update_pool_state(xp: uint256[N_COINS],
         price_scale = price_scale,
         price_oracle = price_oracle,
         last_prices = last_prices,
+        last_timestamp = last_timestamp,
         virtual_price = virtual_price,
         xcp_profit = xcp_profit,
         D = D,
