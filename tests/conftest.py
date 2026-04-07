@@ -169,12 +169,6 @@ def views_contract(deployer):
 
 
 @fixture(scope="module")
-def policy_contract(deployer):
-    with boa.env.prank(deployer):
-        return POLICY_DEPLOYER.deploy()
-
-
-@fixture(scope="module")
 def factory(
     deployer,
     fee_receiver,
@@ -235,12 +229,13 @@ def pool_with_policy_contract(
     coins,
     params,
     deployer,
-    policy_contract,
     math_contract,
     views_contract,
 ):
     pool = POOL_DEPLOYER.at(_deploy_pool(factory, params, coins, deployer))
     pool.set_periphery(views_contract, math_contract, sender=factory_admin)
+    with boa.env.prank(deployer):
+        policy_contract = POLICY_DEPLOYER.deploy(pool.address)
     pool.set_policy_contract(policy_contract, sender=factory_admin)
     return pool
 

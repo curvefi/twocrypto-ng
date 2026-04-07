@@ -8,8 +8,18 @@
 """
 from snekmate.utils import math
 
+interface IPool:
+    def price_scale() -> uint256: view
+    def price_oracle() -> uint256: view
+    def last_prices() -> uint256: view
+    def virtual_price() -> uint256: view
+    def xcp_profit() -> uint256: view
+    def D() -> uint256: view
+    def balances(i: uint256) -> uint256: view
+
 N_COINS: constant(uint256) = 2
 PRECISION: constant(uint256) = 10**18
+POOL: public(immutable(address))
 
 struct PoolState:
     xp: uint256[N_COINS]
@@ -22,6 +32,11 @@ struct PoolState:
     ts: uint256
 
 last_pool_state: public(PoolState)
+
+
+@deploy
+def __init__(pool: address):
+    POOL = pool
 
 
 @external
@@ -97,7 +112,7 @@ def update_pool_state(xp: uint256[N_COINS],
                         virtual_price: uint256,
                         xcp_profit: uint256,
                         D: uint256):
-    # assert msg.sender == POOL.address, "auth!"
+    assert msg.sender == POOL, "auth!"
     self.last_pool_state = PoolState(
         xp = xp,
         price_scale = price_scale,
