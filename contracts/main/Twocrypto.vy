@@ -51,12 +51,11 @@ interface Views:
 
 interface Policy:
     def get_fee(xp: uint256[N_COINS], packed_fee_params: uint256) -> uint256: view
-    def get_price_scale() -> uint256: view
+    def get_price_scale(packed_rebalancing_params: uint256) -> uint256: view
     def update_pool_state(xp: uint256[N_COINS],
                             price_scale: uint256,
                             price_oracle: uint256,
                             last_prices: uint256,
-                            last_timestamp: uint256,
                             virtual_price: uint256,
                             xcp_profit: uint256,
                             D: uint256): nonpayable
@@ -1171,7 +1170,7 @@ def tweak_price(
         # warm up p_policy with current price_scale
         p_policy: uint256 = price_scale
         if policy != empty(Policy):
-            p_policy = staticcall policy.get_price_scale()
+            p_policy = staticcall policy.get_price_scale(self.packed_rebalancing_params)
 
         # We only adjust prices if distance between price_oracle
         # and price_scale is large enough. This check ensures that no rebalancing
@@ -1275,7 +1274,6 @@ def tweak_price(
                                                     p_new,
                                                     price_oracle,
                                                     last_prices,
-                                                    last_timestamp,
                                                     new_virtual_price,
                                                     xcp_profit,
                                                     new_D)
@@ -1291,7 +1289,6 @@ def tweak_price(
                                         price_scale,
                                         price_oracle,
                                         last_prices,
-                                        last_timestamp,
                                         virtual_price,
                                         xcp_profit,
                                         D)
@@ -2339,6 +2336,16 @@ def set_policy_contract(policy: Policy):
     """
     self._check_admin()
     self.POLICY = policy
+    if policy != empty(Policy):
+        extcall policy.update_pool_state(
+            self._xp(self.balances, self.cached_price_scale),
+            self.cached_price_scale,
+            self.cached_price_oracle,
+            self.last_prices,
+            self.virtual_price,
+            self.xcp_profit,
+            self.D,
+        )
     log SetPolicyContract(policy=policy)
 
 

@@ -6,30 +6,16 @@
 @dev The caller passes the transient `xp` and packed fee params so the hook can
      reproduce the legacy balance-based fee formula from `_fee` exactly.
 """
-interface IPool:
-    def A() -> uint256: view
-    def price_scale() -> uint256: view
-    def balances(i: uint256) -> uint256: view
-    def D() -> uint256: view
-    def totalSupply() -> uint256: view
-    def precisions() -> uint256[N_COINS]: view
-    def donation_shares() -> uint256: view
-    def packed_fee_params() -> uint256: view
-    def last_timestamp() -> uint256: view
-    def last_prices() -> uint256: view
+from snekmate.utils import math
 
 N_COINS: constant(uint256) = 2
 PRECISION: constant(uint256) = 10**18
-# POOL: public(immutable(IPool))
-# FACTORY: public(immutable(address))
-# Controller: public(address)
 
 struct PoolState:
     xp: uint256[N_COINS]
     price_scale: uint256
     price_oracle: uint256
     last_prices: uint256
-    last_timestamp: uint256
     virtual_price: uint256
     xcp_profit: uint256
     D: uint256
@@ -37,12 +23,6 @@ struct PoolState:
 
 last_pool_state: public(PoolState)
 
-
-# @deploy
-# def __init__(pool_address: address, controller_address: address):
-#     POOL = IPool(pool_address)
-#     FACTORY = msg.sender
-#     self.Controller = controller_address
 
 @external
 @view
@@ -64,12 +44,49 @@ def get_fee(xp: uint256[N_COINS], packed_fee_params: uint256) -> uint256:
 
 @external
 @view
-def get_price_scale() -> uint256:
-    """
-    @notice Returns the target price scale for the pool, which is used to determine direct the rebalance.
-    @return uint256 The target price scale (1e18 for a 1:1 ratio)
-    """
-    return PRECISION
+def get_price_scale(packed_rebalancing_params: uint256) -> uint256:
+    state: PoolState = self.last_pool_state
+    price_scale: uint256 = state.price_scale
+    price_oracle: uint256 = state.price_oracle
+    rebalancing_params: uint256[3] = self._unpack_3(packed_rebalancing_params)
+
+    if state.ts < block.timestamp and price_scale > 0:
+        alpha: uint256 = self._wad_exp(
+            -convert(
+                unsafe_div((block.timestamp - state.ts) * PRECISION, rebalancing_params[2]),
+                int256,
+            )
+        )
+        ema_input: uint256 = min(
+            max(state.last_prices, price_scale // 2),
+            2 * price_scale,
+        )
+        price_oracle = unsafe_div(
+            ema_input * (PRECISION - alpha) + price_oracle * alpha,
+            PRECISION,
+        )
+
+    if price_scale == 0:
+        return 0
+
+    norm: uint256 = unsafe_div(price_oracle * PRECISION, price_scale)
+    if norm > PRECISION:
+        norm = unsafe_sub(norm, PRECISION)
+    else:
+        norm = unsafe_sub(PRECISION, norm)
+
+    adjustment_step: uint256 = min(
+        unsafe_div(norm, 5),
+        rebalancing_params[1],
+    )
+    if adjustment_step <= rebalancing_params[0]:
+        return price_scale
+
+    return unsafe_div(
+        price_scale * unsafe_sub(norm, adjustment_step) +
+        adjustment_step * price_oracle,
+        norm,
+    )
 
 
 @external
@@ -77,7 +94,6 @@ def update_pool_state(xp: uint256[N_COINS],
                         price_scale: uint256,
                         price_oracle: uint256,
                         last_prices: uint256,
-                        last_timestamp: uint256,
                         virtual_price: uint256,
                         xcp_profit: uint256,
                         D: uint256):
@@ -87,12 +103,17 @@ def update_pool_state(xp: uint256[N_COINS],
         price_scale = price_scale,
         price_oracle = price_oracle,
         last_prices = last_prices,
-        last_timestamp = last_timestamp,
         virtual_price = virtual_price,
         xcp_profit = xcp_profit,
         D = D,
         ts = block.timestamp
     )
+
+
+@internal
+@pure
+def _wad_exp(x: int256) -> uint256:
+    return convert(math._wad_exp(x), uint256)
 
 
 @internal
