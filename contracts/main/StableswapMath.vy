@@ -11,7 +11,7 @@ from snekmate.utils import math
 N_COINS: constant(uint256) = 2
 A_MULTIPLIER: constant(uint256) = 10000
 
-version: public(constant(String[8])) = "v0.1.0"
+version: public(constant(String[8])) = "v0.1.1"
 
 # ------------------------ AMM math functions --------------------------------
 
@@ -74,6 +74,11 @@ def newton_D(_amp: uint256,
     """
     # gamma and K0_prev are ignored
     # _amp is already multiplied by a A_MULTIPLIER and N_COINS
+    assert _xp[0] > 0 and _xp[1] > 0, "!balance"
+    if _xp[0] > _xp[1]:
+        assert unsafe_div(_xp[0], _xp[1]) < 10_000, "!balance"
+    else:
+        assert unsafe_div(_xp[1], _xp[0]) < 10_000, "!balance"
 
     S: uint256 = 0
     for x: uint256 in _xp:

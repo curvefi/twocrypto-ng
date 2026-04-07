@@ -1,7 +1,8 @@
-from tests.utils.god_mode import GodModePool
-from tests.utils.constants import N_COINS, NOISE_FEE
-import pytest
 import boa
+import pytest
+
+from tests.utils.constants import N_COINS, NOISE_FEE
+from tests.utils.god_mode import GodModePool
 
 INITIAL_LIQUIDITY = 1000 * 10**18
 
@@ -24,7 +25,11 @@ def test_fee_increases_with_spot_imbalance(pool, i):
     pool.add_liquidity_balanced(100_000_000 * 10**18)
 
     # Perform exchange to unbalance the pool
-    pool.exchange(i, 10_000_000 * 10**18)
+    dx = 10_000_000 * 10**18
+    if i == 1:
+        dx = dx * 10**18 // pool.price_scale()
+
+    pool.exchange(i, dx)
 
     # Get current balances
     balances = pool.balances()

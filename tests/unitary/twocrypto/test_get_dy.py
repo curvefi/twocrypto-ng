@@ -11,7 +11,7 @@ def test_default_behavior(pool, i, dx_ratio):
     # Add balanced liquidity
     pool.add_liquidity_balanced(init_liq)
 
-    dx = init_liq // dx_ratio
+    dx = pool.compute_balanced_amounts(init_liq // dx_ratio)[i]
     dy_view = pool.get_dy(i, 1 - i, dx)
     # Perform exchange to unbalance the pool
     dy_true = pool.exchange(i, dx)

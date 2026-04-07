@@ -391,7 +391,13 @@ class DonateStateful(ImbalancedLiquidityStateful):
 
             # we correct the decimals of the imbalanced amounts
             imbalanced_amounts = self.correct_all_decimals(imbalanced_amounts)
-            token_out = self.pool.calc_token_amount(imbalanced_amounts, True)
+            try:
+                token_out = self.pool.calc_token_amount(imbalanced_amounts, True)
+            except boa.BoaError as e:
+                if "!balance" in str(e):
+                    amount *= 0.9
+                    continue
+                raise
             if (
                 token_out
                 < (token_out + self.pool.totalSupply())

@@ -343,8 +343,8 @@ def _calc_withdraw_one_coin(
     D -= (dD - D_fee)
 
     y_out: uint256[2] = staticcall math.get_y(A, gamma, xp, D, i)
-    dy: uint256 = (xp[i] - y_out[0]) * PRECISION // price_scale_i
-    xp[i] = y_out[0]
+    dy: uint256 = (xp[i] - y_out[0] - 1) * PRECISION // price_scale_i
+    xp[i] = y_out[0] + 1
 
     return dy, approx_fee
 

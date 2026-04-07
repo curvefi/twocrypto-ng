@@ -1699,7 +1699,7 @@ def _calc_withdraw_fixed_out(
     # This withdrawal method fixes the amount of token i to be withdrawn,
     # this is why here we don't compute amountsp[i] but we give it as a
     # constraint (after appropriate scaling).
-    amountsp[i] = unsafe_div(amount_i * price_scales[i], PRECISION)
+    amountsp[i] = unsafe_div(amount_i * price_scales[i] + PRECISION - 1, PRECISION)
     xp_new[i] -= amountsp[i]
 
     # We compute the position on the y axis after a withdrawal of dD with the constraint
@@ -1725,7 +1725,7 @@ def _calc_withdraw_fixed_out(
     dD -= dD * approx_fee // FEE_PRECISION + 1
 
     # Same reasoning as before except now we're charging fees.
-    y = (staticcall self.MATH.get_y(A_gamma[0], A_gamma[1], xp_new, D - dD, j))[0]
+    y = (staticcall self.MATH.get_y(A_gamma[0], A_gamma[1], xp_new, D - dD, j))[0] + 1
     # We descale y to obtain the amount dy in balances and not scaled balances.
     dy: uint256 = (xp[j] - y) * PRECISION // price_scales[j]
     xp_new[j] = y

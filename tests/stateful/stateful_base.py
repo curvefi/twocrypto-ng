@@ -1,3 +1,4 @@
+import textwrap
 from math import log, log10
 from typing import List
 
@@ -12,9 +13,8 @@ from hypothesis.stateful import (
 )
 from hypothesis.strategies import integers
 
-from tests.utils.constants import UNIX_DAY, FACTORY_DEPLOYER, ERC20_DEPLOYER
+from tests.utils.constants import ERC20_DEPLOYER, FACTORY_DEPLOYER, UNIX_DAY
 from tests.utils.strategies import address, pool_from_preset
-import textwrap
 
 
 class StatefulBase(RuleBasedStateMachine):
@@ -203,8 +203,13 @@ class StatefulBase(RuleBasedStateMachine):
         try:
             self.pool.add_liquidity(amounts, 0, user, donate, sender=user)
         except boa.BoaError as e:
+            error = str(e.stack_trace[0])
             if donate and "donation above cap!" in str(e.stack_trace[0]):
                 event("donation refused due to cap")
+                return
+            if "!balance" in error:
+                self.can_always_withdraw(imbalanced_operations_allowed=True)
+                event("deposit refused due to imbalance")
                 return
             raise e
 
@@ -267,7 +272,9 @@ class StatefulBase(RuleBasedStateMachine):
             # we make sure that the revert was caused by the pool
             # being too imbalanced
             error = str(e.stack_trace[0])
-            if not any(msg in error for msg in ("unsafe value for y", "unsafe values x[i]")):
+            if not any(
+                msg in error for msg in ("unsafe value for y", "unsafe values x[i]", "!balance")
+            ):
                 raise ValueError(f"Reverted for the wrong reason: {error}")
 
             # we use the log10 of the equilibrium to obtain an easy interval
@@ -391,6 +398,10 @@ class StatefulBase(RuleBasedStateMachine):
                     lp_tokens_to_withdraw < 1e16
                 ), "virtual price decreased but the amount was too high"
                 event("unsuccessful removal: virtual price decreased")
+                return
+            elif "!balance" in error_message:
+                self.can_always_withdraw(imbalanced_operations_allowed=True)
+                event("unsuccessful removal: imbalance guard")
                 return
             elif "!tokens" in error_message:
                 print(error_message)

@@ -125,6 +125,11 @@ def test_fixed_out_swap_equivalence(gm_pool, i, percentage, seeded_liquidity_i):
     balanced_amounts = gm_pool.compute_balanced_amounts(int(seeded_liquidity_i * percentage))
     AMOUNT_I = balanced_amounts[i]
 
+    dead_lp = boa.env.generate_address()
+    dead_lp_amounts = gm_pool.compute_balanced_amounts(seeded_liquidity_i)
+    gm_pool.premint_amounts(dead_lp_amounts, to=dead_lp)
+    gm_pool.instance.add_liquidity(dead_lp_amounts, 0, sender=dead_lp)
+
     lp_shares = gm_pool.add_liquidity_balanced(seeded_liquidity_i)
 
     # ====  withdraw fixed_out
