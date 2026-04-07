@@ -130,6 +130,8 @@ def pool(
     tokens = [draw(token), draw(token)]
 
     with boa.env.prank(draw(deployer)):
+        adj_min = draw(adjustment_step_min)
+        adj_max = draw(integers(min_value=adj_min + 1, max_value=10**18))
         _pool = _factory.deploy_pool(
             "stateful simulation",
             "SIMULATION",
@@ -140,8 +142,8 @@ def pool(
             mid_fee,
             out_fee,
             draw(fee_gamma),
-            draw(adjustment_step_min),
-            draw(adjustment_step_max),
+            adj_min,
+            adj_max,
             draw(ma_exp_time),
             draw(price),
         )
@@ -155,8 +157,8 @@ def pool(
         + ", gamma: {:.2e}".format(_pool.gamma())
         + ", price: {:.2e}".format(_pool.price_oracle())
         + ", fee_gamma: {:.2e}".format(_pool.fee_gamma())
-        + ", adjustment_step_min: {:.2e}".format(_pool.adjustment_step_min())
-        + ", adjustment_step_max: {:.2e}".format(_pool.adjustment_step_max())
+        + ", adjustment_step_min: {:.2e}".format(_pool.adjustment_step()[0])
+        + ", adjustment_step_max: {:.2e}".format(_pool.adjustment_step()[1])
         + "\n    coin 0 has {} decimals".format(tokens[0].decimals())
         + "\n    coin 1 has {} decimals".format(tokens[1].decimals())
     )
