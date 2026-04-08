@@ -294,8 +294,17 @@ class StatefulBase(RuleBasedStateMachine):
             # (safe failure, but still a failure)
             return False
 
-        # if get_y didn't fail we can safely swap
-        actual_dy = self.pool.exchange(i, j, dx, expected_dy, sender=user)
+        # get_dy can succeed while the state-changing path later hits the
+        # post-trade imbalance guard during invariant refresh.
+        try:
+            actual_dy = self.pool.exchange(i, j, dx, expected_dy, sender=user)
+        except boa.BoaError as e:
+            self.can_always_withdraw(imbalanced_operations_allowed=True)
+            error = str(e.stack_trace[0])
+            if "!balance" not in error:
+                raise ValueError(f"Reverted for the wrong reason: {error}")
+            event("swap execution refused due to imbalance")
+            return False
 
         # compute the change in balances
         delta_balance_i = self.coins[i].balanceOf(user) - delta_balance_i
