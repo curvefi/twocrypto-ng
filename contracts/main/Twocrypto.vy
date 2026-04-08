@@ -255,17 +255,11 @@ allowance: public(HashMap[address, HashMap[address, uint256]])
 totalSupply: public(uint256)
 
 
-# --------------------- State struct for fee calculation ---------------------
-struct PoolState:
-    xp: uint256[N_COINS]
-    price_scale: uint256
-    price_oracle: uint256
-    last_prices: uint256
-    virtual_price: uint256
-    xcp_profit: uint256
-    D: uint256
-    total_supply: uint256
-
+# --------------------- Storage for LP whitelisting ---------------------
+# lp_allowlist[empty(address)] acts as allowlist enabled flag.
+# `change_allowlist` may mutate the sentinel directly via the input arrays.
+# If `add` is non-empty, the sentinel is forced back to `True`.
+lp_allowlist: public(HashMap[address, bool])
 
 # ----------------------- Contract -------------------------------------------
 
@@ -564,6 +558,8 @@ def add_liquidity(
 
     assert amounts[0] + amounts[1] > 0, "!amounts"
 
+    if not donation and self.lp_allowlist[empty(address)]:
+        assert self.lp_allowlist[msg.sender], "!wl"
     # --------------------- Get prices, balances -----------------------------
 
     old_balances: uint256[N_COINS] = self.balances
@@ -2347,6 +2343,28 @@ def set_policy_contract(policy: Policy):
             self.D,
         )
     log SetPolicyContract(policy=policy)
+
+
+@external
+def change_allowlist(add: DynArray[address, 16], remove: DynArray[address, 16]):
+    """
+    @notice Batch-update the LP allowlist.
+    @dev The whitelist enabled flag is stored at `lp_allowlist[empty(address)]`.
+         Entries in `remove` are cleared first, then entries in `add` are set.
+         Any non-empty `add` batch enables the whitelist automatically.
+         To disable the whitelist, call with empty `add` and include `empty(address)`
+         in `remove`.
+    """
+    self._check_admin()
+
+    for account: address in remove:
+        self.lp_allowlist[account] = False
+
+    for account: address in add:
+        self.lp_allowlist[account] = True
+
+    if len(add) > 0:
+        self.lp_allowlist[empty(address)] = True
 
 
 @external
