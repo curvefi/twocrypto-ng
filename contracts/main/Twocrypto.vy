@@ -256,9 +256,6 @@ totalSupply: public(uint256)
 
 
 # --------------------- Storage for LP whitelisting ---------------------
-# lp_allowlist[empty(address)] acts as allowlist enabled flag.
-# `change_allowlist` may mutate the sentinel directly via the input arrays.
-# If `add` is non-empty, the sentinel is forced back to `True`.
 lp_allowlist: public(HashMap[address, bool])
 
 # ----------------------- Contract -------------------------------------------
@@ -559,6 +556,7 @@ def add_liquidity(
     assert amounts[0] + amounts[1] > 0, "!amounts"
 
     if not donation and self.lp_allowlist[empty(address)]:
+        # self.lp_allowlist[empty(address)] is the flag for whether the allowlist is enabled.
         assert self.lp_allowlist[msg.sender], "!wl"
     # --------------------- Get prices, balances -----------------------------
 
