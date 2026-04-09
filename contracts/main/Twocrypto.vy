@@ -2358,16 +2358,6 @@ def initialize(
     log SetFeeParameters(lp_profit_fraction=lp_profit_fraction, admin_fee=admin_fee)
 
     self.POLICY = policy
-    if policy != empty(Policy):
-        extcall policy.update_pool_state(
-            self._xp(self.balances, self.cached_price_scale),
-            self.cached_price_scale,
-            self.cached_price_oracle,
-            self.last_prices,
-            self.virtual_price,
-            self.xcp_profit,
-            self.D,
-        )
     log SetPolicyContract(policy=policy)
 
     self.lp_allowlist[empty(address)] = False
@@ -2389,7 +2379,8 @@ def set_policy_contract(policy: Policy):
     """
     self._check_admin()
     self.POLICY = policy
-    if policy != empty(Policy):
+    if policy != empty(Policy) and self.D > 0:
+        # we do not push state if pool is empty
         extcall policy.update_pool_state(
             self._xp(self.balances, self.cached_price_scale),
             self.cached_price_scale,

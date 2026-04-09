@@ -40,3 +40,9 @@ dev-dependencies = [
 
 [tool.ruff]
 line-length = 100
+
+[tool.basedpyright]
+executionEnvironments = [
+    { root = "tests", extraPaths = ["."], reportAttributeAccessIssue = "none", reportUnknownArgumentType = "none", reportUnknownParameterType = "none", reportUnknownVariableType = "none", reportUnknownMemberType = "none", reportMissingParameterType = "none", reportUnknownLambdaType = "none" },
+    { root = "scripts", extraPaths = ["."], reportAttributeAccessIssue = "none", reportUnknownArgumentType = "none", reportUnknownParameterType = "none", reportUnknownVariableType = "none", reportUnknownMemberType = "none", reportMissingParameterType = "none", reportUnknownLambdaType = "none" },
+]
