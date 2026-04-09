@@ -1320,11 +1320,17 @@ def _claim_admin_fees():
     # 1. If time passed since last fee claim is less than
     #    MIN_ADMIN_FEE_CLAIM_INTERVAL.
     # 2. Pool parameters are being ramped.
+    # 3. admin_fee is 0.
+    # 4. fee_receiver is not set.
 
     last_claim_time: uint256 = self.last_admin_fee_claim_timestamp
+    fee_receiver: address = staticcall factory.fee_receiver()
+    admin_fee: uint256 = self.admin_fee
     if (
         unsafe_sub(block.timestamp, last_claim_time) < MIN_ADMIN_FEE_CLAIM_INTERVAL or
-        self._is_ramping()
+        self._is_ramping() or
+        admin_fee == 0 or
+        fee_receiver == empty(address)
     ):
         return
 
@@ -1340,13 +1346,9 @@ def _claim_admin_fees():
         return
 
     # ---------- Conditions met to claim admin fees: compute state. ----------
-    # no _get_D() because we can't claim during ramping
-    D: uint256 = self.D
-
-    vprice: uint256 = self.virtual_price
-    price_scale: uint256 = self.cached_price_scale
-    fee_receiver: address = staticcall factory.fee_receiver()
+    current_vprice: uint256 = self.virtual_price
     balances: uint256[N_COINS] = self.balances
+    lp_profit_fraction: uint256 = self.lp_profit_fraction
 
     #  Admin fees are calculated as follows.
     #      1. Calculate accrued profit since last claim. `xcp_profit`
@@ -1356,76 +1358,58 @@ def _claim_admin_fees():
     #      3. Take out admin's share, stored in self.admin_fee (also 10**10 precision).
 
     fees: uint256 = unsafe_div(
-        unsafe_sub(xcp_profit, xcp_profit_a) * self.lp_profit_fraction * self.admin_fee,
+        unsafe_sub(xcp_profit, xcp_profit_a) * lp_profit_fraction * self.admin_fee,
         FEE_PRECISION * FEE_PRECISION
     )
-    # ------------------------------ Claim admin fees by minting admin's share
-    #                                                of the pool in LP tokens.
 
-    admin_share: uint256 = 0
-    if fee_receiver != empty(address) and fees > 0:
+    if fees > 0:
+        # -------------------- Recalculate virtual price and xcp_profit ----------
+        # We withdraw token balances without touching LP shares, so virtual price goes down.
+        updated_vprice: uint256 = current_vprice - fees
+        # Do not claim fees if doing so causes virtual price to drop below 10**18.
+        if updated_vprice < 10**18:
+            return
+        # To maintain rebalancing condition vp' > 1 + (xcp_profit' - 1)*lpf:
+        # (i.e. not to affect rebalancing invariant)
+        # at the boundary:
+        #       vp - f = 1 + (xcp_profit - 1)*lpf - f
+        #       vp - f = 1 + (xcp_profit - 1 - f/lpf)*lpf
+        #    => xcp_profit' := xcp_profit - f / lpf
+        xcp_profit -= fees * FEE_PRECISION // lp_profit_fraction # (fees>0 => lpf>0)
 
-        # -------------------------------- Calculate admin share to be minted.
-        frac: uint256 = vprice * 10**18 // (vprice - fees) - 10**18
-        admin_share += current_lp_token_supply * frac // 10**18
+        # Another way to see this is to track total_admin_claimed (sum_i(fees)), the cumulative amount
+        # extracted from the LP+DAO bucket, and compare virtual_price against
+        # 1 + (xcp_profit - 1) * lpf - total_admin_claimed instead.
+        # This alternative model would keep xcp_profit strictly increasing.
+        # Instead we fold claimed profit directly into xcp_profit here.
 
-        # When claiming fees, the virtual price decreases:
-        # Let TS = total_supply, f = fees
-        # vp' = xcp/(TS + TS*((vp/vp-f) - 1)) = (xcp/TS) / (1 + f/(vp-f)) =
-        # = vp / (vp / (vp-f)) = (vp-f)
-        # vp' = (vp-f)
+        # xcp_profit as raw value is thus shouldn't be used in integrations!
 
-        # Thus, to maintain the condition vp' - 1 > (xcp_profit' - 1)/2:
-        #     xcp_profit' := xcp_profit - 2 * f
-        xcp_profit -= fees * 2
-        # Another way to look at it - we either track admin_claimed_xcp (=sum(fees)),
-        # and always use it to calculate admin+LP reserve, or just -=2*fees in xcp_profit.
-        # xcp_profit as raw value is thus should't be used in integrations!
+        # ---------------------------- Update State ------------------------------
+        self.virtual_price = updated_vprice
+        self.xcp_profit = xcp_profit
+        self.last_admin_fee_claim_timestamp = block.timestamp
+        if xcp_profit > xcp_profit_a:
+            self.xcp_profit_a = xcp_profit  # <-------- Cache last claimed profit.
 
-    # ------------------- Recalculate virtual_price following admin fee claim.
-    total_supply_including_admin_share: uint256 = (
-        current_lp_token_supply + admin_share
-    )
-    vprice = (
-        10**18 * self._xcp(D, price_scale) //
-        total_supply_including_admin_share
-    )
+        # Adjust D after admin removes liquidity
+        # no _get_D() because we can't claim during ramping
+        D: uint256 = self.D
+        # Decrease D proportional to fees/virtual_price
+        self.D = D - unsafe_div(D * fees, current_vprice)
 
-    # Do not claim fees if doing so causes virtual price to drop below 10**18.
-    if vprice < 10**18:
-        return
+        # --------------------------- Handle Transfers ---------------------------
 
-    # ---------------------------- Update State ------------------------------
-
-    self.xcp_profit = xcp_profit
-    self.last_admin_fee_claim_timestamp = block.timestamp
-
-    # Since we reduce balances: virtual price goes down
-    self.virtual_price = vprice
-
-    # Adjust D after admin seemingly removes liquidity
-    self.D = D - unsafe_div(D * admin_share, total_supply_including_admin_share)
-
-    if xcp_profit > xcp_profit_a:
-        self.xcp_profit_a = xcp_profit  # <-------- Cache last claimed profit.
-
-    # --------------------------- Handle Transfers ---------------------------
-
-    admin_tokens: uint256[N_COINS] = empty(uint256[N_COINS])
-    if admin_share > 0:
-
+        admin_amounts: uint256[N_COINS] = empty(uint256[N_COINS])
         for i: uint256 in range(N_COINS):
-
-            admin_tokens[i] = (
-                balances[i] * admin_share //
-                total_supply_including_admin_share
+            admin_amounts[i] = (
+                balances[i] * fees // current_vprice
             )
-
             # _transfer_out tokens to admin and update self.balances. State
             # update to self.balances occurs before external contract calls:
-            self._transfer_out(i, admin_tokens[i], fee_receiver)
+            self._transfer_out(i, admin_amounts[i], fee_receiver)
 
-        log ClaimAdminFee(admin=fee_receiver, tokens=admin_tokens)
+        log ClaimAdminFee(admin=fee_receiver, tokens=admin_amounts)
 
 
 @internal
