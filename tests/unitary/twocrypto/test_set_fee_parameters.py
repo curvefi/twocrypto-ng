@@ -25,10 +25,10 @@ def test_only_owner(pool):
 
 
 def test_admin_fee_greater_than_max(pool, factory_admin):
-    with boa.reverts():
+    with boa.reverts(dev='"admin fee above max"'):
         pool.set_fee_parameters(10**10 + 1, 0, sender=factory_admin)
 
 
 def test_lp_profit_fraction_greater_than_precision(pool, factory_admin):
-    with boa.reverts():
+    with boa.reverts(dev='"lp profit fraction above 1e18"'):
         pool.set_fee_parameters(0, PRECISION + 1, sender=factory_admin)

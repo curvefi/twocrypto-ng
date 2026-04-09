@@ -148,8 +148,9 @@ event SetDonationParameters:
     donation_protection_lp_threshold: uint256
     donation_shares_max_ratio: uint256
 
-event SetAdminFee:
+event SetFeeParameters:
     admin_fee: uint256
+    lp_profit_fraction: uint256
 
 event SetPolicyContract:
     policy: Policy
@@ -1132,7 +1133,7 @@ def tweak_price(
     #
     # Mathematical basis for rebalancing condition:
     # 1. xcp_profit grows after virtual price, total growth since launch = (xcp_profit − 1)
-    # 2. We reserve half of the growth for LPs and admin, rest is used to rebalance the pool
+    # 2. We reserve lp_profit_fraction of the growth for LPs and admin, rest is used to rebalance the pool
 
     # Rebalancing condition transformation:
     # virtual_price > 1 + (xcp_profit - 1) * lp_profit_fraction
@@ -2121,25 +2122,25 @@ def ramp_A_gamma(
     @param future_time The timestamp at which the ramping will end.
     """
     self._check_admin()
-    assert not self._is_ramping(), "!ramp"
-    assert future_time > block.timestamp + MIN_RAMP_TIME - 1, "ramp time<min"
+    assert not self._is_ramping()  # dev: "ramp active"
+    assert future_time > block.timestamp + MIN_RAMP_TIME - 1  # dev: "ramp time below minimum"
 
     A_gamma: uint256[2] = self._A_gamma()
     initial_A_gamma: uint256 = A_gamma[0] << 128
     initial_A_gamma = initial_A_gamma | A_gamma[1]
 
-    assert future_A > MIN_A - 1, "A<min"
-    assert future_A < MAX_A + 1, "A>max"
-    assert future_gamma > MIN_GAMMA - 1, "gamma<min"
-    assert future_gamma < MAX_GAMMA + 1, "gamme>max"
+    assert future_A > MIN_A - 1  # dev: "A below minimum"
+    assert future_A < MAX_A + 1  # dev: "A above maximum"
+    assert future_gamma > MIN_GAMMA - 1  # dev: "gamma below minimum"
+    assert future_gamma < MAX_GAMMA + 1  # dev: "gamma above maximum"
 
     ratio: uint256 = 10**18 * future_A // A_gamma[0]
-    assert ratio < 10**18 * MAX_PARAM_CHANGE + 1, "A too high"
-    assert ratio > 10**18 // MAX_PARAM_CHANGE - 1, "A too low"
+    assert ratio < 10**18 * MAX_PARAM_CHANGE + 1  # dev: "A change too high"
+    assert ratio > 10**18 // MAX_PARAM_CHANGE - 1  # dev: "A change too low"
 
     ratio = 10**18 * future_gamma // A_gamma[1]
-    assert ratio < 10**18 * MAX_PARAM_CHANGE + 1, "gamma too high"
-    assert ratio > 10**18 // MAX_PARAM_CHANGE - 1, "gamma too low"
+    assert ratio < 10**18 * MAX_PARAM_CHANGE + 1  # dev: "gamma change too high"
+    assert ratio > 10**18 // MAX_PARAM_CHANGE - 1  # dev: "gamma change too low"
 
     self.initial_A_gamma = initial_A_gamma
     self.initial_A_gamma_time = block.timestamp
@@ -2211,16 +2212,16 @@ def apply_new_parameters(
     current_fee_params: uint256[3] = self._unpack_3(self.packed_fee_params)
 
     if new_out_fee < MAX_FEE + 1:
-        assert new_out_fee > MIN_FEE - 1, "!fee"
+        assert new_out_fee > MIN_FEE - 1  # dev: "fee below minimum"
     else:
         new_out_fee = current_fee_params[1]
 
     if new_mid_fee > MAX_FEE:
         new_mid_fee = current_fee_params[0]
-    assert new_mid_fee <= new_out_fee, "!mid-fee"
+    assert new_mid_fee <= new_out_fee  # dev: "mid fee above out fee"
 
     if new_fee_gamma < 10**18:
-        assert new_fee_gamma > 0, "!fee_gamma"
+        assert new_fee_gamma > 0  # dev: "fee gamma cannot be zero"
     else:
         new_fee_gamma = current_fee_params[2]
 
@@ -2241,7 +2242,7 @@ def apply_new_parameters(
         new_adjustment_step_max = current_rebalancing_params[1]
 
     if new_ma_time < 872542:  # <----- Calculated as: 7 * 24 * 60 * 60 / ln(2)
-        assert new_ma_time > 86, "MA<60/ln(2)"
+        assert new_ma_time > 86  # dev: "MA time below minimum"
     else:
         new_ma_time = current_rebalancing_params[2]
 
@@ -2276,11 +2277,11 @@ def set_donation_parameters(
     @param max_shares_ratio The new maximum donation shares ratio with 10**18 precision.
     """
     self._check_admin()
-    assert duration > 0  # dev: donation duration cannot be zero
+    assert duration > 0  # dev: "donation duration cannot be zero"
     # > 0 asserts are critical as unsafe_div is used throughout the code. Change cautiously!
-    assert protection_period > 0  # dev: donation protection period cannot be zero
-    assert protection_lp_threshold > 0  # dev: donation protection threshold cannot be zero
-    assert max_shares_ratio > 0  # dev: donation shares max ratio cannot be zero
+    assert protection_period > 0  # dev: "donation protection period cannot be zero"
+    assert protection_lp_threshold > 0  # dev: "donation protection threshold cannot be zero"
+    assert max_shares_ratio > 0  # dev: "donation shares max ratio cannot be zero"
 
     self.donation_duration = duration
     self.donation_protection_period = protection_period
@@ -2296,19 +2297,19 @@ def set_donation_parameters(
 
 
 @external
-def set_admin_fee(admin_fee: uint256):
+def set_fee_parameters(admin_fee: uint256, lp_profit_fraction: uint256):
     """
-    @notice Set the admin fee.
+    @notice Set admin fee and LP profit fraction parameters.
     @param admin_fee The new admin fee.
-    @dev The admin fee is a percentage of the profits that are
-         claimed by the admin. The fee is set in bps.
+    @param lp_profit_fraction The new LP profit fraction with 10**18 precision.
     """
-
     self._check_admin()
-    assert admin_fee <= MAX_ADMIN_FEE, "admin_fee>MAX"
+    assert admin_fee <= MAX_ADMIN_FEE  # dev: "admin fee above max"
+    assert lp_profit_fraction <= PRECISION  # dev: "lp profit fraction above 1e18"
 
     self.admin_fee = admin_fee
-    log SetAdminFee(admin_fee=admin_fee)
+    self.lp_profit_fraction = lp_profit_fraction
+    log SetFeeParameters(admin_fee=admin_fee, lp_profit_fraction=lp_profit_fraction)
 
 
 @external
@@ -2364,7 +2365,7 @@ def set_periphery(views: Views, math: Math):
     """
     self._check_admin()
     # at least one of the two must be set
-    assert views != empty(Views) or math != empty(Math), "!contract"
+    assert views != empty(Views) or math != empty(Math)  # dev: "both periphery contracts empty"
 
     if views != empty(Views):
         self.VIEW = views

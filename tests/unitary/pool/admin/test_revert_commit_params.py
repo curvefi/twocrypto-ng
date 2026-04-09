@@ -18,11 +18,11 @@ def test_commit_incorrect_fee_params(pool, factory_admin, params):
     p = copy.deepcopy(params)
     p["mid_fee"] = p["out_fee"] + 1
     with boa.env.prank(factory_admin):
-        with boa.reverts("!mid-fee"):
+        with boa.reverts(dev='"mid fee above out fee"'):
             _apply_new_params(pool, p)
 
         p["out_fee"] = 0
-        with boa.reverts("!fee"):
+        with boa.reverts(dev='"fee below minimum"'):
             _apply_new_params(pool, p)
 
         # too large out_fee revert to old out_fee:
@@ -38,7 +38,7 @@ def test_commit_incorrect_fee_gamma(pool, factory_admin, params):
     p["fee_gamma"] = 0
 
     with boa.env.prank(factory_admin):
-        with boa.reverts("!fee_gamma"):
+        with boa.reverts(dev='"fee gamma cannot be zero"'):
             _apply_new_params(pool, p)
 
         p["fee_gamma"] = 10**18 + 1
@@ -64,7 +64,7 @@ def test_commit_rebalancing_params(pool, factory_admin, params):
             assert logs.adjustment_step_max == params["adjustment_step_max"]
             assert logs.ma_time == params["ma_time"]
 
-        with boa.reverts("MA<60/ln(2)"):
+        with boa.reverts(dev='"MA time below minimum"'):
             p["ma_time"] = 86
             _apply_new_params(pool, p)
 

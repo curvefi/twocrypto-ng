@@ -60,7 +60,7 @@ def test_update_existing_contracts(pool, factory_admin):
 
 def test_revert_both_empty(pool, factory_admin):
     """Test that setting both contracts to empty reverts"""
-    with boa.reverts("!contract"):
+    with boa.reverts(dev='"both periphery contracts empty"'):
         pool.set_periphery(
             boa.eval("empty(address)"), boa.eval("empty(address)"), sender=factory_admin
         )
@@ -69,5 +69,5 @@ def test_revert_both_empty(pool, factory_admin):
 def test_revert_non_admin(pool, user):
     """Test that non-admin cannot set contracts"""
     mock_view = boa.env.generate_address()
-    with boa.reverts():
+    with boa.reverts("only owner"):
         pool.set_periphery(mock_view, boa.eval("empty(address)"), sender=user)

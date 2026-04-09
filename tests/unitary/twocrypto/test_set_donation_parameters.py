@@ -37,11 +37,16 @@ def test_only_owner(pool):
 
 
 @pytest.mark.parametrize(
-    "duration,period,threshold,max_shares_ratio",
-    [(0, 1, 1, 1), (1, 0, 1, 1), (1, 1, 0, 1), (1, 1, 1, 0)],
+    "duration,period,threshold,max_shares_ratio,dev_reason",
+    [
+        (0, 1, 1, 1, '"donation duration cannot be zero"'),
+        (1, 0, 1, 1, '"donation protection period cannot be zero"'),
+        (1, 1, 0, 1, '"donation protection threshold cannot be zero"'),
+        (1, 1, 1, 0, '"donation shares max ratio cannot be zero"'),
+    ],
 )
-def test_invalid_params(pool, duration, period, threshold, max_shares_ratio):
-    with boa.reverts():
+def test_invalid_params(pool, duration, period, threshold, max_shares_ratio, dev_reason):
+    with boa.reverts(dev=dev_reason):
         pool.set_donation_parameters(
             duration,
             period,
