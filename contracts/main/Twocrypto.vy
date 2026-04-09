@@ -149,8 +149,8 @@ event SetDonationParameters:
     donation_shares_max_ratio: uint256
 
 event SetFeeParameters:
-    admin_fee: uint256
     lp_profit_fraction: uint256
+    admin_fee: uint256
 
 event SetPolicyContract:
     policy: Policy
@@ -216,10 +216,12 @@ packed_rebalancing_params: public(uint256)  # <---------- Contains rebalancing
 # Fee params that determine dynamic fees:
 packed_fee_params: public(uint256)  # <---- Packs mid_fee, out_fee, fee_gamma.
 
-# Split between rebalancing budget and admin/LP share
+# Split between rebalancing budget and admin/LP share, with 10**10 precision.
 lp_profit_fraction: public(uint256)
 
+# DAO share of LP/DAO fee split with 10**10 precision. The rest goes to LPs.
 admin_fee: public(uint256)
+
 MAX_ADMIN_FEE: constant(uint256) = FEE_PRECISION
 MIN_FEE: constant(uint256) = FEE_PRECISION * 1 // 10 // 10_000  # <-------------------------- 0.1 BPS.
 MAX_FEE: constant(uint256) = FEE_PRECISION
@@ -257,6 +259,10 @@ totalSupply: public(uint256)
 # --------------------- Storage for LP whitelisting ---------------------
 lp_allowlist: public(HashMap[address, bool])
 
+# Storage for pool initialization (requires magic_gamma at pool creation)
+deploy_eoa: address
+deploy_time: uint256
+
 # ----------------------- Contract -------------------------------------------
 
 @deploy
@@ -279,11 +285,11 @@ def __init__(
     self.MATH = Math(empty(address))
     self.POLICY = Policy(empty(address))
 
-    # this parameter can also be dynamically adjusted at blueprint deployment time
-    self.admin_fee = FEE_PRECISION * 50 // 100
-
     # Split between rebalancing budget and admin/LP share
-    self.lp_profit_fraction = PRECISION * 50 // 100
+    self.lp_profit_fraction = FEE_PRECISION * 50 // 100
+
+    # Split between DAO and LPs of the admin/LP share of fees.
+    self.admin_fee = FEE_PRECISION * 50 // 100
 
     factory = Factory(msg.sender)
     name = _name
@@ -294,6 +300,11 @@ def __init__(
 
     # --------------- Validate A and gamma parameters here and not in factory.
     gamma_A: uint256[2] = self._unpack_2(packed_gamma_A)  # gamma is at idx 0.
+
+    if gamma_A[0] == 11111111111:
+        # magic value that enables pool initialization by deployer (set whitelist, admin_fee, lpf)
+        self.deploy_eoa = tx.origin
+        self.deploy_time = block.timestamp
 
     assert gamma_A[0] > MIN_GAMMA-1, "gamma<MIN"
     assert gamma_A[0] < MAX_GAMMA+1, "gamma>MAX"
@@ -551,7 +562,6 @@ def add_liquidity(
     @return uint256 Amount of LP tokens issued (to receiver or donation buffer).
     """
 
-
     assert amounts[0] + amounts[1] > 0, "!amounts"
 
     if not donation and self.lp_allowlist[empty(address)]:
@@ -583,7 +593,8 @@ def add_liquidity(
 
     # --------------------Finalize ramping of empty pool
     if self.D == 0:
-        self.future_A_gamma_time = block.timestamp
+        self.future_A_gamma_time = self.last_timestamp # makes _is_ramping return False
+        assert self.deploy_time == 0, "!init" # also check if pool needs to be initialized
 
     # -------------------- Calculate LP tokens to mint -----------------------
 
@@ -1138,7 +1149,10 @@ def tweak_price(
     # Rebalancing condition transformation:
     # virtual_price > 1 + (xcp_profit - 1) * lp_profit_fraction
     # virtual_price > 1 + xcp_profit * lp_profit_fraction - lp_profit_fraction
-    threshold_vp: uint256 = max(10**18, 10**18 + xcp_profit * self.lp_profit_fraction // PRECISION - self.lp_profit_fraction)
+    threshold_vp: uint256 = max(
+        PRECISION,
+        PRECISION + xcp_profit * self.lp_profit_fraction // FEE_PRECISION - PRECISION * self.lp_profit_fraction // FEE_PRECISION
+    )
 
     # user_supply < total_supply => vp_boosted > virtual_price
     # by not accounting for donation shares, virtual_price is boosted leading to rebalance trigger
@@ -1336,12 +1350,13 @@ def _claim_admin_fees():
     #      1. Calculate accrued profit since last claim. `xcp_profit`
     #         is the current profits. `xcp_profit_a` is the profits
     #         at the previous claim.
-    #      2. Take out admin's share, stored in self.admin_fee (with 10**10 precision).
-    #      3. Since half of the profits go to rebalancing the pool, we
-    #         are left with half; so divide by 2.
+    #      2. Take out lp_profit_fraction, with 10**10 precision.
+    #      3. Take out admin's share, stored in self.admin_fee (also 10**10 precision).
+
 
     fees: uint256 = unsafe_div(
-        unsafe_sub(xcp_profit, xcp_profit_a) * self.admin_fee * self.lp_profit_fraction, FEE_PRECISION * PRECISION
+        unsafe_sub(xcp_profit, xcp_profit_a) * self.lp_profit_fraction * self.admin_fee,
+        FEE_PRECISION * FEE_PRECISION
     )
     # ------------------------------ Claim admin fees by minting admin's share
     #                                                of the pool in LP tokens.
@@ -2297,19 +2312,73 @@ def set_donation_parameters(
 
 
 @external
-def set_fee_parameters(admin_fee: uint256, lp_profit_fraction: uint256):
+def set_fee_parameters(lp_profit_fraction: uint256, admin_fee: uint256):
     """
-    @notice Set admin fee and LP profit fraction parameters.
-    @param admin_fee The new admin fee.
-    @param lp_profit_fraction The new LP profit fraction with 10**18 precision.
+    @notice Set LP/DAO-vs-rebalance split and DAO-vs-LP split parameters.
+    @param lp_profit_fraction The LP/DAO share of profits, with 10**10 precision.
+    @param admin_fee The DAO share of the LP/DAO bucket, with 10**10 precision.
     """
     self._check_admin()
+    assert lp_profit_fraction <= FEE_PRECISION  # dev: "lp profit fraction above 1e10"
     assert admin_fee <= MAX_ADMIN_FEE  # dev: "admin fee above max"
-    assert lp_profit_fraction <= PRECISION  # dev: "lp profit fraction above 1e18"
 
     self.admin_fee = admin_fee
     self.lp_profit_fraction = lp_profit_fraction
-    log SetFeeParameters(admin_fee=admin_fee, lp_profit_fraction=lp_profit_fraction)
+    log SetFeeParameters(lp_profit_fraction=lp_profit_fraction, admin_fee=admin_fee)
+
+
+@external
+def initialize(
+    lp_profit_fraction: uint256,
+    admin_fee: uint256,
+    policy: Policy,
+    allowlist_add: DynArray[address, 16],
+):
+    """
+    @notice One-time post-deploy initialization for init-required pools.
+    @param lp_profit_fraction The LP/DAO share of profits, with 10**10 precision.
+    @param admin_fee The DAO share of the LP/DAO bucket, with 10**10 precision.
+    @param policy Optional policy contract to attach.
+    @param allowlist_add Initial LP allowlist entries. Non-empty input enables the whitelist.
+    """
+    deploy_time: uint256 = self.deploy_time
+    assert deploy_time != 0  # dev: "pool does not need initialization"
+    assert self.D == 0  # dev: "pool already has liquidity"
+
+    if block.timestamp <= deploy_time + 4 * 3600: # we can only initialize 4h after pool creation
+        assert msg.sender == self.deploy_eoa  # dev: "only deployer during initialization window"
+    else:
+        self._check_admin()
+
+    assert lp_profit_fraction <= FEE_PRECISION  # dev: "lp profit fraction above 1e10"
+    assert admin_fee <= MAX_ADMIN_FEE  # dev: "admin fee above max"
+
+    self.admin_fee = admin_fee
+    self.lp_profit_fraction = lp_profit_fraction
+    log SetFeeParameters(lp_profit_fraction=lp_profit_fraction, admin_fee=admin_fee)
+
+    self.POLICY = policy
+    if policy != empty(Policy):
+        extcall policy.update_pool_state(
+            self._xp(self.balances, self.cached_price_scale),
+            self.cached_price_scale,
+            self.cached_price_oracle,
+            self.last_prices,
+            self.virtual_price,
+            self.xcp_profit,
+            self.D,
+        )
+    log SetPolicyContract(policy=policy)
+
+    self.lp_allowlist[empty(address)] = False
+    for account: address in allowlist_add:
+        self.lp_allowlist[account] = True
+
+    if len(allowlist_add) > 0:
+        self.lp_allowlist[empty(address)] = True
+
+    self.deploy_time = 0
+    self.deploy_eoa = empty(address)
 
 
 @external

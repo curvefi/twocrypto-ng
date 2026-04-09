@@ -61,6 +61,7 @@ def get_fee(xp: uint256[N_COINS], packed_fee_params: uint256) -> uint256:
 @view
 def get_price_scale(packed_rebalancing_params: uint256) -> uint256:
     state: PoolState = self.last_pool_state
+    assert state.ts > 0, "pool state not initialized"
     price_scale: uint256 = state.price_scale
     price_oracle: uint256 = state.price_oracle
     rebalancing_params: uint256[3] = self._unpack_3(packed_rebalancing_params)
@@ -80,9 +81,6 @@ def get_price_scale(packed_rebalancing_params: uint256) -> uint256:
             ema_input * (PRECISION - alpha) + price_oracle * alpha,
             PRECISION,
         )
-
-    if price_scale == 0:
-        return 0
 
     norm: uint256 = unsafe_div(price_oracle * PRECISION, price_scale)
     if norm > PRECISION:
