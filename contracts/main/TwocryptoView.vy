@@ -12,7 +12,7 @@ from ethereum.ercs import IERC20
 
 interface Curve:
     def MATH() -> Math: view
-    def EXT_FEE() -> ExternalFee: view
+    def POLICY() -> Policy: view
     def A() -> uint256: view
     def gamma() -> uint256: view
     def price_scale() -> uint256: view
@@ -22,6 +22,7 @@ interface Curve:
     def calc_token_fee(
         amounts: uint256[N_COINS], xp: uint256[N_COINS], donation: bool = False, deposit: bool = False
     ) -> uint256: view
+    def calc_withdraw_one_coin(token_amount: uint256, i: uint256) -> uint256: view
     def future_A_gamma_time() -> uint256: view
     def totalSupply() -> uint256: view
     def precisions() -> uint256[N_COINS]: view
@@ -44,12 +45,13 @@ interface Math:
         i: uint256,
     ) -> uint256[2]: view
 
-interface ExternalFee:
+interface Policy:
     def get_fee(xp: uint256[N_COINS], packed_fee_params: uint256) -> uint256: view
 
 N_COINS: constant(uint256) = 2
 PRECISION: constant(uint256) = 10**18
 FEE_PRECISION: constant(uint256) = 10**10
+MIN_FEE: constant(uint256) = FEE_PRECISION * 1 // 10 // 10_000
 
 
 @external
@@ -93,8 +95,7 @@ def get_dx(
 def calc_withdraw_one_coin(
     token_amount: uint256, i: uint256, swap: address
 ) -> uint256:
-
-    return self._calc_withdraw_one_coin(token_amount, i, swap)[0]
+    return staticcall Curve(swap).calc_withdraw_one_coin(token_amount, i)
 
 
 @view
@@ -125,14 +126,6 @@ def calc_fee_get_dy(i: uint256, j: uint256, dx: uint256, swap: address
     dy, xp = self._get_dy_nofee(i, j, dx, swap)
 
     return (staticcall Curve(swap).fee_calc(xp)) * dy // FEE_PRECISION
-
-@external
-@view
-def calc_fee_withdraw_one_coin(
-    token_amount: uint256, i: uint256, swap: address
-) -> uint256:
-
-    return self._calc_withdraw_one_coin(token_amount, i, swap)[1]
 
 
 @view
@@ -297,66 +290,11 @@ def _calc_dtoken_nofee(
 
 @internal
 @view
-def _calc_withdraw_one_coin(
-    token_amount: uint256,
-    i: uint256,
-    swap: address
-) -> (uint256, uint256):
-
-    token_supply: uint256 = staticcall Curve(swap).totalSupply()
-    assert token_amount <= token_supply, "token amount more than supply"
-    assert i < N_COINS, "coin out of range"
-
-    math: Math = staticcall Curve(swap).MATH()
-
-    xx: uint256[N_COINS] = empty(uint256[N_COINS])
-    for k: uint256 in range(N_COINS):
-        xx[k] = staticcall Curve(swap).balances(k)
-
-    precisions: uint256[N_COINS] = staticcall Curve(swap).precisions()
-    A: uint256 = staticcall Curve(swap).A()
-    gamma: uint256 = staticcall Curve(swap).gamma()
-    D0: uint256 = 0
-    p: uint256 = 0
-
-    price_scale_i: uint256 = staticcall Curve(swap).price_scale() * precisions[1]
-    xp: uint256[N_COINS] = [
-        xx[0] * precisions[0],
-        unsafe_div(xx[1] * price_scale_i, PRECISION)
-    ]
-    if i == 0:
-        price_scale_i = PRECISION * precisions[0]
-
-    if staticcall Curve(swap).future_A_gamma_time() > staticcall Curve(swap).last_timestamp():
-        D0 = staticcall math.newton_D(A, gamma, xp, 0)
-    else:
-        D0 = staticcall Curve(swap).D()
-
-    D: uint256 = D0
-
-    fee: uint256 = self._fee(xp, swap)
-    dD: uint256 = token_amount * D // token_supply
-
-    D_fee: uint256 = fee * dD // (2 * FEE_PRECISION) + 1
-    approx_fee: uint256 = N_COINS * D_fee * xx[i] // D
-
-    D -= (dD - D_fee)
-
-    y_out: uint256[2] = staticcall math.get_y(A, gamma, xp, D, i)
-    dy: uint256 = (xp[i] - y_out[0] - 1) * PRECISION // price_scale_i
-    xp[i] = y_out[0] + 1
-
-    return dy, approx_fee
-
-
-@internal
-@view
 def _fee(xp: uint256[N_COINS], swap: address) -> uint256:
-    ext_fee_contract: ExternalFee = staticcall Curve(swap).EXT_FEE()
-    if ext_fee_contract != empty(ExternalFee):
-        fee: uint256 = staticcall ext_fee_contract.get_fee(xp, staticcall Curve(swap).packed_fee_params())
-        assert fee <= FEE_PRECISION, "fee>MAX"
-        return fee
+    policy: Policy = staticcall Curve(swap).POLICY()
+    if policy != empty(Policy):
+        fee: uint256 = staticcall policy.get_fee(xp, staticcall Curve(swap).packed_fee_params())
+        return min(FEE_PRECISION, max(MIN_FEE, fee))
 
     packed_fee_params: uint256 = staticcall Curve(swap).packed_fee_params()
     fee_params: uint256[3] = self._unpack_3(packed_fee_params)

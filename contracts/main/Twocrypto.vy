@@ -968,6 +968,8 @@ def _unpack_2(packed: uint256) -> uint256[2]:
     return [packed & (2**128 - 1), packed >> 128]
 
 
+# -------------------------- Core logic -------------------------------
+
 
 @internal
 def _exchange(
@@ -1353,7 +1355,6 @@ def _claim_admin_fees():
     #      2. Take out lp_profit_fraction, with 10**10 precision.
     #      3. Take out admin's share, stored in self.admin_fee (also 10**10 precision).
 
-
     fees: uint256 = unsafe_div(
         unsafe_sub(xcp_profit, xcp_profit_a) * self.lp_profit_fraction * self.admin_fee,
         FEE_PRECISION * FEE_PRECISION
@@ -1438,6 +1439,7 @@ def _xp(
         unsafe_div(balances[1] * PRECISIONS[1] * price_scale, PRECISION)
     ]
 
+
 @external
 @view
 def user_supply() -> uint256:
@@ -1447,6 +1449,7 @@ def user_supply() -> uint256:
     """
     return self.totalSupply - self.donation_shares
 
+
 @internal
 @view
 def _is_ramping() -> bool:
@@ -1455,6 +1458,7 @@ def _is_ramping() -> bool:
     @return bool True if A and/or gamma are ramping, False otherwise.
     """
     return self.future_A_gamma_time > self.last_timestamp
+
 
 @internal
 @view
@@ -1629,6 +1633,7 @@ def _calc_token_fee(amounts: uint256[N_COINS],
             )
     return fee * Sdiff // S + NOISE_FEE + lp_spam_penalty_fee
 
+
 @view
 @external
 def calc_withdraw_fixed_out(lp_token_amount: uint256, i: uint256, amount_i: uint256) -> uint256:
@@ -1647,6 +1652,7 @@ def calc_withdraw_fixed_out(lp_token_amount: uint256, i: uint256, amount_i: uint
         amount_i,
     )[0]
 
+
 @view
 @external
 def calc_withdraw_one_coin(lp_token_amount: uint256, i: uint256) -> uint256:
@@ -1664,6 +1670,7 @@ def calc_withdraw_one_coin(lp_token_amount: uint256, i: uint256) -> uint256:
         1 - i, # Here we flip i because we want to constrain the other coin to be zero.
         0, # We set the amount of coin[1 - i] to be withdrawn to 0.
     )[0]
+
 
 @internal
 @view
@@ -2010,8 +2017,6 @@ def fee() -> uint256:
     return self._fee(self._xp(self.balances, self.cached_price_scale))
 
 
-
-
 @external
 @view
 def calc_token_fee(
@@ -2083,8 +2088,8 @@ def fee_gamma() -> uint256:
 @external
 def adjustment_step() -> uint256[2]:
     """
-    @notice Returns the current adjustment step
-    @return uint256 adjustment_step value.
+    @notice Returns the current adjustment steps
+    @return uint256 adjustment_steps values: [min, max].
     """
     return [self._unpack_3(self.packed_rebalancing_params)[0], self._unpack_3(self.packed_rebalancing_params)[1]]
 
