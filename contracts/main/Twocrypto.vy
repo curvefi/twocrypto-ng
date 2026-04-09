@@ -1082,7 +1082,7 @@ def tweak_price(
         # ----------------- We cap state price that goes into the EMA with
         #                                                 2 x price_scale.
         price_oracle = unsafe_div(
-            min(max(last_prices, price_scale // 2), 2 * price_scale) * (10**18 - alpha) +
+            min(max(last_prices, unsafe_div(price_scale, 2)), 2 * price_scale) * (10**18 - alpha) +
             price_oracle * alpha,  # ^-------- Cap (both ways) spot price into EMA.
             10**18
         )
@@ -1855,7 +1855,7 @@ def internal_price_oracle() -> uint256:
 
         # ---- We cap state price that goes into the EMA with 2 x price_scale.
         return (
-            min(max(last_prices, price_scale // 2), price_scale * 2) * (10**18 - alpha) +
+            min(max(last_prices, unsafe_div(price_scale, 2)), price_scale * 2) * (10**18 - alpha) +
             price_oracle * alpha
         ) // 10**18
 
