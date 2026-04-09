@@ -222,7 +222,7 @@ lp_profit_fraction: public(uint256)
 
 admin_fee: public(uint256)
 MAX_ADMIN_FEE: constant(uint256) = FEE_PRECISION
-MIN_FEE: constant(uint256) = FEE_PRECISION * 1 // 2 // 10_000  # <-------------------------- 0.5 BPS.
+MIN_FEE: constant(uint256) = FEE_PRECISION * 1 // 10 // 10_000  # <-------------------------- 0.1 BPS.
 MAX_FEE: constant(uint256) = FEE_PRECISION
 NOISE_FEE: constant(uint256) = FEE_PRECISION * 1 // 10 // 10_000  # <---------------------------- 0.1 BPS.
 
@@ -1479,7 +1479,7 @@ def _fee(xp: uint256[N_COINS]) -> uint256:
 
     if self.POLICY != empty(Policy):
         fee: uint256 = staticcall self.POLICY.get_fee(xp, self.packed_fee_params)
-        assert fee <= MAX_FEE, "fee>MAX"
+        fee = min(MAX_FEE, max(MIN_FEE, fee))
         return fee
 
     # unpack mid_fee, out_fee, fee_gamma
