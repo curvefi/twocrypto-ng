@@ -138,8 +138,8 @@ def deploy_pool(
     mid_fee: uint256,
     out_fee: uint256,
     fee_gamma: uint256,
-    adjustment_step_min: uint256,
-    adjustment_step_max: uint256,
+    allowed_extra_profit: uint256,
+    adjustment_step: uint256,
     ma_exp_time: uint256,
     initial_price: uint256,
 ) -> address:
@@ -161,13 +161,10 @@ def deploy_pool(
     assert fee_gamma < 10**18+1, "fee_gamma>max"
     assert fee_gamma > 0, "fee_gamma==0"
 
-    assert adjustment_step_min < 10**18+1, "adjustment_step_min>max"
-    assert adjustment_step_min > 0, "adjustment_step_min>max"
+    assert allowed_extra_profit < 10**18+1, "allowed_extra_profit>max"
 
-    assert adjustment_step_max < 10**18+1, "adjustment_step>max"
-    assert adjustment_step_max > 0, "adjustment_step==0"
-
-    assert adjustment_step_max >= adjustment_step_min, "adjustment_step_max<adjustment_step_min"
+    assert adjustment_step < 10**18+1, "adjustment_step>max"
+    assert adjustment_step > 0, "adjustment_step==0"
 
     assert ma_exp_time < 872542, "ma_exp_time>max"  # 7 * 24 * 60 * 60 / ln(2)
     assert ma_exp_time > 86, "ma_exp_time<min" # 60 / ln(2)
@@ -194,7 +191,7 @@ def deploy_pool(
 
     # pack liquidity rebalancing params
     packed_rebalancing_params: uint256 = self._pack_3(
-        [adjustment_step_min, adjustment_step_max, ma_exp_time]
+        [allowed_extra_profit, adjustment_step, ma_exp_time]
     )
 
     # pack gamma and A
