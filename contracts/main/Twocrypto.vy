@@ -142,10 +142,8 @@ event ClaimAdminFee:
     admin: indexed(address)
     tokens: uint256[N_COINS]
 
-event SetDonationDuration:
+event SetDonationParameters:
     duration: uint256
-
-event SetDonationProtection:
     donation_protection_period: uint256
     donation_protection_lp_threshold: uint256
     donation_shares_max_ratio: uint256
@@ -2264,46 +2262,37 @@ def apply_new_parameters(
 
 
 @external
-def set_donation_duration(duration: uint256):
-    """
-    @notice Set the donation duration.
-    @param duration The new donation duration.
-    @dev The time required for donations to fully release from locked state.
-    """
-    self._check_admin()
-    assert duration > 0, "!duration"
-    self.donation_duration = duration
-    log SetDonationDuration(duration=duration)
-
-
-@external
-def set_donation_protection_params(
-    _period: uint256,
-    _threshold: uint256,
-    _max_shares_ratio: uint256,
+def set_donation_parameters(
+    duration: uint256,
+    protection_period: uint256,
+    protection_lp_threshold: uint256,
+    max_shares_ratio: uint256,
 ):
     """
-    @notice Set donation protection parameters.
-    @param _period The new donation protection period in seconds.
-    @param _threshold The new donation protection threshold with 10**18 precision.
-    @param _max_shares_ratio The new maximum number of shares.
-    @dev _threshold = 30 * 10**18//100 means 30%
-    @dev _max_shares_ratio = 10 * 10**18//100 means 10%
+    @notice Set donation duration and protection parameters.
+    @param duration The new donation duration.
+    @param protection_period The new donation protection period in seconds.
+    @param protection_lp_threshold The new donation protection threshold with 10**18 precision.
+    @param max_shares_ratio The new maximum donation shares ratio with 10**18 precision.
     """
-
     self._check_admin()
+    assert duration > 0  # dev: donation duration cannot be zero
     # > 0 asserts are critical as unsafe_div is used throughout the code. Change cautiously!
-    assert _period > 0, "!period"
-    assert _threshold > 0, "!threshold"
-    assert _max_shares_ratio > 0, "!max_shares"
-    self.donation_protection_period = _period
-    self.donation_protection_lp_threshold = _threshold
-    self.donation_shares_max_ratio = _max_shares_ratio
-    log SetDonationProtection(
-        donation_protection_period=_period,
-        donation_protection_lp_threshold=_threshold,
-        donation_shares_max_ratio=_max_shares_ratio
-        )
+    assert protection_period > 0  # dev: donation protection period cannot be zero
+    assert protection_lp_threshold > 0  # dev: donation protection threshold cannot be zero
+    assert max_shares_ratio > 0  # dev: donation shares max ratio cannot be zero
+
+    self.donation_duration = duration
+    self.donation_protection_period = protection_period
+    self.donation_protection_lp_threshold = protection_lp_threshold
+    self.donation_shares_max_ratio = max_shares_ratio
+
+    log SetDonationParameters(
+        duration=duration,
+        donation_protection_period=protection_period,
+        donation_protection_lp_threshold=protection_lp_threshold,
+        donation_shares_max_ratio=max_shares_ratio
+    )
 
 
 @external
