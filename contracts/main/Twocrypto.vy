@@ -2292,6 +2292,7 @@ def set_donation_parameters(
     assert duration > 0  # dev: "donation duration cannot be zero"
     # > 0 asserts are critical as unsafe_div is used throughout the code. Change cautiously!
     assert protection_period > 0  # dev: "donation protection period cannot be zero"
+    assert protection_period < 30 * 86_400  # dev: "donation protection period above maximum"
     assert protection_lp_threshold > 0  # dev: "donation protection threshold cannot be zero"
     assert max_shares_ratio > 0  # dev: "donation shares max ratio cannot be zero"
 
