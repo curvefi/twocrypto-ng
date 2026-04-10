@@ -1572,9 +1572,9 @@ def _calc_token_fee(amounts: uint256[N_COINS],
         return NOISE_FEE
 
     surplus_amounts: uint256[N_COINS] = amounts
-    if from_view:
-        # When calling from the view contract no liquidity has been
-        # added to the balances.
+    if from_view and deposit:
+        # When quoting deposits from the view path, liquidity has not yet been
+        # added to balances in storage.
         surplus_amounts = [0, 0]
 
     # the ratio of the balances before the liquidity operation

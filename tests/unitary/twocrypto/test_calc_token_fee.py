@@ -133,3 +133,19 @@ def test_calc_token_fee_view_donation_protection(pool, user_account, bob):
     base_fee = pool.calc_token_fee(charlie_adds_amounts, gm_pool.xp(), False, False)
     assert final_fee == pytest.approx(base_fee)
     assert final_fee < last_fee
+
+
+def test_calc_token_fee_view_matches_internal_for_withdrawals(pool):
+    with boa.env.anchor():
+        gm_pool = GodModePool(pool)
+        gm_pool.add_liquidity_balanced(1_000_000 * 10**18)
+
+        balances = gm_pool.balances()
+        amounts = [balances[0] // 20, balances[1] // 200]
+        post_remove_balances = [balances[i] - amounts[i] for i in range(N_COINS)]
+        xp_post_remove = pool.internal._xp(post_remove_balances, pool.price_scale())
+
+        expected_fee = pool.internal._calc_token_fee(amounts, xp_post_remove, False, False, False)
+        quoted_fee = pool.calc_token_fee(amounts, xp_post_remove, False, False)
+
+        assert quoted_fee == expected_fee
