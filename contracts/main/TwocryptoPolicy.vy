@@ -20,7 +20,6 @@ interface IPool:
 N_COINS: constant(uint256) = 2
 PRECISION: constant(uint256) = 10**18
 POOL: public(immutable(address))
-INITIAL_PRICE_SCALE: public(immutable(uint256))
 
 struct PoolState:
     xp: uint256[N_COINS]
@@ -38,7 +37,6 @@ last_pool_state: public(PoolState)
 @deploy
 def __init__(pool: address):
     POOL = pool
-    INITIAL_PRICE_SCALE = staticcall IPool(pool).price_scale()
 
 
 @external
@@ -64,7 +62,7 @@ def get_fee(xp: uint256[N_COINS], packed_fee_params: uint256) -> uint256:
 def get_price_scale(packed_rebalancing_params: uint256) -> uint256:
     state: PoolState = self.last_pool_state
     if state.ts == 0:
-        return INITIAL_PRICE_SCALE
+        return 0
 
     price_scale: uint256 = state.price_scale
     price_oracle: uint256 = state.price_oracle

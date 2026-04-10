@@ -1176,8 +1176,7 @@ def tweak_price(
             unsafe_div(norm, 5), rebalancing_params[1]
         )  #                        ^------ adjustment_step_max.
 
-        # warm up p_policy with current price_scale
-        p_policy: uint256 = price_scale
+        p_policy: uint256 = 0
         if policy != empty(Policy):
             p_policy = staticcall policy.get_price_scale(self.packed_rebalancing_params)
 
@@ -1187,18 +1186,26 @@ def tweak_price(
         # oracle prices.
         # If policy, however, deems necessary to adjust price_scale, it
         # can bypass the distance check and trigger rebalancing whenever it wants.
-        if adjustment_step > rebalancing_params[0] or p_policy != price_scale:
-            p_new: uint256 = price_scale
+        # Policy semantics:
+        #   p_policy == 0           => use native rebalance logic
+        #   p_policy == price_scale => explicit hold; suppress native rebalance
+        #   otherwise               => explicit policy target
+        p_new: uint256 = 0
+        if p_policy > 0:
             if p_policy != price_scale:
                 # If policy triggers rebalance, we set price_scale to p_policy, without smoothing.
                 p_new = p_policy
-            else:
-                # Calculate new price scale using internal oracle.
-                p_new = unsafe_div(
-                    price_scale * unsafe_sub(norm, adjustment_step) +
-                    adjustment_step * price_oracle,
-                    norm # <---- norm is non-zero and gt adjustment_step; unsafe = safe.
-                )
+        elif adjustment_step > rebalancing_params[0]:
+            #                     ^------ adjustment_step_min
+            # Calculate new price scale using internal oracle.
+            p_new = unsafe_div(
+                price_scale * unsafe_sub(norm, adjustment_step) +
+                adjustment_step * price_oracle,
+                norm # <---- norm is non-zero and gt adjustment_step; unsafe = safe.
+            )
+
+        if p_new > 0:
+        # Either policy or native logic trigger rebalance:
 
             # ---------------- Update stale xp (using price_scale) with p_new.
 
@@ -1481,8 +1488,9 @@ def _fee(xp: uint256[N_COINS]) -> uint256:
 
     if self.POLICY != empty(Policy):
         fee: uint256 = staticcall self.POLICY.get_fee(xp, self.packed_fee_params)
-        fee = min(MAX_FEE, max(MIN_FEE, fee))
-        return fee
+        if fee != 0:
+            # if policy returns 0 we fallback to pool's internal logic
+            return min(MAX_FEE, max(MIN_FEE, fee))
 
     # unpack mid_fee, out_fee, fee_gamma
     fee_params: uint256[3] = self._unpack_3(self.packed_fee_params)

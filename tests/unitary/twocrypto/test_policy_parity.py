@@ -1,8 +1,13 @@
+import boa
+
+from tests.conftest import _deploy_pool
+from tests.utils.constants import POOL_DEPLOYER
 from tests.utils.god_mode import GodModePool
 
 INITIAL_LIQUIDITY = 10_000_000 * 10**18
 TRADE_VALUE = INITIAL_LIQUIDITY // 20
 NUM_SWAPS = 10
+ZERO_STUB_POLICY_DEPLOYER = boa.load_partial("tests/mocks/ZeroStubPolicy.vy")
 
 
 def _state_snapshot(pool):
@@ -60,8 +65,9 @@ def _move_price_oracle_both(legacy_pool, hooked_pool, price_change):
     iterations = 0
     while price_diff_pre * price_diff_post > 0:
         trade_size = int(legacy_pool.balances(main_direction) * abs(price_change)) // 20
-        legacy_pool.exchange(main_direction, trade_size, update_ema=True)
-        hooked_pool.exchange(main_direction, trade_size, update_ema=True)
+        boa.env.time_travel(seconds=7 * 86400)
+        legacy_pool.exchange(main_direction, trade_size, update_ema=False)
+        hooked_pool.exchange(main_direction, trade_size, update_ema=False)
         _assert_matching_state(legacy_pool, hooked_pool)
         price_diff_pre = price_diff_post
         price_diff_post = goal_price - legacy_pool.price_oracle()
@@ -75,15 +81,23 @@ def _move_price_scale_both(legacy_pool, hooked_pool, price_change):
     _balance_both(legacy_pool, hooked_pool)
 
     for _ in range(NUM_SWAPS):
+        boa.env.time_travel(seconds=7 * 86400)
         legacy_pool.exchange(0, 10**18, update_ema=False)
         hooked_pool.exchange(0, 10**18, update_ema=False)
         _assert_matching_state(legacy_pool, hooked_pool)
 
+        boa.env.time_travel(seconds=7 * 86400)
         legacy_pool.exchange(1, 10**18, update_ema=False)
         hooked_pool.exchange(1, 10**18, update_ema=False)
         _assert_matching_state(legacy_pool, hooked_pool)
 
     _balance_both(legacy_pool, hooked_pool)
+
+
+def _fresh_pool(factory, factory_admin, coins, params, deployer, math_contract, views_contract):
+    pool = POOL_DEPLOYER.at(_deploy_pool(factory, params, coins, deployer))
+    pool.set_periphery(views_contract, math_contract, sender=factory_admin)
+    return GodModePool(pool)
 
 
 def test_compare_fee_parity(pool, pool_with_policy_contract):
@@ -135,3 +149,50 @@ def test_compare_price_scale_parity(pool, pool_with_policy_contract):
     _move_price_scale_both(legacy_pool, hooked_pool, 0.95 * price_change_back)
 
     _assert_matching_state(legacy_pool, hooked_pool)
+
+
+def test_compare_zero_stub_policy_parity(
+    factory,
+    factory_admin,
+    coins,
+    params,
+    deployer,
+    math_contract,
+    views_contract,
+):
+    with boa.env.anchor():
+        legacy_pool = _fresh_pool(
+            factory, factory_admin, coins, params, deployer, math_contract, views_contract
+        )
+        hooked_pool = _fresh_pool(
+            factory, factory_admin, coins, params, deployer, math_contract, views_contract
+        )
+
+        zero_policy = ZERO_STUB_POLICY_DEPLOYER.deploy()
+        hooked_pool.set_policy_contract(zero_policy, sender=factory_admin)
+
+        legacy_pool.add_liquidity_balanced(INITIAL_LIQUIDITY)
+        hooked_pool.add_liquidity_balanced(INITIAL_LIQUIDITY)
+
+        assert _state_snapshot(legacy_pool) == _state_snapshot(hooked_pool)
+
+        trade_sizes = legacy_pool.compute_balanced_amounts(TRADE_VALUE)
+        for step in range(NUM_SWAPS):
+            i = step % 2
+            j = 1 - i
+            dx = trade_sizes[i]
+
+            legacy_dy_view = legacy_pool.get_dy(i, j, dx)
+            hooked_dy_view = hooked_pool.get_dy(i, j, dx)
+            assert legacy_dy_view == hooked_dy_view
+
+            legacy_dy = legacy_pool.exchange(i, dx)
+            hooked_dy = hooked_pool.exchange(i, dx)
+            assert legacy_dy == hooked_dy
+
+            assert _state_snapshot(legacy_pool) == _state_snapshot(hooked_pool)
+
+        initial_price_scale = legacy_pool.price_scale()
+        _move_price_scale_both(legacy_pool, hooked_pool, 0.3)
+        _assert_matching_state(legacy_pool, hooked_pool)
+        assert legacy_pool.price_scale() != initial_price_scale

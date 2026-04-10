@@ -294,7 +294,8 @@ def _fee(xp: uint256[N_COINS], swap: address) -> uint256:
     policy: Policy = staticcall Curve(swap).POLICY()
     if policy != empty(Policy):
         fee: uint256 = staticcall policy.get_fee(xp, staticcall Curve(swap).packed_fee_params())
-        return min(FEE_PRECISION, max(MIN_FEE, fee))
+        if fee != 0:
+            return min(FEE_PRECISION, max(MIN_FEE, fee))
 
     packed_fee_params: uint256 = staticcall Curve(swap).packed_fee_params()
     fee_params: uint256[3] = self._unpack_3(packed_fee_params)
