@@ -323,6 +323,8 @@ def __init__(
     self.packed_rebalancing_params = packed_rebalancing_params  # <-- Contains
     #               rebalancing params: adjustment_step_min, adjustment_step_max,
     #                                                         and ma_exp_time.
+    #               Note: legacy factories may still refer to the first two packed
+    #               fields as `allowed_extra_profit` and `adjustment_step`.
 
     self.packed_fee_params = packed_fee_params  # <-------------- Contains Fee
     #                                  params: mid_fee, out_fee and fee_gamma.
