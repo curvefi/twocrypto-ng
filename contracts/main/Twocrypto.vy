@@ -156,9 +156,8 @@ event SetPolicyContract:
     policy: Policy
 
 event LPAllowlistChanged:
-    add: DynArray[address, 16]
-    remove: DynArray[address, 16]
-    enabled: bool
+    user: indexed(address)
+    allowed: bool
 
 # ----------------------- Storage/State Variables ----------------------------
 
@@ -2367,12 +2366,12 @@ def initialize(
     self._lp_allowlist[empty(address)] = False
     for account: address in allowlist_add:
         self._lp_allowlist[account] = True
+        log LPAllowlistChanged(user=account, allowed=True)
 
     if len(allowlist_add) > 0:
         self._lp_allowlist[empty(address)] = True
 
-    empty_remove: DynArray[address, 16] = empty(DynArray[address, 16])
-    log LPAllowlistChanged(add=allowlist_add, remove=empty_remove, enabled=self._lp_allowlist[empty(address)])
+    log LPAllowlistChanged(user=empty(address), allowed=self._lp_allowlist[empty(address)])
 
     self.deploy_time = 0
     self.deploy_eoa = empty(address)
@@ -2414,14 +2413,15 @@ def change_allowlist(add: DynArray[address, 16], remove: DynArray[address, 16]):
 
     for account: address in remove:
         self._lp_allowlist[account] = False
+        log LPAllowlistChanged(user=account, allowed=False)
 
     for account: address in add:
         self._lp_allowlist[account] = True
+        log LPAllowlistChanged(user=account, allowed=True)
 
     if len(add) > 0:
         self._lp_allowlist[empty(address)] = True
-
-    log LPAllowlistChanged(add=add, remove=remove, enabled=self._lp_allowlist[empty(address)])
+        log LPAllowlistChanged(user=empty(address), allowed=True)
 
 
 @external
