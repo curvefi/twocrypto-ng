@@ -74,3 +74,13 @@ def test_donation_bypasses_allowlist(pool, gm_pool, factory_admin, alice, bob):
     )
     assert minted > 0
     assert pool.balanceOf(bob) == 0
+
+
+def test_zero_address_add_does_not_enable_whitelist(pool, gm_pool, factory_admin, bob):
+    pool.change_allowlist([ZERO_ADDRESS], [], sender=factory_admin)
+
+    logs = pool.get_logs()
+    assert len(logs) == 0
+
+    minted = _premint_and_add(pool, gm_pool, bob)
+    assert minted > 0

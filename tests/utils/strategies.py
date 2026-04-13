@@ -71,7 +71,7 @@ def factory(
 A = integers(min_value=MIN_A, max_value=MAX_A)
 gamma = integers(min_value=MIN_GAMMA, max_value=MAX_GAMMA)
 
-fee_gamma = integers(min_value=1, max_value=1e18)
+fee_gamma = integers(min_value=1, max_value=10**18)
 
 
 @composite
@@ -86,8 +86,8 @@ def fees(draw):
     return mid_fee, out_fee
 
 
-adjustment_step_min = integers(min_value=1, max_value=1e18 - 1)
-adjustment_step_max = integers(min_value=1, max_value=1e18)
+adjustment_step_min = integers(min_value=1, max_value=10**18 - 1)
+adjustment_step_max = integers(min_value=1, max_value=10**18)
 ma_exp_time = integers(min_value=87, max_value=872541)
 
 # 1e26 is less than the maximum amount allowed by the factory
@@ -131,7 +131,8 @@ def pool(
 
     with boa.env.prank(draw(deployer)):
         adj_min = draw(adjustment_step_min)
-        adj_max = draw(integers(min_value=adj_min + 1, max_value=10**18))
+        adj_max = draw(adjustment_step_max)
+        assume(adj_max > adj_min)
         _pool = _factory.deploy_pool(
             "stateful simulation",
             "SIMULATION",

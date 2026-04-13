@@ -2365,7 +2365,7 @@ def initialize(
     assert deploy_time != 0  # dev: "pool does not need initialization"
     assert self.D == 0  # dev: "pool already has liquidity"
 
-    if block.timestamp <= deploy_time + 4 * 3600: # we can only initialize 4h after pool creation
+    if block.timestamp <= deploy_time + 4 * 3600: # within the first 4h after pool creation
         assert msg.sender == self.deploy_eoa  # dev: "only deployer during initialization window"
     else:
         self._check_admin()
@@ -2381,9 +2381,7 @@ def initialize(
         if account != empty(address):
             self.lp_allowlist[account] = True
             log LPAllowlistChanged(user=account, allowed=True)
-
-    if len(allowlist_add) > 0:
-        self.lp_allowlist[empty(address)] = True
+            self.lp_allowlist[empty(address)] = True
 
     log LPAllowlistChanged(user=empty(address), allowed=self.lp_allowlist[empty(address)])
 
@@ -2419,9 +2417,9 @@ def change_allowlist(add: DynArray[address, 16], remove: DynArray[address, 16]):
     @notice Batch-update the LP allowlist.
     @dev The whitelist enabled flag is stored at `lp_allowlist[empty(address)]`.
          Entries in `remove` are cleared first, then entries in `add` are set.
-         Any non-empty `add` batch enables the whitelist automatically.
-         To disable the whitelist, call with empty `add` and include `empty(address)`
-         in `remove`.
+         Any non-empty address in `add` enables the whitelist automatically.
+         `empty(address)` in `add` is a no-op.
+         `empty(address)` in `remove` disables the whitelist.
     """
     self._check_admin()
 
@@ -2430,12 +2428,15 @@ def change_allowlist(add: DynArray[address, 16], remove: DynArray[address, 16]):
         log LPAllowlistChanged(user=account, allowed=False)
 
     for account: address in add:
+        if account == empty(address):
+            continue
+
+        if not self.lp_allowlist[empty(address)]:
+            self.lp_allowlist[empty(address)] = True
+            log LPAllowlistChanged(user=empty(address), allowed=True)
+
         self.lp_allowlist[account] = True
         log LPAllowlistChanged(user=account, allowed=True)
-
-    if len(add) > 0:
-        self.lp_allowlist[empty(address)] = True
-        log LPAllowlistChanged(user=empty(address), allowed=True)
 
 
 @external

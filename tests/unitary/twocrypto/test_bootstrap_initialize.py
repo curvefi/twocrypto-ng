@@ -146,3 +146,27 @@ def test_admin_can_initialize_after_window_and_leave_whitelist_disabled(
 
     minted = _premint_and_add(pool, coins, bob)
     assert minted > 0
+
+
+def test_initialize_zero_address_allowlist_keeps_whitelist_disabled(
+    factory, factory_admin, coins, params, deployer, views_contract, math_contract, bob
+):
+    pool = _deploy_bootstrap_pool(
+        factory, factory_admin, coins, params, deployer, views_contract, math_contract
+    )
+
+    pool.initialize(
+        FEE_PRECISION // 3,
+        321,
+        ZERO_ADDRESS,
+        [ZERO_ADDRESS],
+        sender=deployer,
+    )
+
+    logs = pool.get_logs()
+    assert type(logs[-1]).__name__ == "LPAllowlistChanged"
+    assert logs[-1].user.lower() == ZERO_ADDRESS.lower()
+    assert logs[-1].allowed is False
+
+    minted = _premint_and_add(pool, coins, bob)
+    assert minted > 0
