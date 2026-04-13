@@ -1190,11 +1190,11 @@ def tweak_price(
         #   p_policy == 0           => use native rebalance logic
         #   p_policy == price_scale => explicit hold; suppress native rebalance
         #   otherwise               => explicit policy target
-        p_new: uint256 = 0
+        p_new: uint256 = price_scale
         if p_policy > 0:
-            if p_policy != price_scale:
-                # If policy triggers rebalance, we set price_scale to p_policy, without smoothing.
-                p_new = p_policy
+            # If policy triggers rebalance, we set price_scale to p_policy, without smoothing.
+            # If p_policy == price_scale, this is an explicit hold and we do nothing below.
+            p_new = p_policy
         elif adjustment_step > rebalancing_params[0]:
             #                     ^------ adjustment_step_min
             # Calculate new price scale using internal oracle.
@@ -1204,7 +1204,7 @@ def tweak_price(
                 norm # <---- norm is non-zero and gt adjustment_step; unsafe = safe.
             )
 
-        if p_new > 0:
+        if p_new != price_scale:
         # Either policy or native logic trigger rebalance:
 
             # ---------------- Update stale xp (using price_scale) with p_new.
