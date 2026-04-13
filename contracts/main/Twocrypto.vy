@@ -596,10 +596,11 @@ def add_liquidity(
     xp: uint256[N_COINS] = self._xp(balances, price_scale)
     old_xp: uint256[N_COINS] = self._xp(old_balances, price_scale)
 
-    # --------------------Finalize ramping of empty pool
+    # -------------------- Empty pool case
     if self.D == 0:
-        self.future_A_gamma_time = self.last_timestamp # makes _is_ramping return False
+        assert not donation  # dev: "donation not allowed on empty pool"
         assert self.deploy_time == 0, "!init" # also check if pool needs to be initialized
+        self.future_A_gamma_time = self.last_timestamp # Finalize ramping (makes _is_ramping return False)
 
     # -------------------- Calculate LP tokens to mint -----------------------
 
