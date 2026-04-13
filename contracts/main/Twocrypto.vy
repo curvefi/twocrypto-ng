@@ -180,6 +180,7 @@ cached_price_oracle: uint256  # <------- Price target given by moving average.
 
 last_prices: public(uint256)
 last_timestamp: public(uint256)
+last_rebalance_ts: public(uint256)
 
 initial_A_gamma: public(uint256)
 initial_A_gamma_time: public(uint256)
@@ -1168,8 +1169,8 @@ def tweak_price(
     # this is approximate condition that preliminary indicates readiness for rebalancing
     vp_boosted: uint256 = 10**18 * xcp // locked_supply
     assert vp_boosted >= virtual_price, "negative donation"
-    if (vp_boosted  > threshold_vp) and (last_timestamp < block.timestamp):
-        #                                  ^ only rebalance once per block (first tx)
+    if (vp_boosted  > threshold_vp) and (block.timestamp > self.last_rebalance_ts):
+        #                                  ^ only allow one successful rebalance per block
         norm: uint256 = unsafe_div(
             unsafe_mul(price_oracle, 10**18), price_scale
         )
@@ -1261,6 +1262,7 @@ def tweak_price(
                 self.D = new_D
                 self.virtual_price = new_virtual_price
                 self.cached_price_scale = p_new
+                self.last_rebalance_ts = block.timestamp
 
                 if donation_shares_to_burn > 0:
                     # Invariant to hold immediately after the burn (measured after protection):

@@ -180,3 +180,25 @@ def test_rebalance_count_matches_fresh_vs_synthetic_high_state(pool, factory_adm
         f"fresh_post={fresh_post}\n"
         f"synthetic_post={synthetic_post}"
     )
+
+
+def test_same_block_noop_does_not_consume_rebalance_slot(pool, factory_admin):
+    with boa.env.anchor():
+        boa.env.enable_fast_mode()
+        pool_instance = GodModePool(pool)
+        pool_instance.add_liquidity_balanced(INITIAL_LIQ)
+        _set_probe_rebalancing_params(pool_instance, factory_admin)
+        _work_pool(pool_instance)
+        _balance_pool(pool_instance)
+
+        price_scale_before = pool_instance.price_scale()
+        pool_instance.eval(f"self.cached_price_oracle = {price_scale_before * 13 // 10}")
+        pool_instance.eval("self.last_timestamp = block.timestamp")
+
+        pool_instance.exchange(
+            0,
+            pool_instance.balances(0) * REBALANCE_RATIO_NUM // REBALANCE_RATIO_DEN,
+            update_ema=False,
+        )
+
+        assert pool_instance.price_scale() != price_scale_before
