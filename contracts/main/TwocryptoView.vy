@@ -109,6 +109,8 @@ def calc_token_amount(
     xp: uint256[N_COINS] = empty(uint256[N_COINS])
 
     d_token, amountsp, xp = self._calc_dtoken_nofee(amounts, deposit, swap)
+    if deposit and staticcall Curve(swap).D() == 0:
+        return d_token
     d_token -= (
         staticcall Curve(swap).calc_token_fee(amounts, xp, donation, deposit) * d_token // FEE_PRECISION + 1
     )
@@ -138,6 +140,8 @@ def calc_fee_token_amount(
     amountsp: uint256[N_COINS] = empty(uint256[N_COINS])
     xp: uint256[N_COINS] = empty(uint256[N_COINS])
     d_token, amountsp, xp = self._calc_dtoken_nofee(amounts, deposit, swap)
+    if deposit and staticcall Curve(swap).D() == 0:
+        return 0
 
     return (staticcall Curve(swap).calc_token_fee(amounts, xp, donation, deposit)) * d_token // FEE_PRECISION + 1
 
@@ -278,14 +282,25 @@ def _calc_dtoken_nofee(
     ]
 
     D: uint256 = staticcall math.newton_D(A, gamma, xp, 0)
-    d_token: uint256 = token_supply * D // D0
-
-    if deposit:
-        d_token -= token_supply
+    d_token: uint256 = 0
+    if D0 == 0:
+        assert deposit
+        d_token = self._xcp(D, price_scale)
     else:
-        d_token = token_supply - d_token
+        d_token = token_supply * D // D0
+
+        if deposit:
+            d_token -= token_supply
+        else:
+            d_token = token_supply - d_token
 
     return d_token, amountsp, xp
+
+
+@internal
+@pure
+def _xcp(D: uint256, price_scale: uint256) -> uint256:
+    return D * PRECISION // N_COINS // isqrt(PRECISION * price_scale)
 
 
 @internal
