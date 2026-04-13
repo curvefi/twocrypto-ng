@@ -1161,7 +1161,7 @@ def tweak_price(
     # virtual_price > 1 + xcp_profit * lp_profit_fraction - lp_profit_fraction
     threshold_vp: uint256 = max(
         PRECISION,
-        PRECISION + xcp_profit * self.lp_profit_fraction // FEE_PRECISION - PRECISION * self.lp_profit_fraction // FEE_PRECISION
+        PRECISION + xcp_profit * self.lp_profit_fraction // FEE_PRECISION - self.lp_profit_fraction * (PRECISION // FEE_PRECISION)
     )
 
     # user_supply < total_supply => vp_boosted > virtual_price
