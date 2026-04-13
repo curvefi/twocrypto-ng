@@ -261,7 +261,7 @@ totalSupply: public(uint256)
 
 
 # --------------------- Storage for LP whitelisting ---------------------
-_lp_allowlist: HashMap[address, bool]
+lp_allowlist: public(HashMap[address, bool])  # lp_allowlist(empty(address)) is the enabled flag
 
 # Storage for pool initialization (requires magic_gamma at pool creation)
 deploy_eoa: address
@@ -568,9 +568,9 @@ def add_liquidity(
 
     assert amounts[0] + amounts[1] > 0, "!amounts"
 
-    if not donation and self._lp_allowlist[empty(address)]:
-        # self._lp_allowlist[empty(address)] is the flag for whether the allowlist is enabled.
-        assert self._lp_allowlist[msg.sender], "!wl"
+    if not donation and self.lp_allowlist[empty(address)]:
+        # self.lp_allowlist[empty(address)] is the flag for whether the allowlist is enabled.
+        assert self.lp_allowlist[msg.sender], "!wl"
     # --------------------- Get prices, balances -----------------------------
 
     old_balances: uint256[N_COINS] = self.balances
@@ -2314,6 +2314,22 @@ def set_donation_parameters(
     )
 
 
+@internal
+def _set_fee_parameters(lp_profit_fraction: uint256, admin_fee: uint256):
+    assert lp_profit_fraction <= FEE_PRECISION  # dev: "lp profit fraction above 1e10"
+    assert admin_fee <= MAX_ADMIN_FEE  # dev: "admin fee above max"
+
+    self.admin_fee = admin_fee
+    self.lp_profit_fraction = lp_profit_fraction
+    log SetFeeParameters(lp_profit_fraction=lp_profit_fraction, admin_fee=admin_fee)
+
+
+@internal
+def _set_policy(policy: Policy):
+    self.POLICY = policy
+    log SetPolicyContract(policy=policy)
+
+
 @external
 def set_fee_parameters(lp_profit_fraction: uint256, admin_fee: uint256):
     """
@@ -2322,12 +2338,7 @@ def set_fee_parameters(lp_profit_fraction: uint256, admin_fee: uint256):
     @param admin_fee The DAO share of the LP/DAO bucket, with 10**10 precision.
     """
     self._check_admin()
-    assert lp_profit_fraction <= FEE_PRECISION  # dev: "lp profit fraction above 1e10"
-    assert admin_fee <= MAX_ADMIN_FEE  # dev: "admin fee above max"
-
-    self.admin_fee = admin_fee
-    self.lp_profit_fraction = lp_profit_fraction
-    log SetFeeParameters(lp_profit_fraction=lp_profit_fraction, admin_fee=admin_fee)
+    self._set_fee_parameters(lp_profit_fraction, admin_fee)
 
 
 @external
@@ -2344,6 +2355,8 @@ def initialize(
     @param policy Optional policy contract to attach.
     @param allowlist_add Initial LP allowlist entries. Non-empty input enables the whitelist.
     """
+
+    # Access control: only deployer during the first 4 hours after deployment, then only admin.
     deploy_time: uint256 = self.deploy_time
     assert deploy_time != 0  # dev: "pool does not need initialization"
     assert self.D == 0  # dev: "pool already has liquidity"
@@ -2353,26 +2366,24 @@ def initialize(
     else:
         self._check_admin()
 
-    assert lp_profit_fraction <= FEE_PRECISION  # dev: "lp profit fraction above 1e10"
-    assert admin_fee <= MAX_ADMIN_FEE  # dev: "admin fee above max"
+    # Set fee params
+    self._set_fee_parameters(lp_profit_fraction, admin_fee)
+    # Set policy
+    self._set_policy(policy)
 
-    self.admin_fee = admin_fee
-    self.lp_profit_fraction = lp_profit_fraction
-    log SetFeeParameters(lp_profit_fraction=lp_profit_fraction, admin_fee=admin_fee)
-
-    self.POLICY = policy
-    log SetPolicyContract(policy=policy)
-
-    self._lp_allowlist[empty(address)] = False
+    # Set allowlist
+    self.lp_allowlist[empty(address)] = False
     for account: address in allowlist_add:
-        self._lp_allowlist[account] = True
-        log LPAllowlistChanged(user=account, allowed=True)
+        if account != empty(address):
+            self.lp_allowlist[account] = True
+            log LPAllowlistChanged(user=account, allowed=True)
 
     if len(allowlist_add) > 0:
-        self._lp_allowlist[empty(address)] = True
+        self.lp_allowlist[empty(address)] = True
 
-    log LPAllowlistChanged(user=empty(address), allowed=self._lp_allowlist[empty(address)])
+    log LPAllowlistChanged(user=empty(address), allowed=self.lp_allowlist[empty(address)])
 
+    # Reset deployment variables to deny further initialization
     self.deploy_time = 0
     self.deploy_eoa = empty(address)
 
@@ -2384,7 +2395,7 @@ def set_policy_contract(policy: Policy):
     @param policy The new policy contract. Use empty(address) to disable.
     """
     self._check_admin()
-    self.POLICY = policy
+    self._set_policy(policy)
     if policy != empty(Policy) and self.D > 0:
         # we do not push state if pool is empty
         extcall policy.update_pool_state(
@@ -2396,14 +2407,13 @@ def set_policy_contract(policy: Policy):
             self.xcp_profit,
             self.D,
         )
-    log SetPolicyContract(policy=policy)
 
 
 @external
 def change_allowlist(add: DynArray[address, 16], remove: DynArray[address, 16]):
     """
     @notice Batch-update the LP allowlist.
-    @dev The whitelist enabled flag is stored at `_lp_allowlist[empty(address)]`.
+    @dev The whitelist enabled flag is stored at `lp_allowlist[empty(address)]`.
          Entries in `remove` are cleared first, then entries in `add` are set.
          Any non-empty `add` batch enables the whitelist automatically.
          To disable the whitelist, call with empty `add` and include `empty(address)`
@@ -2412,26 +2422,16 @@ def change_allowlist(add: DynArray[address, 16], remove: DynArray[address, 16]):
     self._check_admin()
 
     for account: address in remove:
-        self._lp_allowlist[account] = False
+        self.lp_allowlist[account] = False
         log LPAllowlistChanged(user=account, allowed=False)
 
     for account: address in add:
-        self._lp_allowlist[account] = True
+        self.lp_allowlist[account] = True
         log LPAllowlistChanged(user=account, allowed=True)
 
     if len(add) > 0:
-        self._lp_allowlist[empty(address)] = True
+        self.lp_allowlist[empty(address)] = True
         log LPAllowlistChanged(user=empty(address), allowed=True)
-
-
-@external
-@view
-def lp_allowlist(user: address = empty(address)) -> bool:
-    """
-    @notice Returns the raw allowlist bit for `user`.
-    @dev Calling without arguments returns the whitelist enabled flag stored at empty(address).
-    """
-    return self._lp_allowlist[user]
 
 
 @external

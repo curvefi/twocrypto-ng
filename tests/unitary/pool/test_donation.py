@@ -8,8 +8,11 @@ import pytest
 
 def test_cant_donate_on_empty_pool(gm_pool):
     assert gm_pool.donation_shares() == 0
-    gm_pool.donate([10**18, 2 * 10**18])
+    assert gm_pool.totalSupply() == 0
+    with boa.reverts(dev='"donation not allowed on empty pool"'):
+        gm_pool.donate([10**18, 2 * 10**18])
     assert gm_pool.donation_shares() == 0
+    assert gm_pool.totalSupply() == 0
 
 
 @fixture()

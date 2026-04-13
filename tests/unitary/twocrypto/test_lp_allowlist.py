@@ -23,12 +23,14 @@ def test_change_allowlist_only_admin(pool, alice):
 
 
 def test_add_enables_whitelist_and_allows_added_address(pool, gm_pool, factory_admin, alice):
-    assert pool.lp_allowlist(ZERO_ADDRESS) is False
-
     pool.change_allowlist([alice], [], sender=factory_admin)
 
-    assert pool.lp_allowlist(ZERO_ADDRESS) is True
-    assert pool.lp_allowlist(alice) is True
+    logs = pool.get_logs()
+    assert [type(log).__name__ for log in logs] == ["LPAllowlistChanged", "LPAllowlistChanged"]
+    assert logs[0].user.lower() == alice.lower()
+    assert logs[0].allowed is True
+    assert logs[1].user.lower() == ZERO_ADDRESS.lower()
+    assert logs[1].allowed is True
 
     minted = _premint_and_add(pool, gm_pool, alice)
     assert minted > 0
@@ -43,11 +45,13 @@ def test_non_allowlisted_address_reverts_when_enabled(pool, gm_pool, factory_adm
 
 def test_remove_zero_with_empty_add_disables_whitelist(pool, gm_pool, factory_admin, alice, bob):
     pool.change_allowlist([alice], [], sender=factory_admin)
-    assert pool.lp_allowlist(ZERO_ADDRESS) is True
 
     pool.change_allowlist([], [ZERO_ADDRESS], sender=factory_admin)
 
-    assert pool.lp_allowlist(ZERO_ADDRESS) is False
+    logs = pool.get_logs()
+    assert type(logs[-1]).__name__ == "LPAllowlistChanged"
+    assert logs[-1].user.lower() == ZERO_ADDRESS.lower()
+    assert logs[-1].allowed is False
 
     minted = _premint_and_add(pool, gm_pool, bob)
     assert minted > 0
@@ -56,6 +60,17 @@ def test_remove_zero_with_empty_add_disables_whitelist(pool, gm_pool, factory_ad
 def test_donation_bypasses_allowlist(pool, gm_pool, factory_admin, alice, bob):
     pool.change_allowlist([alice], [], sender=factory_admin)
 
-    minted = _premint_and_add(pool, gm_pool, bob, donation=True)
+    seeded = _premint_and_add(pool, gm_pool, alice)
+    assert seeded > 0
+
+    donation_amounts = gm_pool.compute_balanced_amounts(50 * PRECISION)
+    gm_pool.premint_amounts(donation_amounts, to=bob)
+    minted = pool.add_liquidity(
+        donation_amounts,
+        0,
+        ZERO_ADDRESS,
+        True,
+        sender=bob,
+    )
     assert minted > 0
     assert pool.balanceOf(bob) == 0

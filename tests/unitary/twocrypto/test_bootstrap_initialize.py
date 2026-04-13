@@ -75,11 +75,19 @@ def test_deployer_can_initialize_and_seed_allowlist_with_policy(
         sender=deployer,
     )
 
+    logs = pool.get_logs()
+    assert [type(log).__name__ for log in logs[-2:]] == [
+        "LPAllowlistChanged",
+        "LPAllowlistChanged",
+    ]
+    assert logs[-2].user.lower() == alice.lower()
+    assert logs[-2].allowed is True
+    assert logs[-1].user.lower() == ZERO_ADDRESS.lower()
+    assert logs[-1].allowed is True
+
     assert pool.admin_fee() == 123
     assert pool.lp_profit_fraction() == FEE_PRECISION // 4
     assert pool.POLICY() == policy.address
-    assert pool.lp_allowlist(ZERO_ADDRESS) is True
-    assert pool.lp_allowlist(alice) is True
     assert policy.get_price_scale(pool.packed_rebalancing_params()) == 0
 
     with boa.reverts("!wl"):
@@ -127,10 +135,14 @@ def test_admin_can_initialize_after_window_and_leave_whitelist_disabled(
         sender=factory_admin,
     )
 
+    logs = pool.get_logs()
+    assert type(logs[-1]).__name__ == "LPAllowlistChanged"
+    assert logs[-1].user.lower() == ZERO_ADDRESS.lower()
+    assert logs[-1].allowed is False
+
     assert pool.admin_fee() == 321
     assert pool.lp_profit_fraction() == FEE_PRECISION // 3
     assert pool.POLICY() == ZERO_ADDRESS
-    assert pool.lp_allowlist(ZERO_ADDRESS) is False
 
     minted = _premint_and_add(pool, coins, bob)
     assert minted > 0
