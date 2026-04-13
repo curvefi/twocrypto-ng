@@ -155,6 +155,11 @@ event SetFeeParameters:
 event SetPolicyContract:
     policy: Policy
 
+event LPAllowlistChanged:
+    add: DynArray[address, 16]
+    remove: DynArray[address, 16]
+    enabled: bool
+
 # ----------------------- Storage/State Variables ----------------------------
 
 
@@ -257,7 +262,7 @@ totalSupply: public(uint256)
 
 
 # --------------------- Storage for LP whitelisting ---------------------
-lp_allowlist: public(HashMap[address, bool])
+_lp_allowlist: HashMap[address, bool]
 
 # Storage for pool initialization (requires magic_gamma at pool creation)
 deploy_eoa: address
@@ -564,9 +569,9 @@ def add_liquidity(
 
     assert amounts[0] + amounts[1] > 0, "!amounts"
 
-    if not donation and self.lp_allowlist[empty(address)]:
-        # self.lp_allowlist[empty(address)] is the flag for whether the allowlist is enabled.
-        assert self.lp_allowlist[msg.sender], "!wl"
+    if not donation and self._lp_allowlist[empty(address)]:
+        # self._lp_allowlist[empty(address)] is the flag for whether the allowlist is enabled.
+        assert self._lp_allowlist[msg.sender], "!wl"
     # --------------------- Get prices, balances -----------------------------
 
     old_balances: uint256[N_COINS] = self.balances
@@ -2358,12 +2363,15 @@ def initialize(
     self.POLICY = policy
     log SetPolicyContract(policy=policy)
 
-    self.lp_allowlist[empty(address)] = False
+    self._lp_allowlist[empty(address)] = False
     for account: address in allowlist_add:
-        self.lp_allowlist[account] = True
+        self._lp_allowlist[account] = True
 
     if len(allowlist_add) > 0:
-        self.lp_allowlist[empty(address)] = True
+        self._lp_allowlist[empty(address)] = True
+
+    empty_remove: DynArray[address, 16] = empty(DynArray[address, 16])
+    log LPAllowlistChanged(add=allowlist_add, remove=empty_remove, enabled=self._lp_allowlist[empty(address)])
 
     self.deploy_time = 0
     self.deploy_eoa = empty(address)
@@ -2395,7 +2403,7 @@ def set_policy_contract(policy: Policy):
 def change_allowlist(add: DynArray[address, 16], remove: DynArray[address, 16]):
     """
     @notice Batch-update the LP allowlist.
-    @dev The whitelist enabled flag is stored at `lp_allowlist[empty(address)]`.
+    @dev The whitelist enabled flag is stored at `_lp_allowlist[empty(address)]`.
          Entries in `remove` are cleared first, then entries in `add` are set.
          Any non-empty `add` batch enables the whitelist automatically.
          To disable the whitelist, call with empty `add` and include `empty(address)`
@@ -2404,13 +2412,25 @@ def change_allowlist(add: DynArray[address, 16], remove: DynArray[address, 16]):
     self._check_admin()
 
     for account: address in remove:
-        self.lp_allowlist[account] = False
+        self._lp_allowlist[account] = False
 
     for account: address in add:
-        self.lp_allowlist[account] = True
+        self._lp_allowlist[account] = True
 
     if len(add) > 0:
-        self.lp_allowlist[empty(address)] = True
+        self._lp_allowlist[empty(address)] = True
+
+    log LPAllowlistChanged(add=add, remove=remove, enabled=self._lp_allowlist[empty(address)])
+
+
+@external
+@view
+def lp_allowlist(user: address = empty(address)) -> bool:
+    """
+    @notice Returns the raw allowlist bit for `user`.
+    @dev Calling without arguments returns the whitelist enabled flag stored at empty(address).
+    """
+    return self._lp_allowlist[user]
 
 
 @external
