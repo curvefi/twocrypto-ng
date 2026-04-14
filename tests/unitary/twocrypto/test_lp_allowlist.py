@@ -80,7 +80,9 @@ def test_zero_address_add_does_not_enable_whitelist(pool, gm_pool, factory_admin
     pool.change_allowlist([ZERO_ADDRESS], [], sender=factory_admin)
 
     logs = pool.get_logs()
-    assert len(logs) == 0
+    assert [type(log).__name__ for log in logs] == ["LPAllowlistChanged"]
+    assert logs[0].user.lower() == ZERO_ADDRESS.lower()
+    assert logs[0].allowed is False
 
     minted = _premint_and_add(pool, gm_pool, bob)
     assert minted > 0

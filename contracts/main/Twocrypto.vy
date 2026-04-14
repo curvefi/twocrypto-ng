@@ -2318,6 +2318,25 @@ def set_donation_parameters(
     )
 
 
+@external
+def set_periphery(views: Views, math: Math):
+    """
+    @notice Set the view contract.
+    @param views The new view contract.
+    @dev This function is used to set the view contract that will be used
+            to calculate the prices and fees.
+    """
+    self._check_admin()
+    # at least one of the two must be set
+    assert views != empty(Views) or math != empty(Math)  # dev: "both periphery contracts empty"
+
+    if views != empty(Views):
+        self.VIEW = views
+    if math != empty(Math):
+        self.MATH = math
+    log SetPeriphery(views=views, math=math)
+
+
 @internal
 def _set_fee_parameters(lp_profit_fraction: uint256, admin_fee: uint256):
     assert lp_profit_fraction <= FEE_PRECISION  # dev: "lp profit fraction above 1e10"
@@ -2334,15 +2353,30 @@ def _set_policy(policy: Policy):
     log SetPolicyContract(policy=policy)
 
 
-@external
-def set_fee_parameters(lp_profit_fraction: uint256, admin_fee: uint256):
-    """
-    @notice Set LP/DAO-vs-rebalance split and DAO-vs-LP split parameters.
-    @param lp_profit_fraction The LP/DAO share of profits, with 10**10 precision.
-    @param admin_fee The DAO share of the LP/DAO bucket, with 10**10 precision.
-    """
-    self._check_admin()
-    self._set_fee_parameters(lp_profit_fraction, admin_fee)
+@internal
+def _set_allowlist(add: DynArray[address, 16], remove: DynArray[address, 16]):
+    # The allowlist enabled flag is stored at `lp_allowlist[empty(address)]`.
+    # `empty(address)` in `add` is ignored, while `empty(address)` in `remove`
+    # disables the allowlist. After processing both arrays, we always emit the
+    # final sentinel state once.
+    for account: address in remove:
+        if account == empty(address):
+            self.lp_allowlist[empty(address)] = False
+            continue
+
+        self.lp_allowlist[account] = False
+        log LPAllowlistChanged(user=account, allowed=False)
+
+    for account: address in add:
+        if account == empty(address):
+            continue
+
+        self.lp_allowlist[account] = True
+        log LPAllowlistChanged(user=account, allowed=True)
+        self.lp_allowlist[empty(address)] = True
+
+    log LPAllowlistChanged(user=empty(address), allowed=self.lp_allowlist[empty(address)])
+
 
 
 @external
@@ -2357,7 +2391,8 @@ def initialize(
     @param lp_profit_fraction The LP/DAO share of profits, with 10**10 precision.
     @param admin_fee The DAO share of the LP/DAO bucket, with 10**10 precision.
     @param policy Optional policy contract to attach.
-    @param allowlist_add Initial LP allowlist entries. Non-empty input enables the whitelist.
+    @param allowlist_add Initial LP allowlist entries. Any non-empty address
+            enables the whitelist; `empty(address)` entries are ignored.
     """
 
     # Access control: only deployer during the first 4 hours after deployment, then only admin.
@@ -2375,19 +2410,26 @@ def initialize(
     # Set policy
     self._set_policy(policy)
 
-    # Set allowlist
+    # Start with the allowlist disabled; the helper enables it if at least one
+    # non-empty address is provided in `allowlist_add`.
     self.lp_allowlist[empty(address)] = False
-    for account: address in allowlist_add:
-        if account != empty(address):
-            self.lp_allowlist[account] = True
-            log LPAllowlistChanged(user=account, allowed=True)
-            self.lp_allowlist[empty(address)] = True
-
-    log LPAllowlistChanged(user=empty(address), allowed=self.lp_allowlist[empty(address)])
+    empty_remove: DynArray[address, 16] = empty(DynArray[address, 16])
+    self._set_allowlist(allowlist_add, empty_remove)
 
     # Reset deployment variables to deny further initialization
     self.deploy_time = 0
     self.deploy_eoa = empty(address)
+
+
+@external
+def set_fee_parameters(lp_profit_fraction: uint256, admin_fee: uint256):
+    """
+    @notice Set LP/DAO-vs-rebalance split and DAO-vs-LP split parameters.
+    @param lp_profit_fraction The LP/DAO share of profits, with 10**10 precision.
+    @param admin_fee The DAO share of the LP/DAO bucket, with 10**10 precision.
+    """
+    self._check_admin()
+    self._set_fee_parameters(lp_profit_fraction, admin_fee)
 
 
 @external
@@ -2420,39 +2462,7 @@ def change_allowlist(add: DynArray[address, 16], remove: DynArray[address, 16]):
          Any non-empty address in `add` enables the whitelist automatically.
          `empty(address)` in `add` is a no-op.
          `empty(address)` in `remove` disables the whitelist.
+         The final enabled/disabled sentinel state is always logged once at the end.
     """
     self._check_admin()
-
-    for account: address in remove:
-        self.lp_allowlist[account] = False
-        log LPAllowlistChanged(user=account, allowed=False)
-
-    for account: address in add:
-        if account == empty(address):
-            continue
-
-        if not self.lp_allowlist[empty(address)]:
-            self.lp_allowlist[empty(address)] = True
-            log LPAllowlistChanged(user=empty(address), allowed=True)
-
-        self.lp_allowlist[account] = True
-        log LPAllowlistChanged(user=account, allowed=True)
-
-
-@external
-def set_periphery(views: Views, math: Math):
-    """
-    @notice Set the view contract.
-    @param views The new view contract.
-    @dev This function is used to set the view contract that will be used
-         to calculate the prices and fees.
-    """
-    self._check_admin()
-    # at least one of the two must be set
-    assert views != empty(Views) or math != empty(Math)  # dev: "both periphery contracts empty"
-
-    if views != empty(Views):
-        self.VIEW = views
-    if math != empty(Math):
-        self.MATH = math
-    log SetPeriphery(views=views, math=math)
+    self._set_allowlist(add, remove)
