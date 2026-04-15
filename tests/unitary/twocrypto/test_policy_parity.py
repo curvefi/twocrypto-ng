@@ -95,9 +95,7 @@ def _move_price_scale_both(legacy_pool, hooked_pool, price_change):
 
 
 def _fresh_pool(factory, factory_admin, coins, params, deployer, math_contract, views_contract):
-    pool = POOL_DEPLOYER.at(_deploy_pool(factory, params, coins, deployer))
-    pool.set_periphery(views_contract, math_contract, sender=factory_admin)
-    return GodModePool(pool)
+    return GodModePool(POOL_DEPLOYER.at(_deploy_pool(factory, params, coins, deployer)))
 
 
 def test_compare_fee_parity(pool, pool_with_policy_contract):

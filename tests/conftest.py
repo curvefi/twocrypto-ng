@@ -10,6 +10,7 @@ from tests.utils.constants import (
     POOL_DEPLOYER,
     VIEW_DEPLOYER,
 )
+from tests.utils.embedded_periphery import load_twocrypto_with_embedded_periphery
 from tests.utils.god_mode import GodModePool
 
 # boa.env.evm.patch.code_size_limit = 56_000
@@ -157,9 +158,18 @@ def gauge_implementation(deployer):
 
 
 @fixture(scope="module")
-def amm_implementation(deployer):
+def amm_implementation(deployer, math_contract, views_contract):
     with boa.env.prank(deployer):
-        return POOL_DEPLOYER.deploy_as_blueprint()
+        deployer_with_embedded_periphery = load_twocrypto_with_embedded_periphery(
+            views_contract.address,
+            math_contract.address,
+        )
+        return deployer_with_embedded_periphery.deploy_as_blueprint()
+
+
+@fixture(scope="module")
+def embedded_amm_implementation(amm_implementation):
+    return amm_implementation
 
 
 @fixture(scope="module")
@@ -191,6 +201,29 @@ def factory(
     return factory
 
 
+@fixture(scope="module")
+def factory_with_embedded_periphery(
+    deployer,
+    fee_receiver,
+    owner,
+    embedded_amm_implementation,
+    gauge_implementation,
+    math_contract,
+    views_contract,
+):
+    with boa.env.prank(deployer):
+        factory = FACTORY_DEPLOYER.deploy()
+        factory.initialise_ownership(fee_receiver, owner)
+
+    with boa.env.prank(owner):
+        factory.set_pool_implementation(embedded_amm_implementation, 0)
+        factory.set_gauge_implementation(gauge_implementation)
+        factory.set_views_implementation(views_contract)
+        factory.set_math_implementation(math_contract)
+
+    return factory
+
+
 # Pool fixtures
 @fixture(scope="module")
 def params():
@@ -210,16 +243,11 @@ def params():
 @fixture(scope="module")
 def pool(
     factory,
-    factory_admin,
     coins,
     params,
     deployer,
-    math_contract,
-    views_contract,
 ):
-    pool = POOL_DEPLOYER.at(_deploy_pool(factory, params, coins, deployer))
-    pool.set_periphery(views_contract, math_contract, sender=factory_admin)
-    return pool
+    return POOL_DEPLOYER.at(_deploy_pool(factory, params, coins, deployer))
 
 
 @fixture(scope="module")
@@ -229,15 +257,22 @@ def pool_with_policy_contract(
     coins,
     params,
     deployer,
-    math_contract,
-    views_contract,
 ):
     pool = POOL_DEPLOYER.at(_deploy_pool(factory, params, coins, deployer))
-    pool.set_periphery(views_contract, math_contract, sender=factory_admin)
     with boa.env.prank(deployer):
         policy_contract = POLICY_DEPLOYER.deploy(pool.address)
     pool.set_policy_contract(policy_contract, sender=factory_admin)
     return pool
+
+
+@fixture(scope="module")
+def embedded_pool(
+    factory_with_embedded_periphery,
+    coins,
+    params,
+    deployer,
+):
+    return POOL_DEPLOYER.at(_deploy_pool(factory_with_embedded_periphery, params, coins, deployer))
 
 
 @fixture(scope="module")

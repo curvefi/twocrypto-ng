@@ -16,16 +16,16 @@ def twocrypto_with_periphery(twocrypto_path, views_address, math_address, admin_
     with open(twocrypto_path, "r") as f:
         twocrypto_code = f.read()
     twocrypto_code = twocrypto_code.replace(
-        "self.MATH = Math(empty(address))", f"self.MATH = Math({math_address})", 1
+        "MATH = Math(empty(address))", f"MATH = Math({math_address})", 1
     )
     twocrypto_code = twocrypto_code.replace(
-        "self.VIEW = Views(empty(address))", f"self.VIEW = Views({views_address})", 1
+        "VIEW = Views(empty(address))", f"VIEW = Views({views_address})", 1
     )
     twocrypto_code = twocrypto_code.replace(
         "self.admin_fee = 10**10 * 50 // 100", f"self.admin_fee = {admin_fee}", 1
     )
-    assert f"self.MATH = Math({math_address})" in twocrypto_code
-    assert f"self.VIEW = Views({views_address})" in twocrypto_code
+    assert f"MATH = Math({math_address})" in twocrypto_code
+    assert f"VIEW = Views({views_address})" in twocrypto_code
     assert f"self.admin_fee = {admin_fee}" in twocrypto_code
     return boa.loads_partial(twocrypto_code)
 

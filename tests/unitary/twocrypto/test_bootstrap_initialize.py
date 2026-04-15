@@ -33,9 +33,7 @@ def _deploy_bootstrap_pool(
             bootstrap_params["initial_prices"][1],
         )
 
-    pool = POOL_DEPLOYER.at(pool_address)
-    pool.set_periphery(views_contract, math_contract, sender=factory_admin)
-    return pool
+    return POOL_DEPLOYER.at(pool_address)
 
 
 def _premint_and_add(pool, coins, account):

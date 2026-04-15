@@ -23,6 +23,7 @@ from tests.utils.constants import (
     POOL_DEPLOYER,
     VIEW_DEPLOYER,
 )
+from tests.utils.embedded_periphery import load_twocrypto_with_embedded_periphery
 from tests.utils.pool_presets import all_presets
 
 # ---------------- hypothesis test profiles ----------------
@@ -49,11 +50,13 @@ def factory(
     assume(_fee_receiver != _owner != _deployer)
 
     with boa.env.prank(_deployer):
-        pool_implementation = POOL_DEPLOYER.deploy_as_blueprint()
-        gauge_implementation = GAUGE_DEPLOYER.deploy_as_blueprint()
-
         view_contract = VIEW_DEPLOYER.deploy()
         math_contract = MATH_DEPLOYER.deploy()
+        pool_implementation = load_twocrypto_with_embedded_periphery(
+            view_contract.address,
+            math_contract.address,
+        ).deploy_as_blueprint()
+        gauge_implementation = GAUGE_DEPLOYER.deploy_as_blueprint()
 
         _factory = FACTORY_DEPLOYER.deploy()
         _factory.initialise_ownership(_fee_receiver, _owner)
@@ -150,7 +153,6 @@ def pool(
         )
 
     _pool = POOL_DEPLOYER.at(_pool)
-    _pool.set_periphery(VIEW_DEPLOYER.deploy(), MATH_DEPLOYER.deploy(), sender=_factory.admin())
 
     note(
         "deployed pool with "
