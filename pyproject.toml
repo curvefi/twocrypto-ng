@@ -46,3 +46,6 @@ executionEnvironments = [
     { root = "tests", extraPaths = ["."], reportAttributeAccessIssue = "none", reportUnknownArgumentType = "none", reportUnknownParameterType = "none", reportUnknownVariableType = "none", reportUnknownMemberType = "none", reportMissingParameterType = "none", reportUnknownLambdaType = "none" },
     { root = "scripts", extraPaths = ["."], reportAttributeAccessIssue = "none", reportUnknownArgumentType = "none", reportUnknownParameterType = "none", reportUnknownVariableType = "none", reportUnknownMemberType = "none", reportMissingParameterType = "none", reportUnknownLambdaType = "none" },
 ]
+
+[tool.pytest.ini_options]
+addopts = "--dist=loadscope"
