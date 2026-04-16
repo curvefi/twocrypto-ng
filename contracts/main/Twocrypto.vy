@@ -1154,12 +1154,7 @@ def tweak_price(
 
     # Rebalancing condition transformation:
     # virtual_price > 1 + (xcp_profit - 1) * lp_profit_fraction
-    # virtual_price > 1 + xcp_profit * lp_profit_fraction - lp_profit_fraction
-    threshold_vp: uint256 = max(
-        PRECISION,
-        PRECISION + xcp_profit * self.lp_profit_fraction // FEE_PRECISION - self.lp_profit_fraction * (PRECISION // FEE_PRECISION)
-    )
-
+    threshold_vp: uint256 = PRECISION + (max(xcp_profit, PRECISION) - PRECISION) * self.lp_profit_fraction // FEE_PRECISION
     # user_supply < total_supply => vp_boosted > virtual_price
     # by not accounting for donation shares, virtual_price is boosted leading to rebalance trigger
     # this is approximate condition that preliminary indicates readiness for rebalancing
