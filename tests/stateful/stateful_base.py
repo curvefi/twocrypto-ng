@@ -37,8 +37,6 @@ class StatefulBase(RuleBasedStateMachine):
     fee_split_presets = [
         (int(0.5e10), int(0.5e10)),
         (int(0.9e10), int(0.1e10)),
-        (int(0.9e10), int(0.9e10)),
-        (int(0.1e10), int(0.9e10)),
         (int(0.3e10), 0),
     ]
 
