@@ -252,7 +252,7 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
     def virtual_price(self):
         # we disable this invariant because claiming admin fees can break it.
         # claiming admin_fees can lead to a decrease in the virtual price
-        # however the pool is still profitable as long as xcpx is increasing.
+        # while xcp_profit remains monotone in the non-ramping model.
         pass
 
 

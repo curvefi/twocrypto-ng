@@ -25,7 +25,6 @@ class StatefulBase(RuleBasedStateMachine):
     decimals = None
     xcp_profit = 0
     xcp_profit_a = 0
-    xcpx = 0
     depositors = None
     equilibrium = 0
     swapped_once = False
@@ -71,7 +70,6 @@ class StatefulBase(RuleBasedStateMachine):
         # initial profit is 1e18
         self.xcp_profit = 1e18
         self.xcp_profit_a = 1e18
-        self.xcpx = 1e18
 
         self.depositors = set()
 
@@ -584,28 +582,12 @@ class StatefulBase(RuleBasedStateMachine):
 
     @invariant()
     def up_only_profit(self):
-        """This method checks if the pool is profitable, since it should
-        never lose money.
-
-        To do so we use the so called `xcpx`. This is an empirical measure
-        of profit that is even stronger than `xcp`.
-
-        You can imagine `xcpx` as a value that that is always between the
-        interval [xcp_profit, xcp_profit_a]. On admin fee claim `xcp_profit_a`
-        catches up to the current gross `xcp_profit`, so averaging them smooths
-        over claim boundaries. The ramping state machine disables this
-        invariant separately because ramping can realize losses.
-        """
+        """Profit should be monotone outside ramping."""
         xcp_profit = self.pool.xcp_profit()
-        xcp_profit_a = self.pool.xcp_profit_a()
-        xcpx = (xcp_profit + xcp_profit_a + 1e18) // 2
 
-        # make sure that the previous profit is smaller than the current
-        assert xcpx >= self.xcpx, "xcpx has decreased"
-        # updates the previous profits
-        self.xcpx = xcpx
+        assert xcp_profit >= self.xcp_profit, "xcp_profit has decreased"
         self.xcp_profit = xcp_profit
-        self.xcp_profit_a = xcp_profit_a
+        self.xcp_profit_a = self.pool.xcp_profit_a()
 
 
 TestBase = StatefulBase.TestCase
