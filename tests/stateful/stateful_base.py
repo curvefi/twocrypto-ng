@@ -588,13 +588,13 @@ class StatefulBase(RuleBasedStateMachine):
         never lose money.
 
         To do so we use the so called `xcpx`. This is an empirical measure
-        of profit that is even stronger than `xcp`. We have to use this
-        because `xcp` goes down when claiming admin fees.
+        of profit that is even stronger than `xcp`.
 
         You can imagine `xcpx` as a value that that is always between the
-        interval [xcp_profit, xcp_profit_a]. When `xcp` goes down
-        when claiming fees, `xcp_a` goes up. Averaging them creates this
-        measure of profit that only goes down when something went wrong.
+        interval [xcp_profit, xcp_profit_a]. On admin fee claim `xcp_profit_a`
+        catches up to the current gross `xcp_profit`, so averaging them smooths
+        over claim boundaries. The ramping state machine disables this
+        invariant separately because ramping can realize losses.
         """
         xcp_profit = self.pool.xcp_profit()
         xcp_profit_a = self.pool.xcp_profit_a()

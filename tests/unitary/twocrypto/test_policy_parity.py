@@ -21,6 +21,7 @@ def _state_snapshot(pool):
         "virtual_price": pool.virtual_price(),
         "xcp_profit": pool.xcp_profit(),
         "xcp_profit_a": pool.xcp_profit_a(),
+        "admin_claimed_profit": pool.admin_claimed_profit(),
     }
 
 

@@ -62,6 +62,7 @@ def test_claim_admin_fees_grid_no_rebalancing(
 
         xcp_profit_pre = pool_instance.xcp_profit()
         xcp_profit_a_pre = pool_instance.xcp_profit_a()
+        admin_claimed_profit_pre = pool_instance.admin_claimed_profit()
         virtual_price_pre = pool_instance.virtual_price()
         D_pre = pool_instance.D()
         balances_pre = pool_instance.balances()
@@ -73,7 +74,6 @@ def test_claim_admin_fees_grid_no_rebalancing(
 
         accrued = xcp_profit_pre - xcp_profit_a_pre
         expected_fees = accrued * lp_profit_fraction * admin_fee // FEE_PRECISION // FEE_PRECISION
-        expected_xcp_drop = expected_fees * FEE_PRECISION // lp_profit_fraction
         expected_vp_post = virtual_price_pre - expected_fees
         expected_D_post = D_pre - D_pre * expected_fees // virtual_price_pre
         expected_admin_amounts = [
@@ -92,8 +92,9 @@ def test_claim_admin_fees_grid_no_rebalancing(
         assert actual_admin_amounts == expected_admin_amounts
 
         assert pool_instance.virtual_price() == expected_vp_post
-        assert pool_instance.xcp_profit() == xcp_profit_pre - expected_xcp_drop
-        assert pool_instance.xcp_profit_a() == xcp_profit_pre - expected_xcp_drop
+        assert pool_instance.xcp_profit() == xcp_profit_pre
+        assert pool_instance.xcp_profit_a() == xcp_profit_pre
+        assert pool_instance.admin_claimed_profit() == admin_claimed_profit_pre + expected_fees
         assert pool_instance.D() == expected_D_post
 
         receiver_value_post = sum(coin0_values(pool_instance, fee_receiver))

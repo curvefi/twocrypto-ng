@@ -206,6 +206,7 @@ balances: public(uint256[N_COINS])
 D: public(uint256)
 xcp_profit: public(uint256)
 xcp_profit_a: public(uint256)  # <--- Full profit at last claim of admin fees.
+admin_claimed_profit: public(uint256)  # Cumulative admin extraction from LP+DAO bucket, in vp units.
 
 virtual_price: public(uint256)  # <------ Cached (fast to read) virtual price.
 #                          The cached `virtual_price` is also used internally.
@@ -680,6 +681,7 @@ def add_liquidity(
         self.virtual_price = 10**18
         self.xcp_profit = 10**18
         self.xcp_profit_a = 10**18
+        self.admin_claimed_profit = 0
 
         self.mint(receiver, d_token)
     assert d_token >= min_mint_amount, "slippage"
@@ -1152,9 +1154,21 @@ def tweak_price(
     # 1. xcp_profit grows after virtual price, total growth since launch = (xcp_profit − 1)
     # 2. We reserve lp_profit_fraction of the growth for LPs and admin, rest is used to rebalance the pool
 
-    # Rebalancing condition transformation:
-    # virtual_price > 1 + (xcp_profit - 1) * lp_profit_fraction
-    threshold_vp: uint256 = PRECISION + (max(xcp_profit, PRECISION) - PRECISION) * self.lp_profit_fraction // FEE_PRECISION
+    # Rebalancing condition basis:
+    #   virtual_price > 1 + (xcp_profit - 1) * lp_profit_fraction - admin_claimed_profit
+    #                  |         pre_admin_threshold_vp          |
+    # Interpretation:
+    #   1. xcp_profit - 1 is total gross profit growth above baseline.
+    #   2. Multiplying by lp_profit_fraction keeps only the LP+DAO retained share.
+    #   3. admin_claimed_profit subtracts what the admin has already extracted from that bucket.
+    #   4. The threshold is floored at PRECISION.
+    pre_admin_threshold_vp: uint256 = PRECISION + (
+        unsafe_sub(max(xcp_profit, PRECISION), PRECISION) * self.lp_profit_fraction // FEE_PRECISION
+    )
+    threshold_vp: uint256 = max(
+        PRECISION,
+        pre_admin_threshold_vp - min(self.admin_claimed_profit, pre_admin_threshold_vp),
+    )
     # user_supply < total_supply => vp_boosted > virtual_price
     # by not accounting for donation shares, virtual_price is boosted leading to rebalance trigger
     # this is approximate condition that preliminary indicates readiness for rebalancing
@@ -1370,34 +1384,22 @@ def _claim_admin_fees():
     )
 
     if fees > 0:
-        # -------------------- Recalculate virtual price and xcp_profit ----------
+        # ---------------- Recalculate virtual price and admin claim offset -------
         # We withdraw token balances without touching LP shares, so virtual price goes down.
         updated_vprice: uint256 = current_vprice - fees
         # Do not claim fees if doing so causes virtual price to drop below 10**18.
         if updated_vprice < 10**18:
             return
-        # To maintain rebalancing condition vp' > 1 + (xcp_profit' - 1)*lpf:
-        # (i.e. not to affect rebalancing invariant)
-        # at the boundary:
-        #       vp - f = 1 + (xcp_profit - 1)*lpf - f
-        #       vp - f = 1 + (xcp_profit - 1 - f/lpf)*lpf
-        #    => xcp_profit' := xcp_profit - f / lpf
-        xcp_profit -= fees * FEE_PRECISION // lp_profit_fraction # (fees>0 => lpf>0)
-
-        # Another way to see this is to track total_admin_claimed (sum_i(fees)), the cumulative amount
-        # extracted from the LP+DAO bucket, and compare virtual_price against
-        # 1 + (xcp_profit - 1) * lpf - total_admin_claimed instead.
-        # This alternative model would keep xcp_profit strictly increasing.
-        # Instead we fold claimed profit directly into xcp_profit here.
-
-        # xcp_profit as raw value is thus shouldn't be used in integrations!
+        # Keep xcp_profit as the gross profit signal and track claimed admin
+        # extraction separately in the same virtual-price units as `fees`.
+        # Rebalancing thresholding then compares virtual_price against:
+        #   1 + (xcp_profit - 1) * lpf - admin_claimed_profit
+        self.admin_claimed_profit += fees
 
         # ---------------------------- Update State ------------------------------
         self.virtual_price = updated_vprice
-        self.xcp_profit = xcp_profit
         self.last_admin_fee_claim_timestamp = block.timestamp
-        if xcp_profit > xcp_profit_a:
-            self.xcp_profit_a = xcp_profit  # <-------- Cache last claimed profit.
+        self.xcp_profit_a = xcp_profit  # <-------- Cache last claimed gross profit.
 
         # Adjust D after admin removes liquidity
         # no _get_D() because we can't claim during ramping
