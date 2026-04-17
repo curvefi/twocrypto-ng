@@ -11,7 +11,7 @@ from hypothesis.stateful import (
     precondition,
     rule,
 )
-from hypothesis.strategies import integers
+from hypothesis.strategies import integers, sampled_from
 
 from tests.utils.constants import ERC20_DEPLOYER, FACTORY_DEPLOYER, UNIX_DAY
 from tests.utils.strategies import address, pool_from_preset
@@ -31,13 +31,24 @@ class StatefulBase(RuleBasedStateMachine):
     swapped_once = False
     fee_receiver = None
     admin = None
+    lp_profit_fraction = 0
+    admin_fee = 0
+
+    fee_split_presets = [
+        (int(0.5e10), int(0.5e10)),
+        (int(0.9e10), int(0.1e10)),
+        (int(0.9e10), int(0.9e10)),
+        (int(0.1e10), int(0.9e10)),
+        (int(0.3e10), 0),
+    ]
 
     @initialize(
         pool=pool_from_preset(),
         amount=integers(min_value=int(1e20), max_value=int(1e30)),
         user=address,
+        fee_split=sampled_from(fee_split_presets),
     )
-    def initialize_pool(self, pool, amount, user):
+    def initialize_pool(self, pool, amount, user, fee_split):
         """Initialize the state machine with a pool and some
         initial liquidity.
 
@@ -81,6 +92,18 @@ class StatefulBase(RuleBasedStateMachine):
 
         self.fee_receiver = FACTORY_DEPLOYER.at(pool.factory()).fee_receiver()
         self.admin = FACTORY_DEPLOYER.at(pool.factory()).admin()
+        self.lp_profit_fraction, self.admin_fee = fee_split
+        self.pool.set_fee_parameters(
+            self.lp_profit_fraction,
+            self.admin_fee,
+            sender=self.admin,
+        )
+        note(
+            "fee split lp_profit_fraction={:.2e} admin_fee={:.2e}".format(
+                self.lp_profit_fraction,
+                self.admin_fee,
+            )
+        )
 
         # figure out the amount of the second token for a balanced deposit
         balanced_amounts = self.get_balanced_deposit_amounts(amount)
