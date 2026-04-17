@@ -38,6 +38,54 @@ fee_receiver = address
 owner = address
 
 
+def _deploy_shared_implementations():
+    # These are intentionally deployed at module import time so they live
+    # outside pytest/boa per-test and per-example anchors. Stateful tests run
+    # Hypothesis examples under nested `boa.env.anchor()` contexts, so a lazy
+    # cache populated inside an example would be reverted away after that
+    # example completes.
+    shared_deployer = boa.env.generate_address()
+    boa.env.set_balance(shared_deployer, 10**25)
+
+    with boa.env.prank(shared_deployer):
+        view_contract = VIEW_DEPLOYER.deploy()
+        math_contract = MATH_DEPLOYER.deploy()
+        pool_implementation = load_twocrypto_with_embedded_periphery(
+            view_contract.address,
+            math_contract.address,
+        ).deploy_as_blueprint()
+        gauge_implementation = GAUGE_DEPLOYER.deploy_as_blueprint()
+
+    return (
+        view_contract,
+        math_contract,
+        pool_implementation,
+        gauge_implementation,
+    )
+
+
+_SHARED_IMPLEMENTATIONS = _deploy_shared_implementations()
+
+
+def _deploy_shared_tokens():
+    # Similar to the implementation cache, deploy token mocks once per worker
+    # outside Hypothesis example anchors so stateful examples can reuse them.
+    shared_deployer = boa.env.generate_address()
+    boa.env.set_balance(shared_deployer, 10**25)
+
+    token_bank = {}
+    with boa.env.prank(shared_deployer):
+        for decimals in [18, 9, 8, 6]:
+            token_bank[decimals] = [
+                ERC20_DEPLOYER.deploy(f"USD-{decimals}-{i}", f"USD{i}", decimals) for i in range(3)
+            ]
+
+    return token_bank
+
+
+_SHARED_TOKENS = _deploy_shared_tokens()
+
+
 # ---------------- factory ----------------
 @composite
 def factory(
@@ -49,15 +97,11 @@ def factory(
 
     assume(_fee_receiver != _owner != _deployer)
 
-    with boa.env.prank(_deployer):
-        view_contract = VIEW_DEPLOYER.deploy()
-        math_contract = MATH_DEPLOYER.deploy()
-        pool_implementation = load_twocrypto_with_embedded_periphery(
-            view_contract.address,
-            math_contract.address,
-        ).deploy_as_blueprint()
-        gauge_implementation = GAUGE_DEPLOYER.deploy_as_blueprint()
+    view_contract, math_contract, pool_implementation, gauge_implementation = (
+        _SHARED_IMPLEMENTATIONS
+    )
 
+    with boa.env.prank(_deployer):
         _factory = FACTORY_DEPLOYER.deploy()
         _factory.initialise_ownership(_fee_receiver, _owner)
 
@@ -100,12 +144,21 @@ price = integers(min_value=int(1e10), max_value=int(1e26))
 
 # -------------------- tokens --------------------
 
-# we put bigger values first to shrink
-# towards 18 in case of failure (instead of 2)
-token = sampled_from([18, 9, 8, 6]).map(
-    # token = just(18).map(
-    lambda x: ERC20_DEPLOYER.deploy("USD", "USD", x)
-)
+
+@composite
+def token_pair(draw):
+    decimals_0 = draw(sampled_from([18, 9, 8, 6]))
+    decimals_1 = draw(sampled_from([18, 9, 8, 6]))
+    tokens_0 = _SHARED_TOKENS[decimals_0]
+    tokens_1 = _SHARED_TOKENS[decimals_1]
+
+    token_0 = draw(sampled_from(tokens_0))
+    if decimals_0 == decimals_1:
+        token_1 = draw(sampled_from([t for t in tokens_1 if t.address != token_0.address]))
+    else:
+        token_1 = draw(sampled_from(tokens_1))
+
+    return [token_0, token_1]
 
 
 # ---------------- pool ----------------
@@ -130,7 +183,7 @@ def pool(
     mid_fee, out_fee = draw(fees)
 
     # TODO should test weird tokens as well (non-standard/non-compliant)
-    tokens = [draw(token), draw(token)]
+    tokens = draw(token_pair())
 
     with boa.env.prank(draw(deployer)):
         adj_min = draw(adjustment_step_min)
