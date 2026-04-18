@@ -173,6 +173,9 @@ def test_claim_no_rebalancing(gm_pool, fee_receiver):
     balance_pool(pool_instance)
 
     pool_values_post = coin0_values(pool_instance, pool_instance.address)
+    xcp_profit_pre_claim = pool_instance.xcp_profit()
+    xcp_profit_a_pre_claim = pool_instance.xcp_profit_a()
+    admin_claimed_profit_pre = pool_instance.admin_claimed_profit()
 
     pool_values_change = [pool_values_post[i] - pool_values_init[i] for i in [0, 1]]
     pool_value_surplus = sum(pool_values_change)
@@ -190,10 +193,20 @@ def test_claim_no_rebalancing(gm_pool, fee_receiver):
     # claim admin fees
     pool_instance.internal._claim_admin_fees()
     receiver_values_post = coin0_values(pool_instance, fee_receiver)
+    expected_fees = (
+        (xcp_profit_pre_claim - xcp_profit_a_pre_claim)
+        * pool_instance.lp_profit_fraction()
+        * pool_instance.admin_fee()
+        // 10**10
+        // 10**10
+    )
 
     value_received = sum(receiver_values_post) - sum(receiver_values_init)
     # approx because add_liq doesn't earn for xcp_profit
     assert value_received == pytest.approx(estimated_profit_admin, rel=1e-8)
+    assert pool_instance.xcp_profit() == xcp_profit_pre_claim
+    assert pool_instance.xcp_profit_a() == xcp_profit_pre_claim
+    assert pool_instance.admin_claimed_profit() == admin_claimed_profit_pre + expected_fees
 
 
 def test_n_claim_no_rebalancing(gm_pool, fee_receiver):
@@ -209,11 +222,14 @@ def test_n_claim_no_rebalancing(gm_pool, fee_receiver):
     assert pool_instance.coins[0].balanceOf(fee_receiver) == 0
     assert pool_instance.coins[1].balanceOf(fee_receiver) == 0
 
+    expected_admin_claimed_profit = 0
+
     for _ in range(N_REP):
         boa.env.time_travel(seconds=86_400)  # so that we can claim repeatedly
 
         pool_values_init = coin0_values(pool_instance, pool_instance.address)
         P_init = pool_instance.xcp_profit()
+        P_a_init = pool_instance.xcp_profit_a()
 
         work_pool(pool_instance, N_TRADES, TRADE_SIZE, update_ema=False)
         balance_pool(pool_instance)
@@ -242,10 +258,21 @@ def test_n_claim_no_rebalancing(gm_pool, fee_receiver):
         receiver_values_init = coin0_values(pool_instance, fee_receiver)
         pool_instance.internal._claim_admin_fees()
         receiver_values_post = coin0_values(pool_instance, fee_receiver)
+        expected_fees = (
+            (P_post - P_a_init)
+            * pool_instance.lp_profit_fraction()
+            * pool_instance.admin_fee()
+            // 10**10
+            // 10**10
+        )
+        expected_admin_claimed_profit += expected_fees
 
         value_received = sum(receiver_values_post) - sum(receiver_values_init)
 
         assert value_received == pytest.approx(estimated_profit_admin, rel=1e-2)
+        assert pool_instance.xcp_profit() == P_post
+        assert pool_instance.xcp_profit_a() == P_post
+        assert pool_instance.admin_claimed_profit() == expected_admin_claimed_profit
 
 
 def test_n_claim_lp_no_rebalancing(gm_pool, fee_receiver):

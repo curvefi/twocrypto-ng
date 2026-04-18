@@ -133,6 +133,7 @@ class GodModePool:
             "virtual_price": self.instance.virtual_price(),
             "xcp_profit": self.instance.xcp_profit(),
             "xcp_profit_a": self.instance.xcp_profit_a(),
+            "admin_claimed_profit": self.instance.admin_claimed_profit(),
             "price_scale": self.instance.price_scale(),
             "price_oracle": self.instance.price_oracle(),
             "total_supply": self.instance.totalSupply(),

@@ -53,6 +53,7 @@ def _snapshot(pool_instance):
     return {
         "virtual_price": pool_instance.virtual_price(),
         "xcp_profit": pool_instance.xcp_profit(),
+        "admin_claimed_profit": pool_instance.admin_claimed_profit(),
         "get_virtual_price": pool_instance.get_virtual_price(),
         "price_scale": pool_instance.price_scale(),
         "price_oracle": pool_instance.price_oracle(),
@@ -111,6 +112,27 @@ def _run_rebalance_probe(pool_instance):
         price_scale_path.append(price_scale_after)
 
     return rebalance_count, price_scale_path
+
+
+def _inject_threshold_probe(pool_instance):
+    pool_instance.inject_function(
+        """
+@external
+@view
+def threshold_probe() -> uint256:
+    threshold_base: uint256 = (
+        10**18
+        + (max(self.xcp_profit, 10**18) - 10**18) * self.lp_profit_fraction // 10**10
+    )
+    threshold_vp: uint256 = threshold_base
+    if threshold_base > 10**18:
+        threshold_vp = unsafe_sub(
+            threshold_base,
+            min(self.admin_claimed_profit, unsafe_sub(threshold_base, 10**18)),
+        )
+    return threshold_vp
+"""
+    )
 
 
 def test_synthetic_vp_xcp_state_is_coherent(pool, factory_admin):
@@ -202,3 +224,20 @@ def test_same_block_noop_does_not_consume_rebalance_slot(pool, factory_admin):
         )
 
         assert pool_instance.price_scale() != price_scale_before
+
+
+def test_admin_claimed_profit_offsets_threshold_vp_with_floor(pool):
+    with boa.env.anchor():
+        pool_instance = GodModePool(pool)
+        pool_instance.add_liquidity_balanced(INITIAL_LIQ)
+        _inject_threshold_probe(pool_instance)
+
+        pool_instance.eval("self.xcp_profit = 3 * 10**18")
+        pool_instance.eval("self.admin_claimed_profit = 0")
+        assert pool_instance.instance.inject.threshold_probe() == 2 * PRECISION
+
+        pool_instance.eval("self.admin_claimed_profit = 3 * 10**17")
+        assert pool_instance.instance.inject.threshold_probe() == 17 * PRECISION // 10
+
+        pool_instance.eval("self.admin_claimed_profit = 5 * 10**18")
+        assert pool_instance.instance.inject.threshold_probe() == PRECISION
