@@ -3051,6 +3051,18 @@ wheels = [
 ]
 
 [[package]]
+name = "titanoboa-zksync"
+version = "0.2.10"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "titanoboa" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f5/3e/fd3e4579dd06f24a710dc6986ca309ff15393d9d77754abf398ed2dabc3e/titanoboa_zksync-0.2.10.tar.gz", hash = "sha256:c22ca0b9632acb852acb6418c8cbbd1be00855676480d72abf99525882599ea6", size = 26254, upload-time = "2025-04-21T14:52:49.659Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/36/2f/b21f8e88e8263340a7cc3c4cd1f12c58c6dcce2c25237482c197a6c42af6/titanoboa_zksync-0.2.10-py3-none-any.whl", hash = "sha256:ae204fbc5f62cfe04175219eab11e636b6a03cbe0ce90559eb326b9bf7619975", size = 25606, upload-time = "2025-04-21T14:52:47.939Z" },
+]
+
+[[package]]
 name = "toolz"
 version = "1.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3106,22 +3118,23 @@ wheels = [
 [[package]]
 name = "twocrypto-ng"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
-    { name = "base58" },
-    { name = "cryptography" },
     { name = "curve-std" },
-    { name = "keyring" },
     { name = "snekmate" },
-    { name = "titanoboa" },
     { name = "vyper" },
-    { name = "web3" },
 ]
 
 [package.dev-dependencies]
 dev = [
+    { name = "base58" },
+    { name = "cryptography" },
+    { name = "eth-account" },
+    { name = "eth-typing" },
+    { name = "eth-utils" },
     { name = "hypothesis" },
     { name = "jupyter" },
+    { name = "keyring" },
     { name = "mamushi" },
     { name = "matplotlib" },
     { name = "numpy" },
@@ -3132,25 +3145,31 @@ dev = [
     { name = "pytest-forked" },
     { name = "pytest-xdist" },
     { name = "python-dotenv" },
+    { name = "pyyaml" },
+    { name = "rich" },
     { name = "ruff" },
+    { name = "titanoboa" },
+    { name = "titanoboa-zksync" },
+    { name = "web3" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "base58", specifier = ">=2.1.1" },
-    { name = "cryptography", specifier = ">=45.0.5" },
     { name = "curve-std", git = "https://github.com/curvefi/curve-std?rev=e2101dc898591fb5e95b1f79e6163b2a7927bd63" },
-    { name = "keyring", specifier = ">=25.6.0" },
-    { name = "snekmate", specifier = "==0.1.2" },
-    { name = "titanoboa", specifier = "==0.2.8" },
+    { name = "snekmate", specifier = ">=0.1.2" },
     { name = "vyper", specifier = "==0.4.3" },
-    { name = "web3", specifier = ">=7.12.1" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "base58", specifier = ">=2.1.1" },
+    { name = "cryptography", specifier = ">=45.0.5" },
+    { name = "eth-account" },
+    { name = "eth-typing" },
+    { name = "eth-utils" },
     { name = "hypothesis", specifier = "==6.124.2" },
     { name = "jupyter", specifier = "==1.0.0" },
+    { name = "keyring", specifier = ">=25.6.0" },
     { name = "mamushi", specifier = "==0.0.4" },
     { name = "matplotlib" },
     { name = "numpy" },
@@ -3161,7 +3180,12 @@ dev = [
     { name = "pytest-forked", specifier = ">=1.6.0" },
     { name = "pytest-xdist", specifier = "==3.6.1" },
     { name = "python-dotenv", specifier = "==1.0.1" },
+    { name = "pyyaml", specifier = ">=6.0.2" },
+    { name = "rich" },
     { name = "ruff", specifier = "==0.6.9" },
+    { name = "titanoboa", specifier = "==0.2.8" },
+    { name = "titanoboa-zksync" },
+    { name = "web3", specifier = ">=7.12.1" },
 ]
 
 [[package]]
