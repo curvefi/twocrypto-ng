@@ -86,20 +86,20 @@ def test_deployer_can_initialize_and_seed_allowlist_with_policy(
     assert pool.admin_fee() == 123
     assert pool.lp_profit_fraction() == FEE_PRECISION // 4
     assert pool.POLICY() == policy.address
-    assert policy.get_price_scale(pool.packed_rebalancing_params()) == 0
+    assert policy.get_price_scale() == 0
 
     with boa.reverts("!wl"):
         _premint_and_add(pool, coins, bob)
 
     minted = _premint_and_add(pool, coins, alice)
     assert minted > 0
-    assert policy.get_price_scale(pool.packed_rebalancing_params()) == 0
+    assert policy.get_price_scale() == 0
 
     gm_pool = GodModePool(pool)
     dy = gm_pool.exchange(0, 10**18)
     assert dy > 0
     assert pool.price_scale() > 0
-    assert policy.get_price_scale(pool.packed_rebalancing_params()) > 0
+    assert policy.get_price_scale() > 0
 
     with boa.reverts(dev='"pool does not need initialization"'):
         pool.initialize(FEE_PRECISION // 4, 123, policy.address, [alice], sender=deployer)

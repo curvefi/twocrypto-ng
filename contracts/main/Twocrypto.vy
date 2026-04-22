@@ -50,8 +50,8 @@ interface Views:
     ) -> uint256: view
 
 interface Policy:
-    def get_fee(xp: uint256[N_COINS], packed_fee_params: uint256) -> uint256: view
-    def get_price_scale(packed_rebalancing_params: uint256) -> uint256: view
+    def get_fee(xp: uint256[N_COINS]) -> uint256: view
+    def get_price_scale() -> uint256: view
     def update_pool_state(xp: uint256[N_COINS],
                             price_scale: uint256,
                             price_oracle: uint256,
@@ -1178,7 +1178,7 @@ def tweak_price(
         #                                  ^ only allow one successful rebalance per block
         p_policy: uint256 = 0
         if policy != empty(Policy):
-            p_policy = staticcall policy.get_price_scale(self.packed_rebalancing_params)
+            p_policy = staticcall policy.get_price_scale()
 
         # We only adjust prices if the selected target is far enough from
         # price_scale. The external policy can override the target, but the
@@ -1486,7 +1486,7 @@ def _A_gamma() -> uint256[2]:
 def _fee(xp: uint256[N_COINS]) -> uint256:
 
     if self.POLICY != empty(Policy):
-        fee: uint256 = staticcall self.POLICY.get_fee(xp, self.packed_fee_params)
+        fee: uint256 = staticcall self.POLICY.get_fee(xp)
         if fee != 0:
             # if policy returns 0 we fallback to pool's internal logic
             return min(MAX_FEE, max(MIN_FEE, fee))

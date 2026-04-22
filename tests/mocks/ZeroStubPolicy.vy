@@ -6,13 +6,13 @@ N_COINS: constant(uint256) = 2
 
 @external
 @view
-def get_fee(xp: uint256[N_COINS], packed_fee_params: uint256) -> uint256:
+def get_fee(xp: uint256[N_COINS]) -> uint256:
     return 0
 
 
 @external
 @view
-def get_price_scale(packed_rebalancing_params: uint256) -> uint256:
+def get_price_scale() -> uint256:
     return 0
 
 
