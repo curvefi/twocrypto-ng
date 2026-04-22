@@ -84,24 +84,9 @@ def get_price_scale(packed_rebalancing_params: uint256) -> uint256:
             PRECISION,
         )
 
-    norm: uint256 = unsafe_div(price_oracle * PRECISION, price_scale)
-    if norm > PRECISION:
-        norm = unsafe_sub(norm, PRECISION)
-    else:
-        norm = unsafe_sub(PRECISION, norm)
-
-    adjustment_step: uint256 = min(
-        unsafe_div(norm, 5),
-        rebalancing_params[1],
-    )
-    if adjustment_step <= rebalancing_params[0]:
-        return price_scale
-
-    return unsafe_div(
-        price_scale * unsafe_sub(norm, adjustment_step) +
-        adjustment_step * price_oracle,
-        norm,
-    )
+    # Return the target price only. The pool applies the unified native
+    # step limiter when moving toward this target.
+    return price_oracle
 
 
 @external
