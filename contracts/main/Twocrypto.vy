@@ -50,8 +50,8 @@ interface Views:
     ) -> uint256: view
 
 interface Policy:
-    def get_fee(xp: uint256[N_COINS], packed_fee_params: uint256) -> uint256: view
-    def get_price_scale(packed_rebalancing_params: uint256) -> uint256: view
+    def get_fee(xp: uint256[N_COINS]) -> uint256: view
+    def get_price_scale() -> uint256: view
     def update_pool_state(xp: uint256[N_COINS],
                             price_scale: uint256,
                             price_oracle: uint256,
@@ -1176,8 +1176,23 @@ def tweak_price(
     assert vp_boosted >= virtual_price, "negative donation"
     if (vp_boosted  > threshold_vp) and (block.timestamp > self.last_rebalance_ts):
         #                                  ^ only allow one successful rebalance per block
+        p_policy: uint256 = 0
+        if policy != empty(Policy):
+            p_policy = staticcall policy.get_price_scale()
+
+        # We only adjust prices if the selected target is far enough from
+        # price_scale. The external policy can override the target, but the
+        # actuation still uses the same min/max step limiter as the native path.
+        # Policy semantics:
+        #   p_policy == 0           => use native target (price_oracle)
+        #   p_policy == price_scale => explicit hold; no rebalance
+        #   otherwise               => explicit policy target, step-limited natively
+        target_price: uint256 = price_oracle
+        if p_policy > 0:
+            target_price = p_policy
+
         norm: uint256 = unsafe_div(
-            unsafe_mul(price_oracle, 10**18), price_scale
+            unsafe_mul(target_price, 10**18), price_scale
         )
         if norm > 10**18:
             norm = unsafe_sub(norm, 10**18)
@@ -1189,31 +1204,13 @@ def tweak_price(
             unsafe_div(norm, 5), rebalancing_params[1]
         )  #                        ^------ adjustment_step_max.
 
-        p_policy: uint256 = 0
-        if policy != empty(Policy):
-            p_policy = staticcall policy.get_price_scale(self.packed_rebalancing_params)
-
-        # We only adjust prices if distance between price_oracle
-        # and price_scale is large enough. This check ensures that no rebalancing
-        # occurs if the distance is low i.e. the pool prices are close to the
-        # oracle prices.
-        # If policy, however, deems necessary to adjust price_scale, it
-        # can bypass the distance check and trigger rebalancing whenever it wants.
-        # Policy semantics:
-        #   p_policy == 0           => use native rebalance logic
-        #   p_policy == price_scale => explicit hold; suppress native rebalance
-        #   otherwise               => explicit policy target
         p_new: uint256 = price_scale
-        if p_policy > 0:
-            # If policy triggers rebalance, we set price_scale to p_policy, without smoothing.
-            # If p_policy == price_scale, this is an explicit hold and we do nothing below.
-            p_new = p_policy
-        elif adjustment_step > rebalancing_params[0]:
+        if adjustment_step > rebalancing_params[0]:
             #                     ^------ adjustment_step_min
-            # Calculate new price scale using internal oracle.
+            # Move toward the selected target using the unified native step limiter.
             p_new = unsafe_div(
                 price_scale * unsafe_sub(norm, adjustment_step) +
-                adjustment_step * price_oracle,
+                adjustment_step * target_price,
                 norm # <---- norm is non-zero and gt adjustment_step; unsafe = safe.
             )
 
@@ -1489,7 +1486,7 @@ def _A_gamma() -> uint256[2]:
 def _fee(xp: uint256[N_COINS]) -> uint256:
 
     if self.POLICY != empty(Policy):
-        fee: uint256 = staticcall self.POLICY.get_fee(xp, self.packed_fee_params)
+        fee: uint256 = staticcall self.POLICY.get_fee(xp)
         if fee != 0:
             # if policy returns 0 we fallback to pool's internal logic
             return min(MAX_FEE, max(MIN_FEE, fee))

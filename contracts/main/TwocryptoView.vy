@@ -46,7 +46,7 @@ interface Math:
     ) -> uint256[2]: view
 
 interface Policy:
-    def get_fee(xp: uint256[N_COINS], packed_fee_params: uint256) -> uint256: view
+    def get_fee(xp: uint256[N_COINS]) -> uint256: view
 
 N_COINS: constant(uint256) = 2
 PRECISION: constant(uint256) = 10**18
@@ -308,7 +308,7 @@ def _xcp(D: uint256, price_scale: uint256) -> uint256:
 def _fee(xp: uint256[N_COINS], swap: address) -> uint256:
     policy: Policy = staticcall Curve(swap).POLICY()
     if policy != empty(Policy):
-        fee: uint256 = staticcall policy.get_fee(xp, staticcall Curve(swap).packed_fee_params())
+        fee: uint256 = staticcall policy.get_fee(xp)
         if fee != 0:
             return min(FEE_PRECISION, max(MIN_FEE, fee))
 

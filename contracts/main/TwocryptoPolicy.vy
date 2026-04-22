@@ -3,8 +3,8 @@
 """
 @title TwocryptoPolicy
 @notice External policy that defines fee surface and rebalance goal for twocrypto pools.
-@dev The caller passes the transient `xp` and packed fee params so the hook can
-     reproduce the legacy balance-based fee formula from `_fee` exactly.
+@dev The pool passes the transient `xp`, while packed parameters are read back
+     from the pool directly to reproduce the legacy balance-based fee formula.
 """
 from snekmate.utils import math
 
@@ -16,6 +16,8 @@ interface IPool:
     def xcp_profit() -> uint256: view
     def D() -> uint256: view
     def balances(i: uint256) -> uint256: view
+    def packed_fee_params() -> uint256: view
+    def packed_rebalancing_params() -> uint256: view
 
 N_COINS: constant(uint256) = 2
 PRECISION: constant(uint256) = 10**18
@@ -41,7 +43,8 @@ def __init__(pool: address):
 
 @external
 @view
-def get_fee(xp: uint256[N_COINS], packed_fee_params: uint256) -> uint256:
+def get_fee(xp: uint256[N_COINS]) -> uint256:
+    packed_fee_params: uint256 = staticcall IPool(POOL).packed_fee_params()
     fee_params: uint256[3] = self._unpack_3(packed_fee_params)
 
     # warm up variable with sum of balances
@@ -59,14 +62,14 @@ def get_fee(xp: uint256[N_COINS], packed_fee_params: uint256) -> uint256:
 
 @external
 @view
-def get_price_scale(packed_rebalancing_params: uint256) -> uint256:
+def get_price_scale() -> uint256:
     state: PoolState = self.last_pool_state
     if state.ts == 0:
         return 0
 
     price_scale: uint256 = state.price_scale
     price_oracle: uint256 = state.price_oracle
-    rebalancing_params: uint256[3] = self._unpack_3(packed_rebalancing_params)
+    rebalancing_params: uint256[3] = self._unpack_3(staticcall IPool(POOL).packed_rebalancing_params())
 
     if state.ts < block.timestamp and price_scale > 0:
         alpha: uint256 = self._wad_exp(
@@ -84,24 +87,9 @@ def get_price_scale(packed_rebalancing_params: uint256) -> uint256:
             PRECISION,
         )
 
-    norm: uint256 = unsafe_div(price_oracle * PRECISION, price_scale)
-    if norm > PRECISION:
-        norm = unsafe_sub(norm, PRECISION)
-    else:
-        norm = unsafe_sub(PRECISION, norm)
-
-    adjustment_step: uint256 = min(
-        unsafe_div(norm, 5),
-        rebalancing_params[1],
-    )
-    if adjustment_step <= rebalancing_params[0]:
-        return price_scale
-
-    return unsafe_div(
-        price_scale * unsafe_sub(norm, adjustment_step) +
-        adjustment_step * price_oracle,
-        norm,
-    )
+    # Return the target price only. The pool applies the unified native
+    # step limiter when moving toward this target.
+    return price_oracle
 
 
 @external
