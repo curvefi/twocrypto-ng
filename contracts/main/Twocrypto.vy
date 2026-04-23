@@ -42,6 +42,9 @@ interface Views:
     def calc_token_amount(
         amounts: uint256[N_COINS], deposit: bool, swap: address
     ) -> uint256: view
+    def calc_force_tweak_price(
+        amounts: uint256[N_COINS], target_price_scale: uint256, swap: address
+    ) -> uint256[3]: view
     def get_dy(
         i: uint256, j: uint256, dx: uint256, swap: address
     ) -> uint256: view
@@ -1320,6 +1323,89 @@ def tweak_price(
                                         xcp_profit,
                                         D)
     return price_scale
+
+
+@external
+@nonreentrant
+def force_tweak_price(
+    amounts: uint256[N_COINS],
+) -> uint256:
+    """
+    @notice Caller-funded recentering toward the current oracle/policy target.
+    @dev The pool never sends tokens out or mints shares here. Caller donations
+         must preserve spot tightly and must not reduce virtual price.
+    """
+
+    assert self.D > 0  # dev: "empty pool"
+    assert not self._is_ramping()  # dev: "ramping"
+    assert amounts[0] + amounts[1] > 0  # dev: "zero amounts"
+
+    price_scale: uint256 = self.cached_price_scale
+    price_oracle: uint256 = self.cached_price_oracle
+
+    target_price_scale: uint256 = price_oracle
+    policy: Policy = self.POLICY
+    if policy != empty(Policy):
+        p_policy: uint256 = staticcall policy.get_price_scale()
+        if p_policy > 0:
+            target_price_scale = p_policy
+
+    assert target_price_scale != price_scale  # dev: "same price scale"
+
+    old_virtual_price: uint256 = self.virtual_price
+    old_preview: uint256[3] = staticcall VIEW.calc_force_tweak_price([0, 0], price_scale, self)
+    old_spot: uint256 = old_preview[2]
+
+    for i: uint256 in range(N_COINS):
+        if amounts[i] > 0:
+            self._transfer_in(i, amounts[i], msg.sender, False)
+
+    new_preview: uint256[3] = staticcall VIEW.calc_force_tweak_price([0, 0], target_price_scale, self)
+    new_D: uint256 = new_preview[0]
+    new_virtual_price: uint256 = new_preview[1]
+    assert new_virtual_price >= old_virtual_price  # dev: "vp decrease"
+
+    new_spot: uint256 = new_preview[2]
+    spot_deviation: uint256 = 0
+    if new_spot > old_spot:
+        spot_deviation = unsafe_sub(new_spot, old_spot)
+    else:
+        spot_deviation = unsafe_sub(old_spot, new_spot)
+    # 1e-8 relative spot tolerance = 0.0001 bps.
+    assert spot_deviation <= unsafe_div(unsafe_mul(old_spot, 10**10), PRECISION)  # dev: "spot tolerance"
+
+    self.D = new_D
+    self.virtual_price = new_virtual_price
+    self.cached_price_scale = target_price_scale
+    self.xcp_profit += unsafe_sub(new_virtual_price, old_virtual_price)
+    self.last_rebalance_ts = block.timestamp
+
+    if policy != empty(Policy):
+        extcall policy.update_pool_state(
+            self._xp(self.balances, target_price_scale),
+            target_price_scale,
+            price_oracle,
+            self.last_prices,
+            new_virtual_price,
+            self.xcp_profit,
+            new_D,
+        )
+
+    return target_price_scale
+
+
+@external
+@view
+def calc_force_tweak_price(
+    amounts: uint256[N_COINS],
+    target_price_scale: uint256,
+) -> uint256[2]:
+    """
+    @notice Preview post-force-tweak virtual price and spot for target price_scale.
+    @return uint256[2] [virtual_price, spot_price].
+    """
+    preview: uint256[3] = staticcall VIEW.calc_force_tweak_price(amounts, target_price_scale, self)
+    return [preview[1], preview[2]]
 
 
 @internal

@@ -44,6 +44,11 @@ interface Math:
         D: uint256,
         i: uint256,
     ) -> uint256[2]: view
+    def get_p(
+        _xp: uint256[N_COINS],
+        _D: uint256,
+        _A_gamma: uint256[2],
+    ) -> uint256: view
 
 interface Policy:
     def get_fee(xp: uint256[N_COINS]) -> uint256: view
@@ -144,6 +149,36 @@ def calc_fee_token_amount(
         return 0
 
     return (staticcall Curve(swap).calc_token_fee(amounts, xp, donation, deposit)) * d_token // FEE_PRECISION + 1
+
+
+@external
+@view
+def calc_force_tweak_price(
+    amounts: uint256[N_COINS], target_price_scale: uint256, swap: address
+) -> uint256[3]:
+    """
+    @notice Preview post-force-tweak virtual price and spot for target price_scale.
+    @return uint256[3] [D, virtual_price, spot_price].
+    """
+    math: Math = staticcall Curve(swap).MATH()
+    precisions: uint256[N_COINS] = staticcall Curve(swap).precisions()
+    xp: uint256[N_COINS] = empty(uint256[N_COINS])
+    for k: uint256 in range(N_COINS):
+        xp[k] = staticcall Curve(swap).balances(k) + amounts[k]
+
+    A: uint256 = staticcall Curve(swap).A()
+    gamma: uint256 = staticcall Curve(swap).gamma()
+
+    xp = [
+        xp[0] * precisions[0],
+        xp[1] * target_price_scale * precisions[1] // PRECISION,
+    ]
+    D: uint256 = staticcall math.newton_D(A, gamma, xp, 0)
+    return [
+        D,
+        PRECISION * self._xcp(D, target_price_scale) // staticcall Curve(swap).totalSupply(),
+        staticcall math.get_p(xp, D, [A, gamma]) * target_price_scale // PRECISION,
+    ]
 
 
 @internal
