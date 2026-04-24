@@ -37,7 +37,7 @@ jobs:
         run: uv python install 3.12.6
 
       - name: Install Requirements
-        run: uv sync --extra=dev
+        run: uv sync --group dev
 
       - name: Run tests in ${{ matrix.folder }}
-        run: uv run pytest ${{ matrix.folder }} -n auto
+        run: uv run --group dev pytest ${{ matrix.folder }} -n auto
