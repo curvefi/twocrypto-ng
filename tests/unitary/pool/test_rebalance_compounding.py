@@ -1,7 +1,46 @@
 import boa
 
-from tests.utils.constants import MAX_FEE, PRECISION, UNIX_DAY
+from tests.utils.constants import MAX_FEE, PRECISION, UNIX_DAY, VENOM_FLAG
 from tests.utils.god_mode import GodModePool
+
+POLICY_TARGET_NUM = 102
+POLICY_TARGET_DEN = 100
+
+TWO_PERCENT_POLICY_DEPLOYER = boa.loads_partial(
+    f"""
+# pragma version 0.4.3
+# pragma optimize gas
+
+N_COINS: constant(uint256) = 2
+last_price_scale: public(uint256)
+
+
+@external
+@view
+def get_fee(xp: uint256[N_COINS]) -> uint256:
+    return 0
+
+
+@external
+@view
+def get_price_scale() -> uint256:
+    return self.last_price_scale * {POLICY_TARGET_NUM} // {POLICY_TARGET_DEN}
+
+
+@external
+def update_pool_state(
+    xp: uint256[N_COINS],
+    price_scale: uint256,
+    price_oracle: uint256,
+    last_prices: uint256,
+    virtual_price: uint256,
+    xcp_profit: uint256,
+    D: uint256,
+):
+    self.last_price_scale = price_scale
+""",
+    compiler_args={"experimental_codegen": VENOM_FLAG},
+)
 
 INITIAL_LIQ = 100_000 * PRECISION
 WORK_SWAPS = 10
@@ -9,6 +48,21 @@ WORK_RATIO = 3
 REBALANCE_STEPS = 6
 REBALANCE_RATIO_NUM = 3
 REBALANCE_RATIO_DEN = 5
+
+
+def _deploy_two_percent_policy(pool, factory_admin):
+    policy = TWO_PERCENT_POLICY_DEPLOYER.deploy()
+    pool.set_policy_contract(policy, sender=factory_admin)
+    return policy
+
+
+def _exchange_and_read_rebalance_state(pool_instance):
+    pool_instance.exchange(
+        0,
+        pool_instance.balances(0) * REBALANCE_RATIO_NUM // REBALANCE_RATIO_DEN,
+        update_ema=False,
+    )
+    return pool_instance.price_scale(), pool_instance.donation_shares()
 
 
 def _set_probe_rebalancing_params(pool_instance, factory_admin):
@@ -202,6 +256,46 @@ def test_rebalance_count_matches_fresh_vs_synthetic_high_state(pool, factory_adm
         f"fresh_post={fresh_post}\n"
         f"synthetic_post={synthetic_post}"
     )
+
+
+def test_price_scale_rebalances_only_on_first_touch_in_block(pool, factory_admin):
+    with boa.env.anchor():
+        boa.env.enable_fast_mode()
+        pool_instance = GodModePool(pool)
+        policy = _deploy_two_percent_policy(pool, factory_admin)
+        pool_instance.add_liquidity_balanced(INITIAL_LIQ)
+        _set_probe_rebalancing_params(pool_instance, factory_admin)
+        pool_instance.donate_balanced(INITIAL_LIQ // 20)
+        boa.env.time_travel(seconds=pool_instance.donation_duration())
+        pool_instance.eval("self.donation_protection_expiry_ts = 0")
+        boa.env.time_travel(seconds=1)
+
+        price_scale_before = pool_instance.price_scale()
+        donation_shares_before = pool_instance.donation_shares()
+        assert policy.last_price_scale() == price_scale_before
+
+        (
+            price_scale_after_first_touch,
+            donation_shares_after_first_touch,
+        ) = _exchange_and_read_rebalance_state(pool_instance)
+        assert price_scale_after_first_touch != price_scale_before
+        assert donation_shares_after_first_touch < donation_shares_before
+
+        (
+            price_scale_after_same_block,
+            donation_shares_after_same_block,
+        ) = _exchange_and_read_rebalance_state(pool_instance)
+        assert price_scale_after_same_block == price_scale_after_first_touch
+        assert donation_shares_after_same_block == donation_shares_after_first_touch
+
+        boa.env.time_travel(seconds=1)
+        (
+            price_scale_after_next_block,
+            donation_shares_after_next_block,
+        ) = _exchange_and_read_rebalance_state(pool_instance)
+
+        assert price_scale_after_next_block != price_scale_after_same_block
+        assert donation_shares_after_next_block < donation_shares_after_same_block
 
 
 def test_admin_claimed_profit_offsets_threshold_vp_with_floor(pool):
