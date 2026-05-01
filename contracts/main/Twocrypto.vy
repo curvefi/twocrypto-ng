@@ -685,6 +685,16 @@ def add_liquidity(
         self.mint(self, MINIMUM_LIQUIDITY)
         d_token -= MINIMUM_LIQUIDITY
         self.mint(receiver, d_token)
+        self._update_policy_state(
+            xp,
+            price_scale,
+            self.cached_price_oracle,
+            self.last_prices,
+            self.virtual_price,
+            self.xcp_profit,
+            self.D,
+            True,
+        )
     assert d_token >= min_mint_amount, "slippage"
 
     # ---------------------------------------------- Log and claim admin fees.
@@ -747,6 +757,18 @@ def remove_liquidity(
         # _transfer_out updates self.balances here. Update to state occurs
         # before external calls:
         self._transfer_out(i, withdraw_amounts[i], receiver)
+
+    price_scale: uint256 = self.cached_price_scale
+    self._update_policy_state(
+        self._xp(self.balances, price_scale),
+        price_scale,
+        self.cached_price_oracle,
+        self.last_prices,
+        self.virtual_price,
+        self.xcp_profit,
+        self.D,
+        False,
+    )
 
     # We intentionally use the unadjusted `amount` here as the amount of lp
     # tokens burnt is `amount`, regardless of the rounding error.
@@ -1240,14 +1262,17 @@ def tweak_price(
                     self.donation_shares = new_total
                     self.totalSupply -= donation_shares_to_burn
                     self.last_donation_release_ts = block.timestamp - new_elapsed
-                if self.POLICY != empty(Policy):
-                    extcall self.POLICY.update_pool_state(xp,
-                                                    p_new,
-                                                    price_oracle,
-                                                    last_prices,
-                                                    new_virtual_price,
-                                                    xcp_profit,
-                                                    new_D)
+
+                self._update_policy_state(
+                    xp,
+                    p_new,
+                    price_oracle,
+                    last_prices,
+                    new_virtual_price,
+                    xcp_profit,
+                    new_D,
+                    True,
+                )
 
                 return p_new
 
@@ -1255,15 +1280,55 @@ def tweak_price(
     # with the virtual price and D we calculated before attempting a rebalance.
     self.D = D
     self.virtual_price = virtual_price
-    if self.POLICY != empty(Policy):
-        extcall self.POLICY.update_pool_state(_xp,
-                                        price_scale,
-                                        price_oracle,
-                                        last_prices,
-                                        virtual_price,
-                                        xcp_profit,
-                                        D)
+    self._update_policy_state(
+        _xp,
+        price_scale,
+        price_oracle,
+        last_prices,
+        virtual_price,
+        xcp_profit,
+        D,
+        True,
+    )
     return price_scale
+
+
+
+@internal
+def _update_policy_state(
+    xp: uint256[N_COINS],
+    price_scale: uint256,
+    price_oracle: uint256,
+    last_prices: uint256,
+    virtual_price: uint256,
+    xcp_profit: uint256,
+    D: uint256,
+    must_succeed: bool,
+):
+    policy: Policy = self.POLICY
+    if policy != empty(Policy):
+        data: Bytes[260] = concat(
+            method_id("update_pool_state(uint256[2],uint256,uint256,uint256,uint256,uint256,uint256)"),
+            abi_encode(
+                xp,
+                price_scale,
+                price_oracle,
+                last_prices,
+                virtual_price,
+                xcp_profit,
+                D,
+            ),
+        )
+        if must_succeed:
+            raw_call(policy.address, data, max_outsize=0, revert_on_failure=True)
+        else:
+            success: bool = raw_call(
+                policy.address,
+                data,
+                max_outsize=0,
+                gas=250_000,
+                revert_on_failure=False,
+            )
 
 
 @internal
@@ -2365,7 +2430,7 @@ def set_policy_contract(policy: Policy):
     self._set_policy(policy)
     if policy != empty(Policy) and self.D > 0:
         # we do not push state if pool is empty
-        extcall policy.update_pool_state(
+        self._update_policy_state(
             self._xp(self.balances, self.cached_price_scale),
             self.cached_price_scale,
             self.cached_price_oracle,
@@ -2373,6 +2438,7 @@ def set_policy_contract(policy: Policy):
             self.virtual_price,
             self.xcp_profit,
             self.D,
+            True,
         )
 
 

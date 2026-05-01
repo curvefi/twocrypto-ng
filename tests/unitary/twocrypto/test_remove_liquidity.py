@@ -1,9 +1,44 @@
 import boa
 import pytest
 
-from tests.utils.constants import N_COINS
+from tests.utils.constants import N_COINS, VENOM_FLAG
 from tests.utils.god_mode import GodModePool
 import numpy as np
+
+REVERTING_POLICY_DEPLOYER = boa.loads_partial(
+    """
+# pragma version 0.4.3
+# pragma optimize gas
+
+N_COINS: constant(uint256) = 2
+
+
+@external
+@view
+def get_fee(xp: uint256[N_COINS]) -> uint256:
+    return 0
+
+
+@external
+@view
+def get_price_scale() -> uint256:
+    return 0
+
+
+@external
+def update_pool_state(
+    xp: uint256[N_COINS],
+    price_scale: uint256,
+    price_oracle: uint256,
+    last_prices: uint256,
+    virtual_price: uint256,
+    xcp_profit: uint256,
+    D: uint256,
+):
+    raise "blocked"
+""",
+    compiler_args={"experimental_codegen": VENOM_FLAG},
+)
 
 PRECISION = 10**18
 INITIAL_LIQUIDITY_COIN0 = 1000 * PRECISION  # Amount of coin 0 for initial balanced liquidity
@@ -127,6 +162,42 @@ def test_remove_liquidity_all(pool, coins, bob, minimum_liquidity):
 
     expected_d = initial_d - (initial_d * lp_to_remove // initial_total_supply)
     assert pool.D() == expected_d
+
+
+def test_remove_liquidity_ignores_reverting_policy_update(pool, coins, factory_admin):
+    user_account = boa.env.eoa
+    policy = REVERTING_POLICY_DEPLOYER.deploy()
+    pool.set_policy_contract(policy, sender=factory_admin)
+    assert pool.POLICY() == policy.address
+
+    gm_pool = GodModePool(pool)
+    lp_minted = gm_pool.add_liquidity_balanced(amount=INITIAL_LIQUIDITY_COIN0)
+    assert lp_minted > 0
+
+    initial_total_supply = pool.totalSupply()
+    initial_pool_balances = [pool.balances(i) for i in range(N_COINS)]
+    initial_user_lp_balance = pool.balanceOf(user_account)
+    initial_user_coin_balances = [coins[i].balanceOf(user_account) for i in range(N_COINS)]
+
+    lp_to_remove = initial_user_lp_balance // 2
+    expected_withdraw_amounts = [
+        initial_pool_balances[i] * lp_to_remove // initial_total_supply for i in range(N_COINS)
+    ]
+
+    actual_withdrawn_amounts = pool.remove_liquidity(
+        lp_to_remove, [0] * N_COINS, sender=user_account
+    )
+
+    assert actual_withdrawn_amounts == expected_withdraw_amounts
+    assert pool.balanceOf(user_account) == initial_user_lp_balance - lp_to_remove
+    assert pool.totalSupply() == initial_total_supply - lp_to_remove
+
+    for i in range(N_COINS):
+        assert pool.balances(i) == initial_pool_balances[i] - expected_withdraw_amounts[i]
+        assert (
+            coins[i].balanceOf(user_account)
+            == initial_user_coin_balances[i] + expected_withdraw_amounts[i]
+        )
 
 
 def test_remove_liquidity_slippage(pool, coins, bob):
