@@ -39,6 +39,16 @@ interface Factory:
     def fee_receiver() -> address: view
 
 interface Views:
+    def lp_price(
+        price_oracle: uint256,
+        price_scale: uint256,
+        swap: address,
+    ) -> uint256: view
+    def price_oracle(
+        price_oracle: uint256,
+        price_scale: uint256,
+        swap: address,
+    ) -> uint256: view
     def calc_token_amount(
         amounts: uint256[N_COINS], deposit: bool, swap: address
     ) -> uint256: view
@@ -1846,43 +1856,6 @@ def burnFrom(_to: address, _value: uint256) -> bool:
 # ------------------------- AMM View Functions -------------------------------
 
 
-@internal
-@view
-def internal_price_oracle() -> uint256:
-    """
-    @notice Returns the oracle price of the coin at index `k` w.r.t the coin
-            at index 0.
-    @dev The oracle is an exponential moving average, with a periodicity
-         determined by `self.ma_time`. The aggregated prices are cached state
-         prices (dy/dx) calculated AFTER the latest trade.
-    @param k The index of the coin.
-    @return uint256 Price oracle value of kth coin.
-    """
-    price_oracle: uint256 = self.cached_price_oracle
-    price_scale: uint256 = self.cached_price_scale
-    last_prices_timestamp: uint256 = self.last_timestamp
-
-    if last_prices_timestamp < block.timestamp:  # <------------ Update moving
-        #                                                   average if needed.
-
-        last_prices: uint256 = self.last_prices
-        ma_time: uint256 = self._unpack_3(self.packed_rebalancing_params)[2]
-        alpha: uint256 = staticcall MATH.wad_exp(
-            -convert(
-                unsafe_sub(block.timestamp, last_prices_timestamp) * 10**18 // ma_time,
-                int256,
-            )
-        )
-
-        # ---- We cap state price that goes into the EMA with 2 x price_scale.
-        return (
-            min(max(last_prices, unsafe_div(price_scale, 2)), price_scale * 2) * (10**18 - alpha) +
-            price_oracle * alpha
-        ) // 10**18
-
-    return price_oracle
-
-
 @external
 @view
 def fee_receiver() -> address:
@@ -1958,7 +1931,11 @@ def lp_price() -> uint256:
             0th index
     @return uint256 LP price.
     """
-    return 2 * self.virtual_price * isqrt(self.internal_price_oracle() * 10**18) // 10**18
+    return staticcall VIEW.lp_price(
+        self.cached_price_oracle,
+        self.cached_price_scale,
+        self,
+    )
 
 
 @external
@@ -1987,7 +1964,11 @@ def price_oracle() -> uint256:
          prices (dy/dx) calculated AFTER the latest trade.
     @return uint256 Price oracle value of kth coin.
     """
-    return self.internal_price_oracle()
+    return staticcall VIEW.price_oracle(
+        self.cached_price_oracle,
+        self.cached_price_scale,
+        self,
+    )
 
 
 @external

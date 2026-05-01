@@ -27,10 +27,13 @@ interface Curve:
     def totalSupply() -> uint256: view
     def precisions() -> uint256[N_COINS]: view
     def packed_fee_params() -> uint256: view
+    def packed_rebalancing_params() -> uint256: view
+    def last_prices() -> uint256: view
     def last_timestamp() -> uint256: view
 
 
 interface Math:
+    def wad_exp(_power: int256) -> uint256: view
     def newton_D(
         ANN: uint256,
         gamma: uint256,
@@ -53,6 +56,40 @@ PRECISION: constant(uint256) = 10**18
 FEE_PRECISION: constant(uint256) = 10**10
 MIN_FEE: constant(uint256) = FEE_PRECISION * 1 // 10 // 10_000
 MINIMUM_LIQUIDITY: constant(uint256) = 10**4
+
+
+@external
+@view
+def lp_price(
+    price_oracle: uint256,
+    price_scale: uint256,
+    swap: address,
+) -> uint256:
+    virtual_price: uint256 = 10**18 * self._xcp(
+        staticcall Curve(swap).D(),
+        price_scale,
+    ) // staticcall Curve(swap).totalSupply()
+    return 2 * virtual_price * isqrt(
+        self._price_oracle(
+            price_oracle,
+            price_scale,
+            swap,
+        ) * 10**18
+    ) // 10**18
+
+
+@external
+@view
+def price_oracle(
+    price_oracle: uint256,
+    price_scale: uint256,
+    swap: address,
+) -> uint256:
+    return self._price_oracle(
+        price_oracle,
+        price_scale,
+        swap,
+    )
 
 
 @external
@@ -304,6 +341,32 @@ def _calc_dtoken_nofee(
 @pure
 def _xcp(D: uint256, price_scale: uint256) -> uint256:
     return D * PRECISION // N_COINS // isqrt(PRECISION * price_scale)
+
+
+@internal
+@view
+def _price_oracle(
+    price_oracle: uint256,
+    price_scale: uint256,
+    swap: address,
+) -> uint256:
+    last_prices_timestamp: uint256 = staticcall Curve(swap).last_timestamp()
+    if last_prices_timestamp < block.timestamp:
+        ma_time: uint256 = self._unpack_3(staticcall Curve(swap).packed_rebalancing_params())[2]
+        alpha: uint256 = staticcall (staticcall Curve(swap).MATH()).wad_exp(
+            -convert(
+                unsafe_sub(block.timestamp, last_prices_timestamp) * 10**18 // ma_time,
+                int256,
+            )
+        )
+
+        last_prices: uint256 = staticcall Curve(swap).last_prices()
+        return (
+            min(max(last_prices, unsafe_div(price_scale, 2)), price_scale * 2) * (10**18 - alpha) +
+            price_oracle * alpha
+        ) // 10**18
+
+    return price_oracle
 
 
 @internal
