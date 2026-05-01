@@ -252,6 +252,7 @@ name: public(immutable(String[64]))
 symbol: public(immutable(String[32]))
 decimals: public(constant(uint8)) = 18
 version: public(constant(String[8])) = "v2.2.0"
+MINIMUM_LIQUIDITY: constant(uint256) = 10**4
 
 balanceOf: public(HashMap[address, uint256])
 allowance: public(HashMap[address, HashMap[address, uint256]])
@@ -562,7 +563,7 @@ def add_liquidity(
     @param amounts Amounts of each coin to add.
     @param min_mint_amount Minimum amount of LP to mint.
     @param receiver Address to send the LP tokens to. Default is msg.sender
-    @param donation Whether the liquidity is a donation, if True receiver is ignored.
+    @param donation Whether the liquidity is an unrecoverable donation, if True receiver is ignored.
     @return uint256 Amount of LP tokens issued (to receiver or donation buffer).
     """
 
@@ -675,7 +676,8 @@ def add_liquidity(
 
     else:
 
-        # (re)instatiating an empty pool:
+        # instantiating an empty pool:
+        assert d_token > MINIMUM_LIQUIDITY, "min liquidity"
 
         self.D = D
         self.virtual_price = 10**18
@@ -683,6 +685,8 @@ def add_liquidity(
         self.xcp_profit_a = 10**18
         self.admin_claimed_profit = 0
 
+        self.mint(self, MINIMUM_LIQUIDITY)
+        d_token -= MINIMUM_LIQUIDITY
         self.mint(receiver, d_token)
     assert d_token >= min_mint_amount, "slippage"
 
@@ -693,7 +697,7 @@ def add_liquidity(
         receiver=receiver,
         token_amounts=amounts_received,
         fee=d_token_fee,
-        token_supply=token_supply+d_token,
+        token_supply=self.totalSupply,
         price_scale=price_scale
     )
 
@@ -727,35 +731,17 @@ def remove_liquidity(
     total_supply: uint256 = self.totalSupply
     self.burnFrom(msg.sender, amount)
 
-    # There are two cases for withdrawing tokens from the pool.
-    #   Case 1. Withdrawal does not empty the pool.
-    #           In this situation, D is adjusted proportional to the amount of
-    #           LP tokens burnt. ERC20 tokens transferred is proportional
-    #           to : (AMM balance * LP tokens in) / LP token total supply
-    #   Case 2. Withdrawal empties the pool.
-    #           In this situation, all tokens are withdrawn and the invariant
-    #           is reset.
-
     withdraw_amounts: uint256[N_COINS] = empty(uint256[N_COINS])
     D: uint256 = self.D # no ramping adjustment to preserve safety of balanced removal
 
-    if amount == total_supply:  # <----------------------------------- Case 2.
+    for i: uint256 in range(N_COINS):
+        # Withdraws slightly less -> favors LPs already
+        withdraw_amounts[i] = self.balances[i] * amount // total_supply
 
-        for i: uint256 in range(N_COINS):
-
-            withdraw_amounts[i] = self.balances[i]
-
-    else:  # <-------------------------------------------------------- Case 1.
-        for i: uint256 in range(N_COINS):
-            # TODO improve comments here
-            # Withdraws slightly less -> favors LPs already
-            withdraw_amounts[i] = self.balances[i] * amount // total_supply
-
-            assert withdraw_amounts[i] >= min_amounts[i], "slippage"
+        assert withdraw_amounts[i] >= min_amounts[i], "slippage"
 
     # Reduce D proportionally to the amount of tokens leaving. Since withdrawals
-    # are balanced, this is a simple subtraction. If amount == total_supply,
-    # D will be 0.
+    # are balanced, this is a simple subtraction.
     self.D = D - unsafe_div(D * amount, total_supply)
 
     # ---------------------------------- Transfers ---------------------------
@@ -768,9 +754,6 @@ def remove_liquidity(
     # We intentionally use the unadjusted `amount` here as the amount of lp
     # tokens burnt is `amount`, regardless of the rounding error.
     log RemoveLiquidity(provider=msg.sender, token_amounts=withdraw_amounts, token_supply=total_supply - amount)
-
-    # Take care of leftover donations (only if all LP left)
-    self._withdraw_leftover_donations()
 
     return withdraw_amounts
 
@@ -895,42 +878,7 @@ def _remove_liquidity_fixed_out(
             price_scale=price_scale
         )
 
-    # Take care of leftover donations (only if all LP left)
-    self._withdraw_leftover_donations()
-
     return dy
-
-
-@internal
-def _withdraw_leftover_donations():
-    """
-    @notice Withdraws leftover donations from the pool.
-    This is called when the pool has no other liquidity than donation shares,
-    and must be emptied.
-    @dev donations go to the factory fees receiver, if not set, to the admin.
-    """
-
-    if self.donation_shares != self.totalSupply:
-        return
-
-    # Pool has no other LP than donation shares, must be emptied
-    receiver: address = staticcall factory.fee_receiver()
-    if receiver == empty(address):
-        receiver = staticcall factory.admin()
-
-    # empty the pool
-    withdraw_amounts: uint256[N_COINS] = self.balances
-
-    for i: uint256 in range(N_COINS):
-        # updates self.balances here
-        self._transfer_out(i, withdraw_amounts[i], receiver)
-
-    # Update state
-    self.donation_shares = 0
-    self.totalSupply = 0
-    self.D = 0
-    self.donation_protection_expiry_ts = 0
-    log RemoveLiquidity(provider=receiver, token_amounts=withdraw_amounts, token_supply=0)
 
 
 # -------------------------- Packing functions -------------------------------

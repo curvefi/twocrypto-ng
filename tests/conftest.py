@@ -6,6 +6,7 @@ from tests.utils.constants import (
     FACTORY_DEPLOYER,
     GAUGE_DEPLOYER,
     MATH_DEPLOYER,
+    MINIMUM_LIQUIDITY,
     POLICY_DEPLOYER,
     POOL_DEPLOYER,
     VIEW_DEPLOYER,
@@ -238,6 +239,11 @@ def params():
         "ma_time": 866,  # # 600 seconds//math.log(2)
         "initial_prices": INITIAL_PRICES,
     }
+
+
+@fixture(scope="module")
+def minimum_liquidity():
+    return MINIMUM_LIQUIDITY
 
 
 @fixture(scope="module")

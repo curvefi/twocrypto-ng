@@ -13,7 +13,7 @@ from hypothesis.stateful import (
 )
 from hypothesis.strategies import integers, sampled_from
 
-from tests.utils.constants import ERC20_DEPLOYER, FACTORY_DEPLOYER, UNIX_DAY
+from tests.utils.constants import ERC20_DEPLOYER, FACTORY_DEPLOYER, MINIMUM_LIQUIDITY, UNIX_DAY
 from tests.utils.strategies import address, pool_from_preset
 
 
@@ -218,6 +218,7 @@ class StatefulBase(RuleBasedStateMachine):
 
         # store the amount of lp tokens before the deposit
         lp_tokens = self.pool.balanceOf(user)
+        old_total_supply = self.pool.totalSupply()
 
         try:
             self.pool.add_liquidity(amounts, 0, user, donate, sender=user)
@@ -236,6 +237,8 @@ class StatefulBase(RuleBasedStateMachine):
         lp_tokens = self.pool.balanceOf(user) - lp_tokens
         # increase the total supply by the amount of lp tokens
         self.total_supply += lp_tokens
+        if old_total_supply == 0:
+            self.total_supply += MINIMUM_LIQUIDITY
 
         # pool balances should increase by the amounts
         self.balances = [x + y for x, y in zip(self.balances, amounts)]
@@ -375,10 +378,8 @@ class StatefulBase(RuleBasedStateMachine):
         if self.pool.balanceOf(user) <= 1e0:
             self.depositors.remove(user)
 
-        # virtual price resets if everything is withdrawn
-        if self.total_supply == 0:
-            event("full liquidity removal")
-            self.virtual_price = 1e18
+        if self.total_supply == MINIMUM_LIQUIDITY:
+            event("all external liquidity removed")
 
     def remove_liquidity_one_coin(self, percentage: float, coin_idx: int, user: str):
         """Wrapper around the `remove_liquidity_one_coin` method of the pool.
@@ -528,14 +529,14 @@ class StatefulBase(RuleBasedStateMachine):
         # anchor the environment to make sure that the balances are
         # restored after the invariant is checked
         with boa.env.anchor():
-            # remove all liquidity from all depositors
-            self.pool.inject.donations_as_user()
-            for d in self.depositors | {self.donation_lp}:
+            # remove all liquidity from all real depositors
+            for d in self.depositors:
                 # store the current balances of the pool
                 prev_balances = [c.balanceOf(self.pool) for c in self.coins]
                 # withdraw all liquidity from the depositor
                 tokens = self.pool.balanceOf(d)
                 self.pool.remove_liquidity(tokens, [0] * 2, sender=d)
+                assert self.pool.balanceOf(d) == 0, "depositor still has LP after withdrawal"
                 # assert current balances are less as the previous ones
                 for c, b in zip(self.coins, prev_balances):
                     # check that the balance of the pool is less than before
@@ -549,19 +550,9 @@ class StatefulBase(RuleBasedStateMachine):
                         assert c.balanceOf(self.pool) < b, (
                             "one withdrawal didn't reduce the liquidity" "of the pool"
                         )
-            for c in self.coins:
-                # there should not be any liquidity left in the pool
-                assert (
-                    # when imbalanced withdrawal occurs the pool protects
-                    # itself by retaining some liquidity in the pool.
-                    # In such a scenario a pool can have some liquidity left
-                    # even after all withdrawals.
-                    imbalanced_operations_allowed
-                    or
-                    # 1e7 is an arbitrary number that should be small enough
-                    # not to worry about the pool actually not being empty.
-                    c.balanceOf(self.pool) <= 1e7
-                ), "pool still has signficant liquidity after all withdrawals"
+
+            assert self.pool.balanceOf(self.pool) == MINIMUM_LIQUIDITY
+            assert self.pool.totalSupply() == MINIMUM_LIQUIDITY + self.pool.donation_shares()
 
     @invariant()
     def balances(self):  # noqa: F811

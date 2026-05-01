@@ -72,7 +72,7 @@ def test_remove_liquidity_partial(pool, coins, bob):
     assert pool.D() == expected_d
 
 
-def test_remove_liquidity_all(pool, coins, bob):
+def test_remove_liquidity_all(pool, coins, bob, minimum_liquidity):
     user_account = boa.env.eoa
     gm_pool = GodModePool(pool)
 
@@ -82,16 +82,17 @@ def test_remove_liquidity_all(pool, coins, bob):
     initial_lp_balance_user = pool.balanceOf(user_account)
     initial_total_supply = pool.totalSupply()
     initial_pool_balances = [pool.balances(i) for i in range(N_COINS)]
+    initial_d = pool.D()
     user_coin_balances_before_remove = [coins[i].balanceOf(user_account) for i in range(N_COINS)]
 
-    assert (
-        initial_lp_balance_user == initial_total_supply
-    )  # User (via GodMode) provided all liquidity
+    assert initial_lp_balance_user == initial_total_supply - minimum_liquidity
 
     lp_to_remove = initial_lp_balance_user
     min_amounts_to_receive = [0] * N_COINS
 
-    expected_withdraw_amounts = initial_pool_balances
+    expected_withdraw_amounts = [
+        initial_pool_balances[i] * lp_to_remove // initial_total_supply for i in range(N_COINS)
+    ]
 
     actual_withdrawn_amounts = pool.remove_liquidity(
         lp_to_remove, min_amounts_to_receive, sender=user_account
@@ -110,21 +111,22 @@ def test_remove_liquidity_all(pool, coins, bob):
     assert remove_liquidity_event is not None, "RemoveLiquidity event not found"
 
     assert remove_liquidity_event.provider == user_account
-    assert remove_liquidity_event.token_supply == 0
+    assert remove_liquidity_event.token_supply == minimum_liquidity
     for i in range(N_COINS):
         assert remove_liquidity_event.token_amounts[i] == expected_withdraw_amounts[i]
 
     assert pool.balanceOf(user_account) == 0
-    assert pool.totalSupply() == 0
+    assert pool.totalSupply() == minimum_liquidity
     final_pool_balances = [pool.balances(i) for i in range(N_COINS)]
     for i in range(N_COINS):
-        assert final_pool_balances[i] == 0
+        assert final_pool_balances[i] == initial_pool_balances[i] - expected_withdraw_amounts[i]
         assert (
             coins[i].balanceOf(user_account)
             == user_coin_balances_before_remove[i] + expected_withdraw_amounts[i]
         )
 
-    assert pool.D() == 0
+    expected_d = initial_d - (initial_d * lp_to_remove // initial_total_supply)
+    assert pool.D() == expected_d
 
 
 def test_remove_liquidity_slippage(pool, coins, bob):
@@ -273,6 +275,7 @@ def test_remove_liquidity_to_different_receiver(pool, coins, bob):
 
 
 @pytest.mark.parametrize("donation_present", [False, True])
+@pytest.mark.xfail(reason="pool reuse reset is replaced by permanently locked minimum liquidity")
 def test_pool_reinitialization_after_full_user_withdrawal(pool, coins, bob, donation_present):
     user_account = boa.env.eoa
     second_provider_account = bob

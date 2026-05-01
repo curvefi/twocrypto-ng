@@ -26,7 +26,7 @@ def charlie():
     return boa.env.generate_address()
 
 
-def test_add_liquidity_empty_pool(pool, user_account):
+def test_add_liquidity_empty_pool(pool, user_account, minimum_liquidity):
     gm_pool = GodModePool(pool)
     amounts = gm_pool.compute_balanced_amounts(INITIAL_LIQUIDITY)
 
@@ -35,7 +35,8 @@ def test_add_liquidity_empty_pool(pool, user_account):
 
     assert minted_lp > 0
     assert pool.balanceOf(user_account) == minted_lp
-    assert pool.totalSupply() == minted_lp
+    assert pool.balanceOf(pool.address) == minimum_liquidity
+    assert pool.totalSupply() == minted_lp + minimum_liquidity
 
     for i in range(N_COINS):
         assert pool.balances(i) == amounts[i]
@@ -159,7 +160,7 @@ def test_add_liquidity_fee_and_donation_protection(pool, user_account, bob, char
     assert fee_rate4 < fee_rate3
 
 
-def test_add_liquidity_donation(pool, user_account, bob):
+def test_add_liquidity_donation(pool, user_account, bob, minimum_liquidity):
     gm_pool = GodModePool(pool)
 
     # bob adds initial liquidity
@@ -187,7 +188,9 @@ def test_add_liquidity_donation(pool, user_account, bob):
     assert pool.totalSupply() == initial_total_supply + minted_lp
     assert pool.donation_shares() == initial_donation_shares + minted_lp
     assert pool.balanceOf(user_account) == 0  # No LP tokens for donor
-    assert pool.balanceOf(bob) == initial_total_supply  # Bob's balance is unchanged
+    assert (
+        pool.balanceOf(bob) == initial_total_supply - minimum_liquidity
+    )  # Bob's balance is unchanged
 
 
 # def test_add_liquidity_ape_tax(pool, user_account, bob):

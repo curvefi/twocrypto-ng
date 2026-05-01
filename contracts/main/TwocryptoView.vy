@@ -52,6 +52,7 @@ N_COINS: constant(uint256) = 2
 PRECISION: constant(uint256) = 10**18
 FEE_PRECISION: constant(uint256) = 10**10
 MIN_FEE: constant(uint256) = FEE_PRECISION * 1 // 10 // 10_000
+MINIMUM_LIQUIDITY: constant(uint256) = 10**4
 
 
 @external
@@ -110,7 +111,9 @@ def calc_token_amount(
 
     d_token, amountsp, xp = self._calc_dtoken_nofee(amounts, deposit, swap)
     if deposit and staticcall Curve(swap).D() == 0:
-        return d_token
+        if d_token <= MINIMUM_LIQUIDITY:
+            return 0
+        return d_token - MINIMUM_LIQUIDITY
     d_token -= (
         staticcall Curve(swap).calc_token_fee(amounts, xp, donation, deposit) * d_token // FEE_PRECISION + 1
     )
