@@ -56,6 +56,14 @@ def test_bootstrap_pool_reverts_first_add_before_initialize(
         _premint_and_add(pool, coins, alice)
 
 
+def test_initialize_reverts_after_liquidity(pool, coins, alice):
+    minted = _premint_and_add(pool, coins, alice)
+    assert minted > 0
+
+    with boa.reverts(dev='"pool does not need initialization"'):
+        pool.initialize(0, 0, ZERO_ADDRESS, [], sender=alice)
+
+
 def test_deployer_can_initialize_and_seed_allowlist_with_policy(
     factory, factory_admin, coins, params, deployer, views_contract, math_contract, alice, bob
 ):
@@ -105,25 +113,23 @@ def test_deployer_can_initialize_and_seed_allowlist_with_policy(
         pool.initialize(FEE_PRECISION // 4, 123, policy.address, [alice], sender=deployer)
 
 
-def test_non_deployer_cannot_initialize_during_window(
+def test_non_deployer_or_admin_cannot_initialize(
     factory, factory_admin, coins, params, deployer, views_contract, math_contract, bob
 ):
     pool = _deploy_bootstrap_pool(
         factory, factory_admin, coins, params, deployer, views_contract, math_contract
     )
 
-    with boa.reverts(dev='"only deployer during initialization window"'):
+    with boa.reverts(dev='"only deployer or admin"'):
         pool.initialize(0, 0, ZERO_ADDRESS, [], sender=bob)
 
 
-def test_admin_can_initialize_after_window_and_leave_whitelist_disabled(
+def test_admin_can_initialize_and_leave_whitelist_disabled(
     factory, factory_admin, coins, params, deployer, views_contract, math_contract, bob
 ):
     pool = _deploy_bootstrap_pool(
         factory, factory_admin, coins, params, deployer, views_contract, math_contract
     )
-
-    boa.env.time_travel(seconds=4 * 3600 + 1)
 
     pool.initialize(
         FEE_PRECISION // 3,

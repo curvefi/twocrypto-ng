@@ -264,7 +264,6 @@ lp_allowlist: public(HashMap[address, bool])  # lp_allowlist(empty(address)) is 
 
 # Storage for pool initialization (requires magic_gamma at pool creation)
 deploy_eoa: address
-deploy_time: uint256
 
 # ----------------------- Contract -------------------------------------------
 
@@ -307,7 +306,6 @@ def __init__(
     if gamma_A[0] == 11111111111:
         # magic value that enables pool initialization by deployer (set whitelist, admin_fee, lpf)
         self.deploy_eoa = tx.origin
-        self.deploy_time = block.timestamp
 
     assert gamma_A[0] > MIN_GAMMA-1, "gamma<MIN"
     assert gamma_A[0] < MAX_GAMMA+1, "gamma>MAX"
@@ -599,7 +597,7 @@ def add_liquidity(
     # -------------------- Empty pool case
     if self.D == 0:
         assert not donation  # dev: "donation not allowed on empty pool"
-        assert self.deploy_time == 0, "!init" # also check if pool needs to be initialized
+        assert self.deploy_eoa == empty(address), "!init" # also check if pool needs to be initialized
         self.future_A_gamma_time = self.last_timestamp # Finalize ramping (makes _is_ramping return False)
 
     # -------------------- Calculate LP tokens to mint -----------------------
@@ -2314,15 +2312,12 @@ def initialize(
             enables the whitelist; `empty(address)` entries are ignored.
     """
 
-    # Access control: only deployer during the first 4 hours after deployment, then only admin.
-    deploy_time: uint256 = self.deploy_time
-    assert deploy_time != 0  # dev: "pool does not need initialization"
+    # Access control: deployer or admin, only before liquidity is added.
+    deploy_eoa: address = self.deploy_eoa
+    assert deploy_eoa != empty(address)  # dev: "pool does not need initialization"
     assert self.D == 0  # dev: "pool already has liquidity"
 
-    if block.timestamp <= deploy_time + 4 * 3600: # within the first 4h after pool creation
-        assert msg.sender == self.deploy_eoa  # dev: "only deployer during initialization window"
-    else:
-        self._check_admin()
+    assert msg.sender == deploy_eoa or msg.sender == staticcall factory.admin()  # dev: "only deployer or admin"
 
     # Set fee params
     self._set_fee_parameters(lp_profit_fraction, admin_fee)
@@ -2335,8 +2330,7 @@ def initialize(
     empty_remove: DynArray[address, 16] = empty(DynArray[address, 16])
     self._set_allowlist(allowlist_add, empty_remove)
 
-    # Reset deployment variables to deny further initialization
-    self.deploy_time = 0
+    # Reset deployment variable to deny further initialization
     self.deploy_eoa = empty(address)
 
 
