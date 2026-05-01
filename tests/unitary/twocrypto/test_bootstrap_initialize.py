@@ -10,6 +10,10 @@ INITIAL_LIQUIDITY = 1000 * PRECISION
 ZERO_ADDRESS = boa.eval("empty(address)")
 
 
+def _initial_price(params):
+    return params["initial_prices"][1]
+
+
 def _deploy_bootstrap_pool(
     factory, factory_admin, coins, params, deployer, views_contract, math_contract
 ):
@@ -56,12 +60,12 @@ def test_bootstrap_pool_reverts_first_add_before_initialize(
         _premint_and_add(pool, coins, alice)
 
 
-def test_initialize_reverts_after_liquidity(pool, coins, alice):
+def test_initialize_reverts_after_liquidity(pool, coins, params, alice):
     minted = _premint_and_add(pool, coins, alice)
     assert minted > 0
 
     with boa.reverts(dev='"pool does not need initialization"'):
-        pool.initialize(0, 0, ZERO_ADDRESS, [], sender=alice)
+        pool.initialize(0, 0, ZERO_ADDRESS, _initial_price(params), [], sender=alice)
 
 
 def test_deployer_can_initialize_and_seed_allowlist_with_policy(
@@ -77,6 +81,7 @@ def test_deployer_can_initialize_and_seed_allowlist_with_policy(
         FEE_PRECISION // 4,
         123,
         policy.address,
+        _initial_price(params),
         [alice],
         sender=deployer,
     )
@@ -110,7 +115,44 @@ def test_deployer_can_initialize_and_seed_allowlist_with_policy(
     assert policy.get_price_scale() > 0
 
     with boa.reverts(dev='"pool does not need initialization"'):
-        pool.initialize(FEE_PRECISION // 4, 123, policy.address, [alice], sender=deployer)
+        pool.initialize(
+            FEE_PRECISION // 4,
+            123,
+            policy.address,
+            _initial_price(params),
+            [alice],
+            sender=deployer,
+        )
+
+
+def test_initialize_refreshes_price_before_first_liquidity(
+    factory, factory_admin, coins, params, deployer, views_contract, math_contract, alice
+):
+    pool = _deploy_bootstrap_pool(
+        factory, factory_admin, coins, params, deployer, views_contract, math_contract
+    )
+    stale_price = _initial_price(params)
+    initialized_price = stale_price * 2
+
+    assert pool.price_scale() == stale_price
+    assert pool.price_oracle() == stale_price
+    assert pool.last_prices() == stale_price
+
+    pool.initialize(
+        FEE_PRECISION // 4,
+        123,
+        ZERO_ADDRESS,
+        initialized_price,
+        [alice],
+        sender=deployer,
+    )
+
+    assert pool.price_scale() == initialized_price
+    assert pool.price_oracle() == initialized_price
+    assert pool.last_prices() == initialized_price
+
+    minted = _premint_and_add(pool, coins, alice)
+    assert minted > 0
 
 
 def test_non_deployer_or_admin_cannot_initialize(
@@ -121,7 +163,7 @@ def test_non_deployer_or_admin_cannot_initialize(
     )
 
     with boa.reverts(dev='"only deployer or admin"'):
-        pool.initialize(0, 0, ZERO_ADDRESS, [], sender=bob)
+        pool.initialize(0, 0, ZERO_ADDRESS, _initial_price(params), [], sender=bob)
 
 
 def test_admin_can_initialize_and_leave_whitelist_disabled(
@@ -135,6 +177,7 @@ def test_admin_can_initialize_and_leave_whitelist_disabled(
         FEE_PRECISION // 3,
         321,
         ZERO_ADDRESS,
+        _initial_price(params),
         [],
         sender=factory_admin,
     )
@@ -163,6 +206,7 @@ def test_initialize_zero_address_allowlist_keeps_whitelist_disabled(
         FEE_PRECISION // 3,
         321,
         ZERO_ADDRESS,
+        _initial_price(params),
         [ZERO_ADDRESS],
         sender=deployer,
     )

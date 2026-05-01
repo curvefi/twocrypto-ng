@@ -2066,6 +2066,7 @@ def fee_calc(xp: uint256[N_COINS]) -> uint256:  # <----- For by view contract.
 
 
 @external
+@nonreentrant
 def ramp_A_gamma(
     future_A: uint256, future_gamma: uint256, future_time: uint256
 ):
@@ -2116,6 +2117,7 @@ def ramp_A_gamma(
 
 
 @external
+@nonreentrant
 def stop_ramp_A_gamma():
     """
     @notice Stop Ramping A and gamma parameters immediately.
@@ -2218,6 +2220,7 @@ def apply_new_parameters(
 
 
 @external
+@nonreentrant
 def set_donation_parameters(
     duration: uint256,
     protection_period: uint256,
@@ -2295,10 +2298,12 @@ def _set_allowlist(add: DynArray[address, 16], remove: DynArray[address, 16]):
 
 
 @external
+@nonreentrant
 def initialize(
     lp_profit_fraction: uint256,
     admin_fee: uint256,
     policy: Policy,
+    initial_price: uint256,
     allowlist_add: DynArray[address, 16],
 ):
     """
@@ -2306,6 +2311,7 @@ def initialize(
     @param lp_profit_fraction The LP/DAO share of profits, with 10**10 precision.
     @param admin_fee The DAO share of the LP/DAO bucket, with 10**10 precision.
     @param policy Optional policy contract to attach.
+    @param initial_price Price scale and oracle seed to use before first liquidity.
     @param allowlist_add Initial LP allowlist entries. Any non-empty address
             enables the whitelist; `empty(address)` entries are ignored.
     """
@@ -2316,11 +2322,15 @@ def initialize(
     assert self.D == 0  # dev: "pool already has liquidity"
 
     assert msg.sender == deploy_eoa or msg.sender == staticcall factory.admin()  # dev: "only deployer or admin"
+    assert initial_price > 10**6 and initial_price < 10**30, "initial price out of bound"
 
     # Set fee params
     self._set_fee_parameters(lp_profit_fraction, admin_fee)
     # Set policy
     self._set_policy(policy)
+    self.cached_price_scale = initial_price
+    self.cached_price_oracle = initial_price
+    self.last_prices = initial_price
 
     # Start with the allowlist disabled; the helper enables it if at least one
     # non-empty address is provided in `allowlist_add`.
@@ -2333,6 +2343,7 @@ def initialize(
 
 
 @external
+@nonreentrant
 def set_fee_parameters(lp_profit_fraction: uint256, admin_fee: uint256):
     """
     @notice Set LP/DAO-vs-rebalance split and DAO-vs-LP split parameters.
@@ -2344,6 +2355,7 @@ def set_fee_parameters(lp_profit_fraction: uint256, admin_fee: uint256):
 
 
 @external
+@nonreentrant
 def set_policy_contract(policy: Policy):
     """
     @notice Set the external policy contract.
@@ -2365,6 +2377,7 @@ def set_policy_contract(policy: Policy):
 
 
 @external
+@nonreentrant
 def change_allowlist(add: DynArray[address, 16], remove: DynArray[address, 16]):
     """
     @notice Batch-update the LP allowlist.
