@@ -106,7 +106,7 @@ def test_deployer_can_initialize_and_seed_allowlist_with_policy(
 
     minted = _premint_and_add(pool, coins, alice)
     assert minted > 0
-    assert policy.get_price_scale() == 0
+    assert policy.get_price_scale() == _initial_price(params)
 
     gm_pool = GodModePool(pool)
     dy = gm_pool.exchange(0, 10**18)

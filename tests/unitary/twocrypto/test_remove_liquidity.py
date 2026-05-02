@@ -12,6 +12,13 @@ REVERTING_POLICY_DEPLOYER = boa.loads_partial(
 
 N_COINS: constant(uint256) = 2
 
+blocked: public(bool)
+
+
+@external
+def set_blocked(_blocked: bool):
+    self.blocked = _blocked
+
 
 @external
 @view
@@ -35,7 +42,8 @@ def update_pool_state(
     xcp_profit: uint256,
     D: uint256,
 ):
-    raise "blocked"
+    if self.blocked:
+        raise "blocked"
 """,
     compiler_args={"experimental_codegen": VENOM_FLAG},
 )
@@ -173,6 +181,9 @@ def test_remove_liquidity_ignores_reverting_policy_update(pool, coins, factory_a
     gm_pool = GodModePool(pool)
     lp_minted = gm_pool.add_liquidity_balanced(amount=INITIAL_LIQUIDITY_COIN0)
     assert lp_minted > 0
+    policy.set_blocked(True)
+    with boa.reverts("blocked"):
+        policy.update_pool_state([0, 0], 0, 0, 0, 0, 0, 0, sender=pool.address)
 
     initial_total_supply = pool.totalSupply()
     initial_pool_balances = [pool.balances(i) for i in range(N_COINS)]
