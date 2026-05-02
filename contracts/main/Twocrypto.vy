@@ -1051,6 +1051,15 @@ def _exchange(
     assert dy >= min_dy, "slippage"
     y -= dy
 
+    admin_fee_amount: uint256 = unsafe_div(
+        fee * self.lp_profit_fraction * self.admin_fee,
+        FEE_PRECISION * FEE_PRECISION
+    )
+    if admin_fee_amount > 0:
+        self.admin_balances[j] += admin_fee_amount
+        self.balances[j] -= admin_fee_amount
+        y -= admin_fee_amount
+
     y *= PRECISIONS[j]
     if j > 0:
         y = unsafe_div(y * price_scale, PRECISION)
