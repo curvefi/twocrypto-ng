@@ -701,7 +701,7 @@ def add_liquidity(
     else:
 
         # instantiating an empty pool:
-        assert d_token > MINIMUM_LIQUIDITY, "min liquidity"
+        assert d_token > MINIMUM_LIQUIDITY # dev: "initial liquidity too low"
 
         self.D = D
         self.virtual_price = 10**18
@@ -1302,6 +1302,8 @@ def tweak_price(
                     self.totalSupply -= donation_shares_to_burn
                     self.last_donation_release_ts = block.timestamp - new_elapsed
 
+                self._assert_balance(xp)
+
                 self._update_policy_state(
                     xp,
                     p_new,
@@ -1319,6 +1321,8 @@ def tweak_price(
     # with the virtual price and D we calculated before attempting a rebalance.
     self.D = D
     self.virtual_price = virtual_price
+    self._assert_balance(_xp)
+
     self._update_policy_state(
         _xp,
         price_scale,
@@ -1476,6 +1480,16 @@ def _xp(
         balances[0] * PRECISIONS[0],
         unsafe_div(balances[1] * PRECISIONS[1] * price_scale, PRECISION)
     ]
+
+
+@internal
+@pure
+def _assert_balance(xp: uint256[N_COINS]):
+    assert (
+        xp[0] > 0 and
+        xp[1] > 0 and
+        unsafe_div(max(xp[0], xp[1]), min(xp[0], xp[1])) < 10_000
+    ), "!balance"
 
 
 @external

@@ -74,11 +74,11 @@ def newton_D(_amp: uint256,
     """
     # gamma and K0_prev are ignored
     # _amp is already multiplied by a A_MULTIPLIER and N_COINS
-    assert _xp[0] > 0 and _xp[1] > 0, "!balance"
-    if _xp[0] > _xp[1]:
-        assert unsafe_div(_xp[0], _xp[1]) < 10_000, "!balance"
-    else:
-        assert unsafe_div(_xp[1], _xp[0]) < 10_000, "!balance"
+    assert (
+        _xp[0] > 0 and
+        _xp[1] > 0 and
+        unsafe_div(max(_xp[0], _xp[1]), min(_xp[0], _xp[1])) < 10_000
+    ), "!balance"
 
     S: uint256 = 0
     for x: uint256 in _xp:
