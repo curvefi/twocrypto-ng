@@ -1730,7 +1730,7 @@ def _calc_withdraw_fixed_out(
     # We compute the position on the y axis after a withdrawal of dD with the constraint
     # that xp_new[i] has been reduced by amountsp[i]. This is the new position on the curve
     # after the withdrawal without applying fees.
-    y: uint256 = (staticcall MATH.get_y(A_gamma[0], A_gamma[1], xp_new, D - dD, j))[0]
+    y: uint256 = (staticcall MATH.get_y(A_gamma[0], A_gamma[1], xp_new, D - dD, j))[0] + 1
     amountsp[j] = xp[j] - y
     xp_new[j] = y
 
