@@ -213,6 +213,8 @@ donation_protection_lp_threshold: public(uint256)
 donation_protection_extension_remainder: uint256
 
 balances: public(uint256[N_COINS])
+admin_balances: public(uint256[N_COINS])
+
 D: public(uint256)
 xcp_profit: public(uint256)
 xcp_profit_a: public(uint256)  # <--- Full profit at last claim of admin fees.
@@ -388,7 +390,7 @@ def _transfer_in(
         # accounts for coin balances of the contract) is atleast dx.
         # If we checked for received_amounts == dx, an extra transfer without a
         # call to exchange_received will break the method.
-        dx: uint256 = coin_balance - self.balances[_coin_idx]
+        dx: uint256 = coin_balance - self.balances[_coin_idx] - self.admin_balances[_coin_idx]
         assert dx >= _dx, "!coins"
 
         # Adjust balances
@@ -638,6 +640,26 @@ def add_liquidity(
             self._calc_token_fee(amounts_received, xp, donation, True) * d_token // FEE_PRECISION + 1
         ) # for donations - we only take NOISE_FEE (check _calc_token_fee)
         d_token -= d_token_fee
+
+        if not donation:
+            admin_d_token_fee: uint256 = unsafe_div(
+                d_token_fee * self.lp_profit_fraction * self.admin_fee,
+                FEE_PRECISION * FEE_PRECISION
+            )
+            if admin_d_token_fee > 0:
+                # Convert the admin's share of the LP haircut into a pro-rata
+                # token balance using the no-fee supply basis.
+                fee_supply: uint256 = token_supply + d_token + d_token_fee
+                admin_amount: uint256 = 0
+                for i: uint256 in range(N_COINS):
+                    admin_amount = unsafe_div(balances[i] * admin_d_token_fee, fee_supply)
+                    if admin_amount > 0:
+                        self.admin_balances[i] += admin_amount
+                        self.balances[i] -= admin_amount
+                        balances[i] -= admin_amount
+
+                xp = self._xp(balances, price_scale)
+                D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
 
         if donation:
             assert receiver == empty(address), "nonzero receiver"
