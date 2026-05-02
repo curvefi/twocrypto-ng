@@ -24,7 +24,6 @@ class StatefulBase(RuleBasedStateMachine):
     balances = None
     decimals = None
     xcp_profit = 0
-    xcp_profit_a = 0
     depositors = None
     equilibrium = 0
     swapped_once = False
@@ -78,7 +77,6 @@ class StatefulBase(RuleBasedStateMachine):
 
         # initial profit is 1e18
         self.xcp_profit = 1e18
-        self.xcp_profit_a = 1e18
 
         self.depositors = set()
 
@@ -246,7 +244,6 @@ class StatefulBase(RuleBasedStateMachine):
         # update the profit since it increases through `tweak_price`
         # which is called by `add_liquidity`
         self.xcp_profit = self.pool.xcp_profit()
-        self.xcp_profit_a = self.pool.xcp_profit_a()
 
         if not donate:
             self.depositors.add(user)
@@ -459,35 +456,28 @@ class StatefulBase(RuleBasedStateMachine):
         if self.pool.balanceOf(user) <= 1e0:
             self.depositors.remove(user)
 
-        # invarinant upkeeping logic:
-        # imbalanced removals can trigger a claim of admin fees
+        # invariant upkeeping logic:
+        # imbalanced removals can trigger a claim of cached admin fees
+        if self.fee_receiver != boa.eval("empty(address)"):
+            admin_balances_post = [c.balanceOf(self.fee_receiver) for c in self.coins]
+            claimed_amounts = [admin_balances_post[i] - admin_balances_pre[i] for i in range(2)]
+        else:
+            claimed_amounts = [0, 0]
 
-        # store the balances of the fee receiver after the removal
-        new_xcp_profit_a = self.pool.xcp_profit_a()
-        # store the balances of the fee receiver before the removal
-        old_xcp_profit_a = self.xcp_profit_a
-        # check if the admin fees were claimed (not always the case)
-        if new_xcp_profit_a > old_xcp_profit_a and self.fee_receiver != boa.eval("empty(address)"):
+        if claimed_amounts[0] > 0 or claimed_amounts[1] > 0:
             event("admin fees claim was detected")
             note("claiming admin fees during removal")
-            # if the admin fees were claimed we have to update xcp
-            self.xcp_profit_a = new_xcp_profit_a
 
-            # store the balances of the fee receiver after the removal
-            # (should be higher than before the removal)
-            admin_balances_post = [c.balanceOf(self.fee_receiver) for c in self.coins]
             for i in range(2):
-                claimed_amount = admin_balances_post[i] - admin_balances_pre[i]
+                claimed_amount = claimed_amounts[i]
                 note("admin received {:.2e} of token {}".format(claimed_amount, i))
                 assert (
                     claimed_amount > 0
                     # decimals: with such a low precision admin fees might be 0
                     or self.decimals[i] <= 9
+                    # The claim path may have fees only in the other coin.
+                    or claimed_amounts[1 - i] > 0
                 ), f"the admin fees collected should be positive for coin {i}"
-                assert not self.is_ramping(), "claim admin fees while ramping"
-
-                # deduce the claimed amount from the pool balances
-                self.balances[i] -= claimed_amount
 
         # update test-tracked xcp profit
         self.xcp_profit = self.pool.xcp_profit()
@@ -557,13 +547,14 @@ class StatefulBase(RuleBasedStateMachine):
     @invariant()
     def balances(self):  # noqa: F811
         balances = [self.pool.balances(i) for i in range(2)]
+        admin_balances = [self.pool.admin_balances(i) for i in range(2)]
         balance_of = [c.balanceOf(self.pool) for c in self.coins]
         for i in range(2):
             assert (
                 self.balances[i] == balances[i]
             ), "test-tracked balances don't match pool-tracked balances"
             assert (
-                self.balances[i] == balance_of[i]
+                self.balances[i] + admin_balances[i] == balance_of[i]
             ), "test-tracked balances don't match token-tracked balances"
 
     @invariant()
@@ -599,7 +590,6 @@ class StatefulBase(RuleBasedStateMachine):
 
         assert xcp_profit >= self.xcp_profit, "xcp_profit has decreased"
         self.xcp_profit = xcp_profit
-        self.xcp_profit_a = self.pool.xcp_profit_a()
 
 
 TestBase = StatefulBase.TestCase

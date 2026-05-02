@@ -1,4 +1,5 @@
 import boa
+import pytest
 
 from tests.utils.constants import MAX_FEE, PRECISION, UNIX_DAY, VENOM_FLAG
 from tests.utils.god_mode import GodModePool
@@ -107,7 +108,7 @@ def _snapshot(pool_instance):
     return {
         "virtual_price": pool_instance.virtual_price(),
         "xcp_profit": pool_instance.xcp_profit(),
-        "admin_claimed_profit": pool_instance.admin_claimed_profit(),
+        "admin_balances": [pool_instance.admin_balances(i) for i in range(2)],
         "get_virtual_price": pool_instance.get_virtual_price(),
         "price_scale": pool_instance.price_scale(),
         "price_oracle": pool_instance.price_oracle(),
@@ -299,6 +300,7 @@ def test_price_scale_rebalances_only_on_first_touch_in_block(pool, factory_admin
 
 
 def test_admin_claimed_profit_offsets_threshold_vp_with_floor(pool):
+    pytest.skip("admin_claimed_profit was removed in token-denominated admin fee accounting")
     with boa.env.anchor():
         pool_instance = GodModePool(pool)
         pool_instance.add_liquidity_balanced(INITIAL_LIQ)

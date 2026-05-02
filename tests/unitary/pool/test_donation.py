@@ -383,7 +383,7 @@ def test_remove_after_rebalancing(gm_pool):
     # donation_shares_pre = gm_pool.donation_shares()
     attacker_add_liquidity_amount_coin0 = 500_000 * 10**18
     # pool is imbalanced, and we add proportionally disbalanced liquidity
-    pool_balances = [gm_pool.coins[i].balanceOf(gm_pool) for i in range(N_COINS)]
+    pool_balances = [gm_pool.balances(i) for i in range(N_COINS)]
     fraction = (
         attacker_add_liquidity_amount_coin0 / pool_balances[0]
     )  # rate of coin0 to pool balance
