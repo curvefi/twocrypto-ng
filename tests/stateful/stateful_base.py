@@ -162,12 +162,12 @@ class StatefulBase(RuleBasedStateMachine):
         old_equilibrium = self.equilibrium
 
         # price of the first coin is always 1
-        xp = self.coins[0].balanceOf(self.pool) * (
+        xp = self.pool.balances(0) * (
             10 ** (18 - self.decimals[0])  # normalize to 18 decimals
         )
 
         yp = (
-            self.coins[1].balanceOf(self.pool)
+            self.pool.balances(1)
             * self.pool.price_scale()  # price of the second coin
             * (10 ** (18 - self.decimals[1]))  # normalize to 18 decimals
         )
@@ -238,8 +238,8 @@ class StatefulBase(RuleBasedStateMachine):
         if old_total_supply == 0:
             self.total_supply += MINIMUM_LIQUIDITY
 
-        # pool balances should increase by the amounts
-        self.balances = [x + y for x, y in zip(self.balances, amounts)]
+        # Admin fees are cached in token balances outside AMM accounting.
+        self.balances = [self.pool.balances(i) for i in range(2)]
 
         # update the profit since it increases through `tweak_price`
         # which is called by `add_liquidity`
@@ -334,9 +334,8 @@ class StatefulBase(RuleBasedStateMachine):
             delta_balance_j == expected_dy == actual_dy
         ), "didn't receive the right amount of token y"
 
-        # update the internal balances of the test for the invariants
-        self.balances[i] -= delta_balance_i
-        self.balances[j] -= delta_balance_j
+        # Admin fees are cached in token balances outside AMM accounting.
+        self.balances = [self.pool.balances(k) for k in range(2)]
 
         # update the profit made by the pool
         self.xcp_profit = self.pool.xcp_profit()
@@ -367,8 +366,7 @@ class StatefulBase(RuleBasedStateMachine):
         # total apply should have decreased by the amount of liquidity
         # withdrawn
         self.total_supply -= amount
-        # update the internal balances of the test for the invariants
-        self.balances = [b - a for a, b in zip(amounts, self.balances)]
+        self.balances = [self.pool.balances(i) for i in range(2)]
 
         # we don't want to keep track of users with low liquidity because
         # it would approximate to 0 tokens and break the invariants.
@@ -397,7 +395,7 @@ class StatefulBase(RuleBasedStateMachine):
         # store balances of the fee receiver before the removal
         admin_balances_pre = [c.balanceOf(self.fee_receiver) for c in self.coins]
         # store the balance of the user before the removal
-        user_balances_pre = self.coins[coin_idx].balanceOf(user)
+        # user_balances_pre = self.coins[coin_idx].balanceOf(user)
 
         # lp tokens before the removal
         lp_tokens_balance_pre = self.pool.balanceOf(user)
@@ -443,11 +441,10 @@ class StatefulBase(RuleBasedStateMachine):
         if lp_tokens_to_withdraw < 1e15:
             event("successful removal of liquidity with low amounts")
 
-        # compute the change in balances
-        user_balances_post = abs(user_balances_pre - self.coins[coin_idx].balanceOf(user))
+        # # compute the change in balances
+        # user_balances_post = abs(user_balances_pre - self.coins[coin_idx].balanceOf(user))
 
-        # update internal balances
-        self.balances[coin_idx] -= user_balances_post
+        self.balances = [self.pool.balances(i) for i in range(2)]
         # total supply should decrease by the amount of tokens withdrawn
         self.total_supply -= lp_tokens_to_withdraw
 
@@ -522,22 +519,22 @@ class StatefulBase(RuleBasedStateMachine):
             # remove all liquidity from all real depositors
             for d in self.depositors:
                 # store the current balances of the pool
-                prev_balances = [c.balanceOf(self.pool) for c in self.coins]
+                prev_balances = [self.pool.balances(i) for i in range(2)]
                 # withdraw all liquidity from the depositor
                 tokens = self.pool.balanceOf(d)
                 self.pool.remove_liquidity(tokens, [0] * 2, sender=d)
                 assert self.pool.balanceOf(d) == 0, "depositor still has LP after withdrawal"
                 # assert current balances are less as the previous ones
-                for c, b in zip(self.coins, prev_balances):
+                for i, b in enumerate(prev_balances):
                     # check that the balance of the pool is less than before
-                    if c.balanceOf(self.pool) == b:
+                    if self.pool.balances(i) == b:
                         assert self.pool.balanceOf(d) < 10, (
                             "balance of the depositor is not small enough to"
                             "justify a withdrawal that does not affect the"
                             "pool token balance"
                         )
                     else:
-                        assert c.balanceOf(self.pool) < b, (
+                        assert self.pool.balances(i) < b, (
                             "one withdrawal didn't reduce the liquidity" "of the pool"
                         )
 
