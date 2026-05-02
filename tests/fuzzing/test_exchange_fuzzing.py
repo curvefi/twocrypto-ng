@@ -36,6 +36,7 @@ def test_exchange_all(
     measured_j = coins[j].balanceOf(user)
     d_balance_i = pool_with_deposit.balances(i)
     d_balance_j = pool_with_deposit.balances(j)
+    d_admin_j = pool_with_deposit.admin_balances(j)
 
     with boa.env.prank(user):
         pool_with_deposit.exchange(i, j, amount, int(0.999 * calculated))
@@ -44,12 +45,13 @@ def test_exchange_all(
     measured_j = coins[j].balanceOf(user) - measured_j
     d_balance_i = pool_with_deposit.balances(i) - d_balance_i
     d_balance_j = pool_with_deposit.balances(j) - d_balance_j
+    d_admin_j = pool_with_deposit.admin_balances(j) - d_admin_j
 
     assert amount == measured_i
     assert calculated == measured_j
 
     assert d_balance_i == amount
-    assert -d_balance_j == measured_j
+    assert -d_balance_j == measured_j + d_admin_j
 
 
 @given(
@@ -81,6 +83,7 @@ def test_exchange_received_success(
     measured_j = coins[j].balanceOf(user)
     d_balance_i = pool_with_deposit.balances(i)
     d_balance_j = pool_with_deposit.balances(j)
+    d_admin_j = pool_with_deposit.admin_balances(j)
 
     with boa.env.prank(user):
         coins[i].transfer(pool_with_deposit, amount)
@@ -90,12 +93,14 @@ def test_exchange_received_success(
     measured_j = coins[j].balanceOf(user) - measured_j
     d_balance_i = pool_with_deposit.balances(i) - d_balance_i
     d_balance_j = pool_with_deposit.balances(j) - d_balance_j
+    d_admin_j = pool_with_deposit.admin_balances(j) - d_admin_j
 
     assert amount == measured_i
     assert calculated == measured_j == out
 
     assert d_balance_i == amount
-    assert -d_balance_j == measured_j == out
+    assert -d_balance_j == measured_j + d_admin_j
+    assert measured_j == out
 
 
 @given(
