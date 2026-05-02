@@ -210,6 +210,7 @@ last_donation_release_ts: public(uint256)
 donation_protection_expiry_ts: public(uint256)
 donation_protection_period: public(uint256)
 donation_protection_lp_threshold: public(uint256)
+donation_protection_extension_remainder: uint256
 
 balances: public(uint256[N_COINS])
 D: public(uint256)
@@ -346,8 +347,9 @@ def __init__(
 
 
     self.donation_protection_expiry_ts = 0
-    self.donation_protection_period =  60   # decay of protection factor in seconds
-    self.donation_protection_lp_threshold = 50 * PRECISION // 100  # 50%
+    self.donation_protection_period =  600   # decay of protection factor in seconds
+    self.donation_protection_lp_threshold = 20 * PRECISION // 100  # 20%
+    self.donation_protection_extension_remainder = 0
     self.donation_shares_max_ratio = 10 * PRECISION // 100  # 10%
 
     log Transfer(sender=empty(address), receiver=self, value=0)  # <------- Fire empty transfer from
@@ -670,12 +672,23 @@ def add_liquidity(
             if relative_lp_add > 0 and self.donation_shares > 0:  # sub-precision additions are expensive to stack
                 # Extend protection period
                 protection_period: uint256 = self.donation_protection_period
-                extension_seconds: uint256 = min(
-                    unsafe_div(relative_lp_add * protection_period, self.donation_protection_lp_threshold),
-                    protection_period)
+                raw_extension: uint256 = (
+                    relative_lp_add * protection_period + self.donation_protection_extension_remainder
+                )
+                extension_seconds: uint256 = unsafe_div(
+                    raw_extension,
+                    self.donation_protection_lp_threshold
+                )
+                remainder: uint256 = raw_extension - extension_seconds * self.donation_protection_lp_threshold
                 current_expiry: uint256 = max(self.donation_protection_expiry_ts, block.timestamp)
-                new_expiry: uint256 = min(current_expiry + extension_seconds, block.timestamp + protection_period)
-                self.donation_protection_expiry_ts = new_expiry
+                max_expiry: uint256 = block.timestamp + protection_period
+                uncapped_expiry: uint256 = current_expiry + extension_seconds
+                if uncapped_expiry >= max_expiry:
+                    self.donation_protection_expiry_ts = max_expiry
+                    self.donation_protection_extension_remainder = 0
+                else:
+                    self.donation_protection_expiry_ts = uncapped_expiry
+                    self.donation_protection_extension_remainder = remainder
 
             # Regular liquidity addition
             self.mint(receiver, d_token)
@@ -2295,6 +2308,7 @@ def set_donation_parameters(
     self.donation_duration = duration
     self.donation_protection_period = protection_period
     self.donation_protection_lp_threshold = protection_lp_threshold
+    self.donation_protection_extension_remainder = 0
     self.donation_shares_max_ratio = max_shares_ratio
 
     log SetDonationParameters(
