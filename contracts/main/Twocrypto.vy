@@ -2245,9 +2245,11 @@ def apply_new_parameters(
         new_adjustment_step_max = current_rebalancing_params[1]
 
     if new_ma_time < 872542:  # <----- Calculated as: 7 * 24 * 60 * 60 / ln(2)
-        assert new_ma_time > 86  # dev: "MA time below minimum"
+        assert new_ma_time > 86  # dev: "MA time below min value 60/ln(2)"
     else:
         new_ma_time = current_rebalancing_params[2]
+
+    assert new_adjustment_step_min <= new_adjustment_step_max  # dev: "min adjustment above max"
 
     self.packed_rebalancing_params = self._pack_3(
         [new_adjustment_step_min, new_adjustment_step_max, new_ma_time]
