@@ -1,5 +1,5 @@
 # pragma version 0.4.3
-# pragma optimize gas
+# pragma optimize codesize
 """
 @title Twocrypto
 @author Curve.Fi
@@ -647,13 +647,11 @@ def add_liquidity(
                 # Convert the admin's share of the LP haircut into a pro-rata
                 # token balance using the no-fee supply basis.
                 fee_supply: uint256 = token_supply + d_token + d_token_fee
-                admin_amount: uint256 = 0
-                for i: uint256 in range(N_COINS):
-                    admin_amount = unsafe_div(balances[i] * admin_d_token_fee, fee_supply)
-                    if admin_amount > 0:
-                        self.admin_balances[i] += admin_amount
-                        self.balances[i] -= admin_amount
-                        balances[i] -= admin_amount
+                balances = self._book_admin_token_fee(
+                    balances,
+                    admin_d_token_fee,
+                    fee_supply,
+                )
 
                 xp = self._xp(balances, price_scale)
                 D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
@@ -924,13 +922,11 @@ def _remove_liquidity_fixed_out(
         balances[i] -= amount_i
         balances[j] -= dy
 
-        admin_amount: uint256 = 0
-        for k: uint256 in range(N_COINS):
-            admin_amount = unsafe_div(balances[k] * admin_d_token_fee, fee_supply)
-            if admin_amount > 0:
-                self.admin_balances[k] += admin_amount
-                self.balances[k] -= admin_amount
-                balances[k] -= admin_amount
+        balances = self._book_admin_token_fee(
+            balances,
+            admin_d_token_fee,
+            fee_supply,
+        )
 
         xp = self._xp(balances, price_scale_preop)
         D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
@@ -1379,6 +1375,21 @@ def tweak_price(
 
 
 @internal
+def _book_admin_token_fee(
+    balances: uint256[N_COINS],
+    admin_d_token_fee: uint256,
+    fee_supply: uint256,
+) -> uint256[N_COINS]:
+    admin_amount: uint256 = 0
+    for i: uint256 in range(N_COINS):
+        admin_amount = unsafe_div(balances[i] * admin_d_token_fee, fee_supply)
+        self.admin_balances[i] += admin_amount
+        self.balances[i] -= admin_amount
+        balances[i] -= admin_amount
+    return balances
+
+
+@internal
 def _update_policy_state(
     xp: uint256[N_COINS],
     price_scale: uint256,
@@ -1437,10 +1448,8 @@ def _claim_admin_fees():
         return
 
     admin_amounts: uint256[N_COINS] = self.admin_balances
-    has_fees: bool = False
     for i: uint256 in range(N_COINS):
         if admin_amounts[i] > 0:
-            has_fees = True
             self.admin_balances[i] = 0
 
             # Admin balances are already excluded from pool accounting, so
@@ -1451,9 +1460,8 @@ def _claim_admin_fees():
                 default_return_value=True
             )
 
-    if has_fees:
-        self.last_admin_fee_claim_timestamp = block.timestamp
-        log ClaimAdminFee(admin=fee_receiver, tokens=admin_amounts)
+    self.last_admin_fee_claim_timestamp = block.timestamp
+    log ClaimAdminFee(admin=fee_receiver, tokens=admin_amounts)
 
 
 @internal
@@ -2373,7 +2381,6 @@ def _set_allowlist(add: DynArray[address, 16], remove: DynArray[address, 16]):
         self.lp_allowlist[empty(address)] = True
 
     log LPAllowlistChanged(user=empty(address), allowed=self.lp_allowlist[empty(address)])
-
 
 
 @external
