@@ -314,6 +314,7 @@ def __init__(
 
     if gamma_A[0] == 11111111111:
         # magic value that enables pool initialization by deployer (set whitelist, admin_fee, lpf)
+        # tx.origin is accepted here because pools are deployed only via the Curve factory.
         self.deploy_eoa = tx.origin
 
     assert gamma_A[0] > MIN_GAMMA-1, "gamma<MIN"
