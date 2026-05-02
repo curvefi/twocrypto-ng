@@ -616,13 +616,13 @@ def add_liquidity(
 
     A_gamma: uint256[2] = self._A_gamma()
     old_D: uint256 = self._get_D(A_gamma, old_xp)
+    D: uint256 = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
+
+    token_supply: uint256 = self.totalSupply
     vp_preop: uint256 = self.virtual_price
     if old_D > 0:
         vp_preop = 10**18 * self._xcp(old_D, price_scale) // token_supply
 
-    D: uint256 = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
-
-    token_supply: uint256 = self.totalSupply
     d_token: uint256 = 0
     if old_D > 0:
         d_token = token_supply * D // old_D - token_supply
