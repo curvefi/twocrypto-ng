@@ -65,12 +65,17 @@ def _amount_for_raw_extension(gm_pool, target_raw):
 
 
 def _add_balanced_and_get_raw(gm_pool, coin0_amount):
+    minted, raw_extension = _add_balanced_and_get_minted_raw(gm_pool, coin0_amount)
+    return raw_extension
+
+
+def _add_balanced_and_get_minted_raw(gm_pool, coin0_amount):
     pool = gm_pool.instance
     old_supply = pool.totalSupply()
     minted = gm_pool.add_liquidity(gm_pool.compute_balanced_amounts(coin0_amount))
     raw_extension = _raw_extension_for_minted(pool, minted, old_supply)
     assert raw_extension // pool.donation_protection_lp_threshold() == 0
-    return raw_extension
+    return minted, raw_extension
 
 
 def test_default_donation_protection_params(pool):
@@ -99,6 +104,25 @@ def test_subsecond_liquidity_adds_accumulate_into_whole_second(gm_pool):
         assert _remainder(pool) < pool.donation_protection_lp_threshold()
 
 
+def test_repeated_dust_add_remove_below_one_second_does_not_pin(gm_pool):
+    with boa.env.anchor():
+        _seed_with_donation(gm_pool)
+        pool = gm_pool.instance
+        start_ts = boa.env.evm.patch.timestamp
+        threshold = pool.donation_protection_lp_threshold()
+        amount = _amount_for_raw_extension(gm_pool, threshold // 100)
+
+        total_raw_extension = 0
+        for _ in range(20):
+            minted, raw_extension = _add_balanced_and_get_minted_raw(gm_pool, amount)
+            total_raw_extension += raw_extension
+            assert total_raw_extension < threshold
+            assert pool.donation_protection_expiry_ts() == start_ts
+            gm_pool.remove_liquidity(minted, [0, 0])
+
+        assert _remainder(pool) == total_raw_extension
+
+
 def test_split_adds_match_aggregate_extension_within_one_second(gm_pool):
     with boa.env.anchor():
         _seed_with_donation(gm_pool)
@@ -120,6 +144,36 @@ def test_split_adds_match_aggregate_extension_within_one_second(gm_pool):
             split_delta = pool.donation_protection_expiry_ts() - start_ts
 
         assert abs(int(split_delta) - int(aggregate_delta)) <= 1
+
+
+def test_floor_zero_add_does_not_shorten_existing_protection(gm_pool):
+    with boa.env.anchor():
+        _seed_with_donation(gm_pool)
+        pool = gm_pool.instance
+        now_ts = boa.env.evm.patch.timestamp
+        existing_expiry = now_ts + pool.donation_protection_period() // 2
+        pool.eval(f"self.donation_protection_expiry_ts = {existing_expiry}")
+
+        amount = _amount_for_raw_extension(gm_pool, pool.donation_protection_lp_threshold() // 10)
+        raw_extension = _add_balanced_and_get_raw(gm_pool, amount)
+
+        assert pool.donation_protection_expiry_ts() == existing_expiry
+        assert _remainder(pool) == raw_extension
+
+
+def test_large_liquidity_add_caps_at_protection_period(gm_pool):
+    with boa.env.anchor():
+        _seed_with_donation(gm_pool)
+        pool = gm_pool.instance
+        now_ts = boa.env.evm.patch.timestamp
+        period = pool.donation_protection_period()
+        threshold = pool.donation_protection_lp_threshold()
+        pool.eval(f"self.donation_protection_extension_remainder = {threshold - 1}")
+
+        gm_pool.add_liquidity(gm_pool.compute_balanced_amounts(BASE_LIQUIDITY))
+
+        assert pool.donation_protection_expiry_ts() == now_ts + period
+        assert _remainder(pool) == 0
 
 
 def test_capped_protection_drops_fractional_remainder(gm_pool):
