@@ -379,9 +379,9 @@ def _transfer_in(
         # it expects the caller of exchange_received to have sent tokens to
         # the pool before calling this method.
 
-        # If someone donates extra tokens to the contract: do not acknowledge.
+        # If someone donates extra tokens to the contract: acknowledge them.
         # We only want to know if there are dx amount of tokens. Anything extra,
-        # we ignore. This is why we need to check if received_amounts (which
+        # we include. This is why we need to check if received_amounts (which
         # accounts for coin balances of the contract) is atleast dx.
         # If we checked for received_amounts == dx, an extra transfer without a
         # call to exchange_received will break the method.
