@@ -914,6 +914,32 @@ def _remove_liquidity_fixed_out(
     D_preop: uint256 = self._get_D(A_gamma, self._xp(self.balances, price_scale_preop))
     vp_preop: uint256 = 10**18 * self._xcp(D_preop, price_scale_preop) // self.totalSupply
 
+    j: uint256 = 1 - i
+    d_token_fee: uint256 = approx_fee * token_amount // FEE_PRECISION + 1
+    admin_d_token_fee: uint256 = unsafe_div(
+        d_token_fee * self.lp_profit_fraction * self.admin_fee,
+        FEE_PRECISION * FEE_PRECISION
+    )
+    if admin_d_token_fee > 0:
+        # Fixed-out withdrawal fees are charged in LP-token units by reducing
+        # the effective D burned. Convert the admin's share of that retained
+        # LP fee into a balanced slice of post-withdraw token balances.
+        fee_supply: uint256 = self.totalSupply - token_amount + d_token_fee
+        balances: uint256[N_COINS] = self.balances
+        balances[i] -= amount_i
+        balances[j] -= dy
+
+        admin_amount: uint256 = 0
+        for k: uint256 in range(N_COINS):
+            admin_amount = unsafe_div(balances[k] * admin_d_token_fee, fee_supply)
+            if admin_amount > 0:
+                self.admin_balances[k] += admin_amount
+                self.balances[k] -= admin_amount
+                balances[k] -= admin_amount
+
+        xp = self._xp(balances, price_scale_preop)
+        D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
+
     # ---------------------------- State Updates -----------------------------
 
     self.burnFrom(msg.sender, token_amount)
@@ -923,8 +949,6 @@ def _remove_liquidity_fixed_out(
     if amount_i != 0:
         # one-sided withdrawals call with amount_i = 0, save extcall here
         self._transfer_out(i, amount_i, receiver)
-
-    j: uint256 = 1 - i
 
     self._transfer_out(j, dy, receiver)
 
@@ -938,7 +962,7 @@ def _remove_liquidity_fixed_out(
             token_amount=token_amount,
             coin_index=j,
             coin_amount=dy,
-            approx_fee=approx_fee * token_amount // FEE_PRECISION + 1, # LP units, not coins!
+            approx_fee=d_token_fee, # LP units, not coins!
             packed_price_scale=price_scale
         )
     else:
@@ -946,7 +970,7 @@ def _remove_liquidity_fixed_out(
             provider=msg.sender,
             lp_token_amount=token_amount,
             token_amounts=token_amounts,
-            approx_fee=approx_fee * token_amount // FEE_PRECISION + 1, # LP units
+            approx_fee=d_token_fee, # LP units
             price_scale=price_scale
         )
 
