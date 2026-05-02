@@ -616,6 +616,9 @@ def add_liquidity(
 
     A_gamma: uint256[2] = self._A_gamma()
     old_D: uint256 = self._get_D(A_gamma, old_xp)
+    vp_preop: uint256 = self.virtual_price
+    if old_D > 0:
+        vp_preop = 10**18 * self._xcp(old_D, price_scale) // token_supply
 
     D: uint256 = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
 
@@ -693,7 +696,7 @@ def add_liquidity(
             # Regular liquidity addition
             self.mint(receiver, d_token)
 
-        price_scale = self.tweak_price(A_gamma, xp, D)
+        price_scale = self.tweak_price(A_gamma, xp, D, vp_preop)
 
     else:
 
@@ -885,11 +888,15 @@ def _remove_liquidity_fixed_out(
 
     assert dy >= min_amount_j, "slippage"
 
+    price_scale_preop: uint256 = self.cached_price_scale
+    D_preop: uint256 = self._get_D(A_gamma, self._xp(self.balances, price_scale_preop))
+    vp_preop: uint256 = 10**18 * self._xcp(D_preop, price_scale_preop) // self.totalSupply
+
     # ---------------------------- State Updates -----------------------------
 
     self.burnFrom(msg.sender, token_amount)
 
-    price_scale: uint256 = self.tweak_price(A_gamma, xp, D)
+    price_scale: uint256 = self.tweak_price(A_gamma, xp, D, vp_preop)
 
     if amount_i != 0:
         # one-sided withdrawals call with amount_i = 0, save extcall here
@@ -1006,6 +1013,8 @@ def _exchange(
     # ----------------------- Calculate dy and fees --------------------------
 
     D: uint256 = self.D
+    vp_preop: uint256 = 10**18 * self._xcp(D, price_scale) // self.totalSupply
+
     y_out: uint256[2] = staticcall MATH.get_y(A_gamma[0], A_gamma[1], xp, D, j)
     dy = xp[j] - y_out[0]
     xp[j] -= dy
@@ -1031,7 +1040,7 @@ def _exchange(
     # fees, we need to update D to reflect the new balances.
     D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, y_out[1])
 
-    price_scale = self.tweak_price(A_gamma, xp, D)
+    price_scale = self.tweak_price(A_gamma, xp, D, vp_preop)
     return [dy, fee, price_scale]
 
 
@@ -1040,6 +1049,7 @@ def tweak_price(
     A_gamma: uint256[2],
     _xp: uint256[N_COINS],
     D: uint256,
+    vp_preop: uint256,
 ) -> uint256:
     """
     @notice Updates price_oracle, last_price and conditionally adjusts
@@ -1050,6 +1060,7 @@ def tweak_price(
     @param A_gamma Array of A and gamma parameters.
     @param _xp Array of current balances.
     @param D New D value.
+    @param vp_preop Virtual price before the current operation.
     @return uint256 The new price_scale.
     """
 
@@ -1127,13 +1138,17 @@ def tweak_price(
     xcp: uint256 = self._xcp(D, price_scale)
 
     virtual_price: uint256 = 10**18 * xcp // total_supply
-    # Virtual price can decrease only if A and gamma are being ramped.
-    # This does not imply that the virtual price will have increased at the
-    # end of this function: it can still decrease if the pool rebalances.
-    if virtual_price < old_virtual_price:
-        # If A and gamma are being ramped, we allow the virtual price to decrease,
-        # as changing the shape of the bonding curve causes losses in the pool.
-        assert is_ramping, "virtual price decreased"
+
+    # The operation must not decrease VP against the fresh pre-operation state.
+    # During ramps this baseline is recomputed with current A/gamma, so passive
+    # curve-shape drift between calls is not attributed to the user operation.
+    assert virtual_price >= vp_preop, "virtual price decreased"
+
+    # Outside ramps, cached VP is also a valid accounting baseline and must not
+    # decrease. During ramps, cached VP may be stale because A/gamma can move
+    # between operations.
+    if not is_ramping:
+        assert virtual_price >= old_virtual_price, "virtual price decreased"
 
     # xcp_profit follows growth of virtual price (and goes down on ramping)
     xcp_profit: uint256 = self.xcp_profit + virtual_price - old_virtual_price
