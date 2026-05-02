@@ -64,7 +64,7 @@ def test_commit_rebalancing_params(pool, factory_admin, params):
             assert logs.adjustment_step_max == params["adjustment_step_max"]
             assert logs.ma_time == params["ma_time"]
 
-        with boa.reverts(dev='"MA time below minimum"'):
+        with boa.reverts(dev='"MA time below min value 60/ln(2)"'):
             p["ma_time"] = 86
             _apply_new_params(pool, p)
 
