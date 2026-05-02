@@ -2072,7 +2072,8 @@ def adjustment_step() -> uint256[2]:
     @notice Returns the current adjustment steps
     @return uint256 adjustment_steps values: [min, max].
     """
-    return [self._unpack_3(self.packed_rebalancing_params)[0], self._unpack_3(self.packed_rebalancing_params)[1]]
+    rebalancing_params: uint256[3] = self._unpack_3(self.packed_rebalancing_params)
+    return [rebalancing_params[0], rebalancing_params[1]]
 
 
 @view
