@@ -1,6 +1,8 @@
 import boa
 import pytest
 
+from tests.utils.constants import FEE_PRECISION, UNIX_DAY
+
 # boa.env.evm.patch.code_size_limit = 56_000
 # TRADE_SIZE = 3 # times pool liq
 TRADE_SIZE = 1_000_000 * 10**18
@@ -29,6 +31,29 @@ def snapshot_balances(pool, actors):
         bals = [pool.coins[0].balanceOf(actor_addy), pool.coins[1].balanceOf(actor_addy)]
         balances[actor_addy] = bals
     return balances
+
+
+def _mint_balanced_liquidity(pool_instance, user, amount):
+    amounts = [amount, amount * 10**18 // pool_instance.price_scale()]
+    boa.deal(pool_instance.coins[0], user, amounts[0])
+    boa.deal(pool_instance.coins[1], user, amounts[1])
+    pool_instance.instance.add_liquidity(amounts, 0, sender=user)
+    return amounts
+
+
+def _set_price_oracle_target(pool_instance, ratio_num, ratio_den):
+    target_price = pool_instance.price_scale() * ratio_num // ratio_den
+    pool_instance.eval(f"self.last_prices = {target_price}")
+    pool_instance.eval(f"self.cached_price_oracle = {target_price}")
+    pool_instance.eval("self.last_timestamp = block.timestamp")
+
+
+def _trigger_one_delayed_rebalance(pool_instance):
+    _set_price_oracle_target(pool_instance, 102, 100)
+    boa.env.time_travel(seconds=7 * UNIX_DAY)
+    price_scale_before = pool_instance.price_scale()
+    pool_instance.exchange(0, pool_instance.balances(0) // 5, update_ema=False)
+    assert pool_instance.price_scale() != price_scale_before
 
 
 def get_pool_state(pool_instance, print_state=False, print_normalized=True):
@@ -482,6 +507,73 @@ def test_n_claim_lp_rebalancing(gm_pool, fee_receiver):
         assert [pool_instance.admin_balances(i) for i in range(2)] == [0, 0]
         assert 0 < rate_received_admin < 0.5
         assert 0.5 < rate_received_lp_user < 1
+
+
+def test_lp_earnings_after_delayed_rebalance_do_not_depend_on_admin_claim(gm_pool, factory_admin):
+    with boa.env.anchor():
+        boa.env.enable_fast_mode()
+        pool_instance = gm_pool
+        pool_instance.set_fee_parameters(
+            FEE_PRECISION // 2,
+            FEE_PRECISION // 2,
+            sender=factory_admin,
+        )
+
+        dead_lp_user = boa.env.generate_address()
+        tracked_lp_user = boa.env.generate_address()
+        for user in [dead_lp_user, tracked_lp_user]:
+            boa.env.set_balance(user, 10**20)
+            for coin in pool_instance.coins:
+                coin.approve(pool_instance, 2**256 - 1, sender=user)
+
+        _mint_balanced_liquidity(pool_instance, dead_lp_user, 1 * 10**18)
+
+        tracked_lp_value_init = sum(coin0_values(pool_instance, tracked_lp_user))
+        _mint_balanced_liquidity(pool_instance, tracked_lp_user, 1_000_000 * 10**18)
+
+        pool_value_with_lp = sum(coin0_values(pool_instance, pool_instance.address))
+        tracked_lp_share = (
+            pool_instance.balanceOf(tracked_lp_user) * 10**18 // pool_instance.totalSupply()
+        )
+        assert tracked_lp_share > 0
+
+        work_pool(pool_instance, N_TRADES, TRADE_SIZE, update_ema=False, xcp_growth=0.2)
+        balance_pool(pool_instance, update_ema=False)
+
+        pool_value_after_work = sum(coin0_values(pool_instance, pool_instance.address))
+        gross_profit = pool_value_after_work - pool_value_with_lp
+        assert gross_profit > 0
+        assert sum(pool_instance.admin_balances(i) for i in range(2)) > 0
+
+        def run_branch(claim_admin):
+            with boa.env.anchor():
+                if claim_admin:
+                    pool_instance.internal._claim_admin_fees()
+
+                _trigger_one_delayed_rebalance(pool_instance)
+                pool_instance.instance.remove_liquidity(
+                    pool_instance.balanceOf(tracked_lp_user),
+                    [0, 0],
+                    sender=tracked_lp_user,
+                )
+                tracked_lp_value_post = sum(coin0_values(pool_instance, tracked_lp_user))
+                return tracked_lp_value_post - tracked_lp_value_init
+
+        lp_earnings_without_claim = run_branch(False)
+        lp_earnings_with_claim = run_branch(True)
+
+        expected_lp_reserve = (
+            gross_profit
+            * (FEE_PRECISION // 2)
+            * (FEE_PRECISION - FEE_PRECISION // 2)
+            // FEE_PRECISION
+            // FEE_PRECISION
+            * tracked_lp_share
+            // 10**18
+        )
+
+        assert lp_earnings_with_claim == pytest.approx(lp_earnings_without_claim, rel=1e-8)
+        assert lp_earnings_without_claim >= expected_lp_reserve * 98 // 100
 
 
 def test_lp_deposit_fee_balanced(gm_pool, fee_receiver):

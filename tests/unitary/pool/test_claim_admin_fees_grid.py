@@ -41,20 +41,20 @@ def work_pool(pool_instance, n_swaps, trade_size):
         pool_instance.exchange(1, int(amount_out), update_ema=False)
 
 
-# This is the first claim-fee test that exercises non-default lp_profit_fraction.
+# This is the first claim-fee test that exercises non-default reserved_profit_fraction.
 @pytest.mark.parametrize(
-    "lp_profit_fraction", [FEE_PRECISION // 10, FEE_PRECISION // 2, 9 * FEE_PRECISION // 10]
+    "reserved_profit_fraction", [FEE_PRECISION // 10, FEE_PRECISION // 2, 9 * FEE_PRECISION // 10]
 )
 @pytest.mark.parametrize(
     "admin_fee", [FEE_PRECISION // 10, FEE_PRECISION // 2, 9 * FEE_PRECISION // 10]
 )
 def test_claim_admin_fees_grid_no_rebalancing(
-    pool, factory_admin, fee_receiver, lp_profit_fraction, admin_fee
+    pool, factory_admin, fee_receiver, reserved_profit_fraction, admin_fee
 ):
     with boa.env.anchor():
         boa.env.enable_fast_mode()
         pool_instance = GodModePool(pool)
-        pool_instance.set_fee_parameters(lp_profit_fraction, admin_fee, sender=factory_admin)
+        pool_instance.set_fee_parameters(reserved_profit_fraction, admin_fee, sender=factory_admin)
         pool_instance.add_liquidity_balanced(INITIAL_LIQ)
 
         work_pool(pool_instance, N_TRADES, TRADE_SIZE)

@@ -155,7 +155,7 @@ event SetDonationParameters:
     donation_shares_max_ratio: uint256
 
 event SetFeeParameters:
-    lp_profit_fraction: uint256
+    reserved_profit_fraction: uint256
     admin_fee: uint256
 
 event SetPolicyContract:
@@ -228,8 +228,9 @@ packed_rebalancing_params: public(uint256)  # <---------- Contains rebalancing
 # Fee params that determine dynamic fees:
 packed_fee_params: public(uint256)  # <---- Packs mid_fee, out_fee, fee_gamma.
 
-# Split between rebalancing budget and admin/LP share, with 10**10 precision.
-lp_profit_fraction: public(uint256)
+# Gross profit fraction reserved from rebalancing, with 10**10 precision.
+# This bucket is split between admin and LPs by `admin_fee`.
+reserved_profit_fraction: public(uint256)
 
 # DAO share of LP/DAO fee split with 10**10 precision. The rest goes to LPs.
 admin_fee: public(uint256)
@@ -297,8 +298,8 @@ def __init__(
     MATH = Math(empty(address))
     self.POLICY = Policy(empty(address))
 
-    # Split between rebalancing budget and admin/LP share
-    self.lp_profit_fraction = FEE_PRECISION * 50 // 100
+    # Gross profit bucket reserved from rebalancing and split between admin/LPs.
+    self.reserved_profit_fraction = FEE_PRECISION * 50 // 100
 
     # Split between DAO and LPs of the admin/LP share of fees.
     self.admin_fee = FEE_PRECISION * 50 // 100
@@ -640,7 +641,7 @@ def add_liquidity(
 
         if not donation:
             admin_d_token_fee: uint256 = unsafe_div(
-                d_token_fee * self.lp_profit_fraction * self.admin_fee,
+                d_token_fee * self.reserved_profit_fraction * self.admin_fee,
                 FEE_PRECISION * FEE_PRECISION
             )
             if admin_d_token_fee > 0:
@@ -910,7 +911,7 @@ def _remove_liquidity_fixed_out(
     j: uint256 = 1 - i
     d_token_fee: uint256 = approx_fee * token_amount // FEE_PRECISION + 1
     admin_d_token_fee: uint256 = unsafe_div(
-        d_token_fee * self.lp_profit_fraction * self.admin_fee,
+        d_token_fee * self.reserved_profit_fraction * self.admin_fee,
         FEE_PRECISION * FEE_PRECISION
     )
     if admin_d_token_fee > 0:
@@ -1067,7 +1068,7 @@ def _exchange(
     y -= dy
 
     admin_fee_amount: uint256 = unsafe_div(
-        fee * self.lp_profit_fraction * self.admin_fee,
+        fee * self.reserved_profit_fraction * self.admin_fee,
         FEE_PRECISION * FEE_PRECISION
     )
     if admin_fee_amount > 0:
@@ -1202,16 +1203,55 @@ def tweak_price(
 
     # ------------ Rebalance liquidity if there's enough profits to adjust it:
     #
-    # Mathematical basis for rebalancing condition:
-    # 1. xcp_profit grows after virtual price, total growth since launch = (xcp_profit − 1)
-    # 2. We reserve lp_profit_fraction of the growth for LPs, rest is used to rebalance the pool.
+    # In this version, admin fees are booked immediately into token-denominated
+    # admin_balances and removed from AMM-owned balances. VP and xcp_profit
+    # therefore observe net-of-admin growth.
+    #
+    # `reserved_profit_fraction` keeps legacy gross-profit semantics. Let:
+    #
+    #   gross_profit = total fee/profit growth before admin is removed
+    #   reserve_fraction = reserved_profit_fraction
+    #   admin_fraction = admin_fee
+    #
+    # Then the split is:
+    #
+    #   reserved bucket  = gross_profit * reserve_fraction
+    #   rebalance bucket = gross_profit * (1 - reserve_fraction)
+    #   admin tokens     = gross_profit * reserve_fraction * admin_fraction
+    #   LP reserve       = gross_profit * reserve_fraction * (1 - admin_fraction)
+    #
+    # Since admin tokens are already outside VP/xcp, xcp_profit sees:
+    #
+    #   net_growth = gross_profit * (1 - reserve_fraction * admin_fraction)
+    #
+    # The threshold must reserve only the LP part still inside AMM accounting:
+    #
+    #   net_lp_reserve_fraction =
+    #       reserve_fraction * (1 - admin_fraction) /
+    #       (1 - reserve_fraction * admin_fraction)
+    #
+    # This preserves the legacy semantics where reserved profit is further
+    # split between admin and LPs by admin_fee. It does not account admin fees
+    # in VP units; it only maps the legacy gross configured reserve onto
+    # net-of-admin xcp_profit growth.
 
-    # Rebalancing condition basis:
-    #   virtual_price > 1 + (xcp_profit - 1) * lp_profit_fraction
+    reserved_fraction: uint256 = self.reserved_profit_fraction
+    admin_fee: uint256 = self.admin_fee
+    denominator: uint256 = FEE_PRECISION * FEE_PRECISION - reserved_fraction * admin_fee
 
-    threshold_vp: uint256 = PRECISION + (
-        unsafe_sub(max(xcp_profit, PRECISION), PRECISION) * self.lp_profit_fraction // FEE_PRECISION
-    )
+    profit_growth: uint256 = unsafe_sub(max(xcp_profit, PRECISION), PRECISION)
+    threshold_vp: uint256 = PRECISION + profit_growth
+    if denominator > 0:
+        # If admin_fee is zero, denominator is FEE_PRECISION**2 and this
+        # reduces to profit_growth * reserved_fraction.
+        threshold_vp = PRECISION + unsafe_div(
+            profit_growth * reserved_fraction * (FEE_PRECISION - admin_fee),
+            denominator
+        )
+    # If reserved_fraction == admin_fee == FEE_PRECISION, all gross profit is
+    # booked to admin_balances and no net xcp growth remains. Keep the full
+    # threshold above to preserve "all profit reserved, no rebalancing" semantics.
+
     # user_supply < total_supply => vp_boosted > virtual_price
     # by not accounting for donation shares, virtual_price is boosted leading to rebalance trigger
     # this is approximate condition that preliminary indicates readiness for rebalancing
@@ -2343,13 +2383,13 @@ def set_donation_parameters(
 
 
 @internal
-def _set_fee_parameters(lp_profit_fraction: uint256, admin_fee: uint256):
-    assert lp_profit_fraction <= FEE_PRECISION  # dev: "lp profit fraction above 1e10"
+def _set_fee_parameters(reserved_profit_fraction: uint256, admin_fee: uint256):
+    assert reserved_profit_fraction <= FEE_PRECISION  # dev: "reserved profit fraction above 1e10"
     assert admin_fee <= MAX_ADMIN_FEE  # dev: "admin fee above max"
 
     self.admin_fee = admin_fee
-    self.lp_profit_fraction = lp_profit_fraction
-    log SetFeeParameters(lp_profit_fraction=lp_profit_fraction, admin_fee=admin_fee)
+    self.reserved_profit_fraction = reserved_profit_fraction
+    log SetFeeParameters(reserved_profit_fraction=reserved_profit_fraction, admin_fee=admin_fee)
 
 
 @internal
@@ -2386,7 +2426,7 @@ def _set_allowlist(add: DynArray[address, 16], remove: DynArray[address, 16]):
 @external
 @nonreentrant
 def initialize(
-    lp_profit_fraction: uint256,
+    reserved_profit_fraction: uint256,
     admin_fee: uint256,
     policy: Policy,
     initial_price: uint256,
@@ -2394,8 +2434,8 @@ def initialize(
 ):
     """
     @notice One-time post-deploy initialization for init-required pools.
-    @param lp_profit_fraction The LP/DAO share of profits, with 10**10 precision.
-    @param admin_fee The DAO share of the LP/DAO bucket, with 10**10 precision.
+    @param reserved_profit_fraction Gross profit share reserved from rebalancing, with 10**10 precision.
+    @param admin_fee The DAO share of the reserved profit bucket, with 10**10 precision.
     @param policy Optional policy contract to attach.
     @param initial_price Price scale and oracle seed to use before first liquidity.
     @param allowlist_add Initial LP allowlist entries. Any non-empty address
@@ -2411,7 +2451,7 @@ def initialize(
     assert initial_price > 10**6 and initial_price < 10**30, "initial price out of bound"
 
     # Set fee params
-    self._set_fee_parameters(lp_profit_fraction, admin_fee)
+    self._set_fee_parameters(reserved_profit_fraction, admin_fee)
     # Set policy
     self._set_policy(policy)
     self.cached_price_scale = initial_price
@@ -2430,14 +2470,14 @@ def initialize(
 
 @external
 @nonreentrant
-def set_fee_parameters(lp_profit_fraction: uint256, admin_fee: uint256):
+def set_fee_parameters(reserved_profit_fraction: uint256, admin_fee: uint256):
     """
-    @notice Set LP/DAO-vs-rebalance split and DAO-vs-LP split parameters.
-    @param lp_profit_fraction The LP/DAO share of profits, with 10**10 precision.
-    @param admin_fee The DAO share of the LP/DAO bucket, with 10**10 precision.
+    @notice Set reserved-vs-rebalance split and DAO-vs-LP split parameters.
+    @param reserved_profit_fraction Gross profit share reserved from rebalancing, with 10**10 precision.
+    @param admin_fee The DAO share of the reserved profit bucket, with 10**10 precision.
     """
     self._check_admin()
-    self._set_fee_parameters(lp_profit_fraction, admin_fee)
+    self._set_fee_parameters(reserved_profit_fraction, admin_fee)
 
 
 @external

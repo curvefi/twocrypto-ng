@@ -29,7 +29,7 @@ class StatefulBase(RuleBasedStateMachine):
     swapped_once = False
     fee_receiver = None
     admin = None
-    lp_profit_fraction = 0
+    reserved_profit_fraction = 0
     admin_fee = 0
 
     fee_split_presets = [
@@ -86,15 +86,15 @@ class StatefulBase(RuleBasedStateMachine):
 
         self.fee_receiver = FACTORY_DEPLOYER.at(pool.factory()).fee_receiver()
         self.admin = FACTORY_DEPLOYER.at(pool.factory()).admin()
-        self.lp_profit_fraction, self.admin_fee = fee_split
+        self.reserved_profit_fraction, self.admin_fee = fee_split
         self.pool.set_fee_parameters(
-            self.lp_profit_fraction,
+            self.reserved_profit_fraction,
             self.admin_fee,
             sender=self.admin,
         )
         note(
-            "fee split lp_profit_fraction={:.2e} admin_fee={:.2e}".format(
-                self.lp_profit_fraction,
+            "fee split reserved_profit_fraction={:.2e} admin_fee={:.2e}".format(
+                self.reserved_profit_fraction,
                 self.admin_fee,
             )
         )

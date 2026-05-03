@@ -73,7 +73,7 @@ def test_admin_fee_after_deposit(pool, coins, fee_receiver, user, user_b, ratio)
 
 
 @given(
-    lp_profit_fraction=st.one_of(
+    reserved_profit_fraction=st.one_of(
         st.just(0),
         st.integers(min_value=10**8, max_value=FEE_PRECISION),
     ),
@@ -93,7 +93,7 @@ def test_exchange_admin_fee_share_tracks_washtrade_volume(
     fee_receiver,
     factory_admin,
     admin_fee_trader,
-    lp_profit_fraction,
+    reserved_profit_fraction,
     admin_fee,
     swap_coin,
     add_imbalance,
@@ -118,7 +118,7 @@ def test_exchange_admin_fee_share_tracks_washtrade_volume(
         pool.add_liquidity(amounts, 0, admin_fee_trader, sender=admin_fee_trader)
         trader_lp = pool.balanceOf(admin_fee_trader)
 
-    pool.set_fee_parameters(lp_profit_fraction, admin_fee, sender=factory_admin)
+    pool.set_fee_parameters(reserved_profit_fraction, admin_fee, sender=factory_admin)
     receiver_before = [coin.balanceOf(fee_receiver) for coin in coins]
 
     # Fixed-out withdrawal calls the autoclaim path before taking its own fee.
@@ -156,7 +156,7 @@ def test_exchange_admin_fee_share_tracks_washtrade_volume(
     expected_exchange_admin_value = (
         traded_value
         * EXCHANGE_FEE
-        * lp_profit_fraction
+        * reserved_profit_fraction
         * admin_fee
         // FEE_PRECISION
         // FEE_PRECISION
@@ -194,7 +194,7 @@ def test_exchange_admin_fee_share_tracks_washtrade_volume(
         + (receiver_after[1] - receiver_before[1]) * initial_price_scale // 10**18
     )
 
-    if lp_profit_fraction == 0 or admin_fee == 0:
+    if reserved_profit_fraction == 0 or admin_fee == 0:
         assert expected_admin == [0, 0]
         assert exchange_admin_value == 0
     else:
