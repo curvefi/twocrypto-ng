@@ -41,44 +41,35 @@ def work_pool(pool_instance, n_swaps, trade_size):
         pool_instance.exchange(1, int(amount_out), update_ema=False)
 
 
-# This is the first claim-fee test that exercises non-default lp_profit_fraction.
+# This is the first claim-fee test that exercises non-default reserved_profit_fraction.
 @pytest.mark.parametrize(
-    "lp_profit_fraction", [FEE_PRECISION // 10, FEE_PRECISION // 2, 9 * FEE_PRECISION // 10]
+    "reserved_profit_fraction", [FEE_PRECISION // 10, FEE_PRECISION // 2, 9 * FEE_PRECISION // 10]
 )
 @pytest.mark.parametrize(
     "admin_fee", [FEE_PRECISION // 10, FEE_PRECISION // 2, 9 * FEE_PRECISION // 10]
 )
 def test_claim_admin_fees_grid_no_rebalancing(
-    pool, factory_admin, fee_receiver, lp_profit_fraction, admin_fee
+    pool, factory_admin, fee_receiver, reserved_profit_fraction, admin_fee
 ):
     with boa.env.anchor():
         boa.env.enable_fast_mode()
         pool_instance = GodModePool(pool)
-        pool_instance.set_fee_parameters(lp_profit_fraction, admin_fee, sender=factory_admin)
+        pool_instance.set_fee_parameters(reserved_profit_fraction, admin_fee, sender=factory_admin)
         pool_instance.add_liquidity_balanced(INITIAL_LIQ)
 
         work_pool(pool_instance, N_TRADES, TRADE_SIZE)
         balance_pool(pool_instance)
 
         xcp_profit_pre = pool_instance.xcp_profit()
-        xcp_profit_a_pre = pool_instance.xcp_profit_a()
-        admin_claimed_profit_pre = pool_instance.admin_claimed_profit()
         virtual_price_pre = pool_instance.virtual_price()
         D_pre = pool_instance.D()
-        balances_pre = pool_instance.balances()
         receiver_balances_pre = [
             pool_instance.coins[0].balanceOf(fee_receiver),
             pool_instance.coins[1].balanceOf(fee_receiver),
         ]
         receiver_value_pre = sum(coin0_values(pool_instance, fee_receiver))
 
-        accrued = xcp_profit_pre - xcp_profit_a_pre
-        expected_fees = accrued * lp_profit_fraction * admin_fee // FEE_PRECISION // FEE_PRECISION
-        expected_vp_post = virtual_price_pre - expected_fees
-        expected_D_post = D_pre - D_pre * expected_fees // virtual_price_pre
-        expected_admin_amounts = [
-            balances_pre[i] * expected_fees // virtual_price_pre for i in range(2)
-        ]
+        expected_admin_amounts = [pool_instance.admin_balances(i) for i in range(2)]
 
         pool_instance.internal._claim_admin_fees()
 
@@ -91,11 +82,10 @@ def test_claim_admin_fees_grid_no_rebalancing(
         ]
         assert actual_admin_amounts == expected_admin_amounts
 
-        assert pool_instance.virtual_price() == expected_vp_post
+        assert pool_instance.virtual_price() == virtual_price_pre
         assert pool_instance.xcp_profit() == xcp_profit_pre
-        assert pool_instance.xcp_profit_a() == xcp_profit_pre
-        assert pool_instance.admin_claimed_profit() == admin_claimed_profit_pre + expected_fees
-        assert pool_instance.D() == expected_D_post
+        assert pool_instance.D() == D_pre
+        assert [pool_instance.admin_balances(i) for i in range(2)] == [0, 0]
 
         receiver_value_post = sum(coin0_values(pool_instance, fee_receiver))
         expected_claim_value = sum(

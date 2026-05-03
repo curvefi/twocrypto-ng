@@ -97,7 +97,7 @@ def test_deployer_can_initialize_and_seed_allowlist_with_policy(
     assert logs[-1].allowed is True
 
     assert pool.admin_fee() == 123
-    assert pool.lp_profit_fraction() == FEE_PRECISION // 4
+    assert pool.reserved_profit_fraction() == FEE_PRECISION // 4
     assert pool.POLICY() == policy.address
     assert policy.get_price_scale() == 0
 
@@ -188,7 +188,7 @@ def test_admin_can_initialize_and_leave_whitelist_disabled(
     assert logs[-1].allowed is False
 
     assert pool.admin_fee() == 321
-    assert pool.lp_profit_fraction() == FEE_PRECISION // 3
+    assert pool.reserved_profit_fraction() == FEE_PRECISION // 3
     assert pool.POLICY() == ZERO_ADDRESS
 
     minted = _premint_and_add(pool, coins, bob)

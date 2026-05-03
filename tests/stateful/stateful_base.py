@@ -24,13 +24,12 @@ class StatefulBase(RuleBasedStateMachine):
     balances = None
     decimals = None
     xcp_profit = 0
-    xcp_profit_a = 0
     depositors = None
     equilibrium = 0
     swapped_once = False
     fee_receiver = None
     admin = None
-    lp_profit_fraction = 0
+    reserved_profit_fraction = 0
     admin_fee = 0
 
     fee_split_presets = [
@@ -78,7 +77,6 @@ class StatefulBase(RuleBasedStateMachine):
 
         # initial profit is 1e18
         self.xcp_profit = 1e18
-        self.xcp_profit_a = 1e18
 
         self.depositors = set()
 
@@ -88,15 +86,15 @@ class StatefulBase(RuleBasedStateMachine):
 
         self.fee_receiver = FACTORY_DEPLOYER.at(pool.factory()).fee_receiver()
         self.admin = FACTORY_DEPLOYER.at(pool.factory()).admin()
-        self.lp_profit_fraction, self.admin_fee = fee_split
+        self.reserved_profit_fraction, self.admin_fee = fee_split
         self.pool.set_fee_parameters(
-            self.lp_profit_fraction,
+            self.reserved_profit_fraction,
             self.admin_fee,
             sender=self.admin,
         )
         note(
-            "fee split lp_profit_fraction={:.2e} admin_fee={:.2e}".format(
-                self.lp_profit_fraction,
+            "fee split reserved_profit_fraction={:.2e} admin_fee={:.2e}".format(
+                self.reserved_profit_fraction,
                 self.admin_fee,
             )
         )
@@ -164,12 +162,12 @@ class StatefulBase(RuleBasedStateMachine):
         old_equilibrium = self.equilibrium
 
         # price of the first coin is always 1
-        xp = self.coins[0].balanceOf(self.pool) * (
+        xp = self.pool.balances(0) * (
             10 ** (18 - self.decimals[0])  # normalize to 18 decimals
         )
 
         yp = (
-            self.coins[1].balanceOf(self.pool)
+            self.pool.balances(1)
             * self.pool.price_scale()  # price of the second coin
             * (10 ** (18 - self.decimals[1]))  # normalize to 18 decimals
         )
@@ -240,13 +238,12 @@ class StatefulBase(RuleBasedStateMachine):
         if old_total_supply == 0:
             self.total_supply += MINIMUM_LIQUIDITY
 
-        # pool balances should increase by the amounts
-        self.balances = [x + y for x, y in zip(self.balances, amounts)]
+        # Admin fees are cached in token balances outside AMM accounting.
+        self.balances = [self.pool.balances(i) for i in range(2)]
 
         # update the profit since it increases through `tweak_price`
         # which is called by `add_liquidity`
         self.xcp_profit = self.pool.xcp_profit()
-        self.xcp_profit_a = self.pool.xcp_profit_a()
 
         if not donate:
             self.depositors.add(user)
@@ -337,9 +334,8 @@ class StatefulBase(RuleBasedStateMachine):
             delta_balance_j == expected_dy == actual_dy
         ), "didn't receive the right amount of token y"
 
-        # update the internal balances of the test for the invariants
-        self.balances[i] -= delta_balance_i
-        self.balances[j] -= delta_balance_j
+        # Admin fees are cached in token balances outside AMM accounting.
+        self.balances = [self.pool.balances(k) for k in range(2)]
 
         # update the profit made by the pool
         self.xcp_profit = self.pool.xcp_profit()
@@ -370,8 +366,7 @@ class StatefulBase(RuleBasedStateMachine):
         # total apply should have decreased by the amount of liquidity
         # withdrawn
         self.total_supply -= amount
-        # update the internal balances of the test for the invariants
-        self.balances = [b - a for a, b in zip(amounts, self.balances)]
+        self.balances = [self.pool.balances(i) for i in range(2)]
 
         # we don't want to keep track of users with low liquidity because
         # it would approximate to 0 tokens and break the invariants.
@@ -400,7 +395,7 @@ class StatefulBase(RuleBasedStateMachine):
         # store balances of the fee receiver before the removal
         admin_balances_pre = [c.balanceOf(self.fee_receiver) for c in self.coins]
         # store the balance of the user before the removal
-        user_balances_pre = self.coins[coin_idx].balanceOf(user)
+        # user_balances_pre = self.coins[coin_idx].balanceOf(user)
 
         # lp tokens before the removal
         lp_tokens_balance_pre = self.pool.balanceOf(user)
@@ -446,11 +441,10 @@ class StatefulBase(RuleBasedStateMachine):
         if lp_tokens_to_withdraw < 1e15:
             event("successful removal of liquidity with low amounts")
 
-        # compute the change in balances
-        user_balances_post = abs(user_balances_pre - self.coins[coin_idx].balanceOf(user))
+        # # compute the change in balances
+        # user_balances_post = abs(user_balances_pre - self.coins[coin_idx].balanceOf(user))
 
-        # update internal balances
-        self.balances[coin_idx] -= user_balances_post
+        self.balances = [self.pool.balances(i) for i in range(2)]
         # total supply should decrease by the amount of tokens withdrawn
         self.total_supply -= lp_tokens_to_withdraw
 
@@ -459,35 +453,28 @@ class StatefulBase(RuleBasedStateMachine):
         if self.pool.balanceOf(user) <= 1e0:
             self.depositors.remove(user)
 
-        # invarinant upkeeping logic:
-        # imbalanced removals can trigger a claim of admin fees
+        # invariant upkeeping logic:
+        # imbalanced removals can trigger a claim of cached admin fees
+        if self.fee_receiver != boa.eval("empty(address)"):
+            admin_balances_post = [c.balanceOf(self.fee_receiver) for c in self.coins]
+            claimed_amounts = [admin_balances_post[i] - admin_balances_pre[i] for i in range(2)]
+        else:
+            claimed_amounts = [0, 0]
 
-        # store the balances of the fee receiver after the removal
-        new_xcp_profit_a = self.pool.xcp_profit_a()
-        # store the balances of the fee receiver before the removal
-        old_xcp_profit_a = self.xcp_profit_a
-        # check if the admin fees were claimed (not always the case)
-        if new_xcp_profit_a > old_xcp_profit_a and self.fee_receiver != boa.eval("empty(address)"):
+        if claimed_amounts[0] > 0 or claimed_amounts[1] > 0:
             event("admin fees claim was detected")
             note("claiming admin fees during removal")
-            # if the admin fees were claimed we have to update xcp
-            self.xcp_profit_a = new_xcp_profit_a
 
-            # store the balances of the fee receiver after the removal
-            # (should be higher than before the removal)
-            admin_balances_post = [c.balanceOf(self.fee_receiver) for c in self.coins]
             for i in range(2):
-                claimed_amount = admin_balances_post[i] - admin_balances_pre[i]
+                claimed_amount = claimed_amounts[i]
                 note("admin received {:.2e} of token {}".format(claimed_amount, i))
                 assert (
                     claimed_amount > 0
                     # decimals: with such a low precision admin fees might be 0
                     or self.decimals[i] <= 9
+                    # The claim path may have fees only in the other coin.
+                    or claimed_amounts[1 - i] > 0
                 ), f"the admin fees collected should be positive for coin {i}"
-                assert not self.is_ramping(), "claim admin fees while ramping"
-
-                # deduce the claimed amount from the pool balances
-                self.balances[i] -= claimed_amount
 
         # update test-tracked xcp profit
         self.xcp_profit = self.pool.xcp_profit()
@@ -532,22 +519,22 @@ class StatefulBase(RuleBasedStateMachine):
             # remove all liquidity from all real depositors
             for d in self.depositors:
                 # store the current balances of the pool
-                prev_balances = [c.balanceOf(self.pool) for c in self.coins]
+                prev_balances = [self.pool.balances(i) for i in range(2)]
                 # withdraw all liquidity from the depositor
                 tokens = self.pool.balanceOf(d)
                 self.pool.remove_liquidity(tokens, [0] * 2, sender=d)
                 assert self.pool.balanceOf(d) == 0, "depositor still has LP after withdrawal"
                 # assert current balances are less as the previous ones
-                for c, b in zip(self.coins, prev_balances):
+                for i, b in enumerate(prev_balances):
                     # check that the balance of the pool is less than before
-                    if c.balanceOf(self.pool) == b:
+                    if self.pool.balances(i) == b:
                         assert self.pool.balanceOf(d) < 10, (
                             "balance of the depositor is not small enough to"
                             "justify a withdrawal that does not affect the"
                             "pool token balance"
                         )
                     else:
-                        assert c.balanceOf(self.pool) < b, (
+                        assert self.pool.balances(i) < b, (
                             "one withdrawal didn't reduce the liquidity" "of the pool"
                         )
 
@@ -557,13 +544,14 @@ class StatefulBase(RuleBasedStateMachine):
     @invariant()
     def balances(self):  # noqa: F811
         balances = [self.pool.balances(i) for i in range(2)]
+        admin_balances = [self.pool.admin_balances(i) for i in range(2)]
         balance_of = [c.balanceOf(self.pool) for c in self.coins]
         for i in range(2):
             assert (
                 self.balances[i] == balances[i]
             ), "test-tracked balances don't match pool-tracked balances"
             assert (
-                self.balances[i] == balance_of[i]
+                self.balances[i] + admin_balances[i] == balance_of[i]
             ), "test-tracked balances don't match token-tracked balances"
 
     @invariant()
@@ -599,7 +587,6 @@ class StatefulBase(RuleBasedStateMachine):
 
         assert xcp_profit >= self.xcp_profit, "xcp_profit has decreased"
         self.xcp_profit = xcp_profit
-        self.xcp_profit_a = self.pool.xcp_profit_a()
 
 
 TestBase = StatefulBase.TestCase

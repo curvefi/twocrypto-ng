@@ -1,5 +1,5 @@
 # pragma version 0.4.3
-# pragma optimize gas
+# pragma optimize codesize
 """
 @title Twocrypto
 @author Curve.Fi
@@ -155,7 +155,7 @@ event SetDonationParameters:
     donation_shares_max_ratio: uint256
 
 event SetFeeParameters:
-    lp_profit_fraction: uint256
+    reserved_profit_fraction: uint256
     admin_fee: uint256
 
 event SetPolicyContract:
@@ -213,10 +213,10 @@ donation_protection_lp_threshold: public(uint256)
 donation_protection_extension_remainder: uint256
 
 balances: public(uint256[N_COINS])
+admin_balances: public(uint256[N_COINS])
+
 D: public(uint256)
 xcp_profit: public(uint256)
-xcp_profit_a: public(uint256)  # <--- Full profit at last claim of admin fees.
-admin_claimed_profit: public(uint256)  # Cumulative admin extraction from LP+DAO bucket, in vp units.
 
 virtual_price: public(uint256)  # <------ Cached (fast to read) virtual price.
 #                          The cached `virtual_price` is also used internally.
@@ -228,8 +228,9 @@ packed_rebalancing_params: public(uint256)  # <---------- Contains rebalancing
 # Fee params that determine dynamic fees:
 packed_fee_params: public(uint256)  # <---- Packs mid_fee, out_fee, fee_gamma.
 
-# Split between rebalancing budget and admin/LP share, with 10**10 precision.
-lp_profit_fraction: public(uint256)
+# Gross profit fraction reserved from rebalancing, with 10**10 precision.
+# This bucket is split between admin and LPs by `admin_fee`.
+reserved_profit_fraction: public(uint256)
 
 # DAO share of LP/DAO fee split with 10**10 precision. The rest goes to LPs.
 admin_fee: public(uint256)
@@ -297,8 +298,8 @@ def __init__(
     MATH = Math(empty(address))
     self.POLICY = Policy(empty(address))
 
-    # Split between rebalancing budget and admin/LP share
-    self.lp_profit_fraction = FEE_PRECISION * 50 // 100
+    # Gross profit bucket reserved from rebalancing and split between admin/LPs.
+    self.reserved_profit_fraction = FEE_PRECISION * 50 // 100
 
     # Split between DAO and LPs of the admin/LP share of fees.
     self.admin_fee = FEE_PRECISION * 50 // 100
@@ -341,7 +342,6 @@ def __init__(
     self.cached_price_oracle = initial_price
     self.last_prices = initial_price
     self.last_timestamp = block.timestamp
-    self.xcp_profit_a = 10**18
 
     self.donation_duration = 7 * 86400
 
@@ -388,7 +388,7 @@ def _transfer_in(
         # accounts for coin balances of the contract) is atleast dx.
         # If we checked for received_amounts == dx, an extra transfer without a
         # call to exchange_received will break the method.
-        dx: uint256 = coin_balance - self.balances[_coin_idx]
+        dx: uint256 = coin_balance - self.balances[_coin_idx] - self.admin_balances[_coin_idx]
         assert dx >= _dx, "!coins"
 
         # Adjust balances
@@ -639,6 +639,19 @@ def add_liquidity(
         ) # for donations - we only take NOISE_FEE (check _calc_token_fee)
         d_token -= d_token_fee
 
+        if not donation:
+            # Convert the admin's share of the LP haircut into a pro-rata
+            # token balance using the no-fee supply basis.
+            fee_supply: uint256 = token_supply + d_token + d_token_fee
+            local_balances: uint256[N_COINS] = self._apply_admin_d_token_fee(
+                balances,
+                d_token_fee,
+                fee_supply,
+            )
+            if d_token_fee > 0 and self.reserved_profit_fraction > 0 and self.admin_fee > 0:
+                xp = self._xp(local_balances, price_scale)
+                D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
+
         if donation:
             assert receiver == empty(address), "nonzero receiver"
             new_donation_shares: uint256 = self.donation_shares + d_token
@@ -706,8 +719,6 @@ def add_liquidity(
         self.D = D
         self.virtual_price = 10**18
         self.xcp_profit = 10**18
-        self.xcp_profit_a = 10**18
-        self.admin_claimed_profit = 0
 
         self.mint(self, MINIMUM_LIQUIDITY)
         d_token -= MINIMUM_LIQUIDITY
@@ -785,17 +796,18 @@ def remove_liquidity(
         # before external calls:
         self._transfer_out(i, withdraw_amounts[i], receiver)
 
-    price_scale: uint256 = self.cached_price_scale
-    self._update_policy_state(
-        self._xp(self.balances, price_scale),
-        price_scale,
-        self.cached_price_oracle,
-        self.last_prices,
-        self.virtual_price,
-        self.xcp_profit,
-        self.D,
-        False,
-    )
+    if withdraw_amounts[0] > 0 or withdraw_amounts[1] > 0:
+        price_scale: uint256 = self.cached_price_scale
+        self._update_policy_state(
+            self._xp(self.balances, price_scale),
+            price_scale,
+            self.cached_price_oracle,
+            self.last_prices,
+            self.virtual_price,
+            self.xcp_profit,
+            self.D,
+            False,
+        )
 
     # We intentionally use the unadjusted `amount` here as the amount of lp
     # tokens burnt is `amount`, regardless of the rounding error.
@@ -892,6 +904,25 @@ def _remove_liquidity_fixed_out(
     D_preop: uint256 = self._get_D(A_gamma, self._xp(self.balances, price_scale_preop))
     vp_preop: uint256 = 10**18 * self._xcp(D_preop, price_scale_preop) // self.totalSupply
 
+    j: uint256 = 1 - i
+    d_token_fee: uint256 = approx_fee * token_amount // FEE_PRECISION + 1
+    # Fixed-out withdrawal fees are charged in LP-token units by reducing
+    # the effective D burned. Convert the admin's share of that retained
+    # LP fee into a balanced slice of post-withdraw token balances.
+    fee_supply: uint256 = self.totalSupply - token_amount + d_token_fee
+    local_balances: uint256[N_COINS] = self.balances
+    local_balances[i] -= amount_i
+    local_balances[j] -= dy
+
+    local_balances = self._apply_admin_d_token_fee(
+        local_balances,
+        d_token_fee,
+        fee_supply,
+    )
+    if d_token_fee > 0 and self.reserved_profit_fraction > 0 and self.admin_fee > 0:
+        xp = self._xp(local_balances, price_scale_preop)
+        D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
+
     # ---------------------------- State Updates -----------------------------
 
     self.burnFrom(msg.sender, token_amount)
@@ -901,8 +932,6 @@ def _remove_liquidity_fixed_out(
     if amount_i != 0:
         # one-sided withdrawals call with amount_i = 0, save extcall here
         self._transfer_out(i, amount_i, receiver)
-
-    j: uint256 = 1 - i
 
     self._transfer_out(j, dy, receiver)
 
@@ -916,7 +945,7 @@ def _remove_liquidity_fixed_out(
             token_amount=token_amount,
             coin_index=j,
             coin_amount=dy,
-            approx_fee=approx_fee * token_amount // FEE_PRECISION + 1, # LP units, not coins!
+            approx_fee=d_token_fee, # LP units, not coins!
             packed_price_scale=price_scale
         )
     else:
@@ -924,7 +953,7 @@ def _remove_liquidity_fixed_out(
             provider=msg.sender,
             lp_token_amount=token_amount,
             token_amounts=token_amounts,
-            approx_fee=approx_fee * token_amount // FEE_PRECISION + 1, # LP units
+            approx_fee=d_token_fee, # LP units
             price_scale=price_scale
         )
 
@@ -1028,6 +1057,15 @@ def _exchange(
     dy -= fee  # <--------------------- Subtract fee from the outgoing amount.
     assert dy >= min_dy, "slippage"
     y -= dy
+
+    admin_fee_amount: uint256 = unsafe_div(
+        fee * self.reserved_profit_fraction * self.admin_fee,
+        FEE_PRECISION * FEE_PRECISION
+    )
+    if admin_fee_amount > 0:
+        self.admin_balances[j] += admin_fee_amount
+        self.balances[j] -= admin_fee_amount
+        y -= admin_fee_amount
 
     y *= PRECISIONS[j]
     if j > 0:
@@ -1156,25 +1194,55 @@ def tweak_price(
 
     # ------------ Rebalance liquidity if there's enough profits to adjust it:
     #
-    # Mathematical basis for rebalancing condition:
-    # 1. xcp_profit grows after virtual price, total growth since launch = (xcp_profit − 1)
-    # 2. We reserve lp_profit_fraction of the growth for LPs and admin, rest is used to rebalance the pool
+    # In this version, admin fees are booked immediately into token-denominated
+    # admin_balances and removed from AMM-owned balances. VP and xcp_profit
+    # therefore observe net-of-admin growth.
+    #
+    # `reserved_profit_fraction` keeps legacy gross-profit semantics. Let:
+    #
+    #   gross_profit = total fee/profit growth before admin is removed
+    #   reserve_fraction = reserved_profit_fraction
+    #   admin_fraction = admin_fee
+    #
+    # Then the split is:
+    #
+    #   reserved bucket  = gross_profit * reserve_fraction
+    #   rebalance bucket = gross_profit * (1 - reserve_fraction)
+    #   admin tokens     = gross_profit * reserve_fraction * admin_fraction
+    #   LP reserve       = gross_profit * reserve_fraction * (1 - admin_fraction)
+    #
+    # Since admin tokens are already outside VP/xcp, xcp_profit sees:
+    #
+    #   net_growth = gross_profit * (1 - reserve_fraction * admin_fraction)
+    #
+    # The threshold must reserve only the LP part still inside AMM accounting:
+    #
+    #   net_lp_reserve_fraction =
+    #       reserve_fraction * (1 - admin_fraction) /
+    #       (1 - reserve_fraction * admin_fraction)
+    #
+    # This preserves the legacy semantics where reserved profit is further
+    # split between admin and LPs by admin_fee. It does not account admin fees
+    # in VP units; it only maps the legacy gross configured reserve onto
+    # net-of-admin xcp_profit growth.
 
-    # Rebalancing condition basis:
-    #   virtual_price > 1 + (xcp_profit - 1) * lp_profit_fraction - admin_claimed_profit
-    #                  |         pre_admin_threshold_vp          |
-    # Interpretation:
-    #   1. xcp_profit - 1 is total gross profit growth above baseline.
-    #   2. Multiplying by lp_profit_fraction keeps only the LP+DAO retained share.
-    #   3. admin_claimed_profit subtracts what the admin has already extracted from that bucket.
-    #   4. The threshold is floored at PRECISION.
-    pre_admin_threshold_vp: uint256 = PRECISION + (
-        unsafe_sub(max(xcp_profit, PRECISION), PRECISION) * self.lp_profit_fraction // FEE_PRECISION
-    )
-    threshold_vp: uint256 = max(
-        PRECISION,
-        pre_admin_threshold_vp - min(self.admin_claimed_profit, pre_admin_threshold_vp),
-    )
+    reserved_fraction: uint256 = self.reserved_profit_fraction
+    admin_fee: uint256 = self.admin_fee
+    denominator: uint256 = FEE_PRECISION * FEE_PRECISION - reserved_fraction * admin_fee
+
+    profit_growth: uint256 = unsafe_sub(max(xcp_profit, PRECISION), PRECISION)
+    threshold_vp: uint256 = PRECISION + profit_growth
+    if denominator > 0:
+        # If admin_fee is zero, denominator is FEE_PRECISION**2 and this
+        # reduces to profit_growth * reserved_fraction.
+        threshold_vp = PRECISION + unsafe_div(
+            profit_growth * reserved_fraction * (FEE_PRECISION - admin_fee),
+            denominator
+        )
+    # If reserved_fraction == admin_fee == FEE_PRECISION, all gross profit is
+    # booked to admin_balances and no net xcp growth remains. Keep the full
+    # threshold above to preserve "all profit reserved, no rebalancing" semantics.
+
     # user_supply < total_supply => vp_boosted > virtual_price
     # by not accounting for donation shares, virtual_price is boosted leading to rebalance trigger
     # this is approximate condition that preliminary indicates readiness for rebalancing
@@ -1338,6 +1406,26 @@ def tweak_price(
 
 
 @internal
+def _apply_admin_d_token_fee(
+    local_balances: uint256[N_COINS],
+    d_token_fee: uint256,
+    fee_supply: uint256,
+) -> uint256[N_COINS]:
+    admin_d_token_fee: uint256 = unsafe_div(
+        d_token_fee * self.reserved_profit_fraction * self.admin_fee,
+        FEE_PRECISION * FEE_PRECISION
+    )
+    if admin_d_token_fee > 0:
+        admin_amount: uint256 = 0
+        for i: uint256 in range(N_COINS):
+            admin_amount = unsafe_div(local_balances[i] * admin_d_token_fee, fee_supply)
+            self.admin_balances[i] += admin_amount
+            self.balances[i] -= admin_amount
+            local_balances[i] -= admin_amount
+    return local_balances
+
+
+@internal
 def _update_policy_state(
     xp: uint256[N_COINS],
     price_scale: uint256,
@@ -1377,11 +1465,7 @@ def _update_policy_state(
 @internal
 def _claim_admin_fees():
     """
-    @notice Claims admin fees and sends it to fee_receiver set in the factory.
-    @dev Functionally similar to:
-         1. Calculating admin's share of fees,
-         2. minting LP tokens,
-         3. admin claims underlying tokens via remove_liquidity.
+    @notice Claims cached token-denominated admin fees to the factory receiver.
     """
 
     # --------------------- Check if fees can be claimed ---------------------
@@ -1389,85 +1473,34 @@ def _claim_admin_fees():
     # Disable fee claiming if:
     # 1. If time passed since last fee claim is less than
     #    MIN_ADMIN_FEE_CLAIM_INTERVAL.
-    # 2. Pool parameters are being ramped.
-    # 3. admin_fee is 0.
-    # 4. fee_receiver is not set.
+    # 2. fee_receiver is not set.
 
     last_claim_time: uint256 = self.last_admin_fee_claim_timestamp
     fee_receiver: address = staticcall factory.fee_receiver()
-    admin_fee: uint256 = self.admin_fee
     if (
         unsafe_sub(block.timestamp, last_claim_time) < MIN_ADMIN_FEE_CLAIM_INTERVAL or
-        self._is_ramping() or
-        admin_fee == 0 or
         fee_receiver == empty(address)
     ):
         return
 
-    xcp_profit: uint256 = self.xcp_profit  # <---------- Current pool profits.
-    xcp_profit_a: uint256 = self.xcp_profit_a  # <- Profits at previous claim.
-    current_lp_token_supply: uint256 = self.totalSupply
-    # Do not claim admin fees if:
-    # 1. insufficient profits accrued since last claim, and
-    # 2. there are less than 10**18 (or 1 unit of) lp tokens, else it can lead
-    #    to manipulated virtual prices.
-
-    if xcp_profit <= xcp_profit_a or current_lp_token_supply < 10**18:
+    admin_amounts: uint256[N_COINS] = self.admin_balances
+    if admin_amounts[0] == 0 and admin_amounts[1] == 0:
         return
 
-    # ---------- Conditions met to claim admin fees: compute state. ----------
-    current_vprice: uint256 = self.virtual_price
-    balances: uint256[N_COINS] = self.balances
-    lp_profit_fraction: uint256 = self.lp_profit_fraction
+    for i: uint256 in range(N_COINS):
+        if admin_amounts[i] > 0:
+            self.admin_balances[i] = 0
 
-    #  Admin fees are calculated as follows.
-    #      1. Calculate accrued profit since last claim. `xcp_profit`
-    #         is the current profits. `xcp_profit_a` is the profits
-    #         at the previous claim.
-    #      2. Take out lp_profit_fraction, with 10**10 precision.
-    #      3. Take out admin's share, stored in self.admin_fee (also 10**10 precision).
-
-    fees: uint256 = unsafe_div(
-        unsafe_sub(xcp_profit, xcp_profit_a) * lp_profit_fraction * self.admin_fee,
-        FEE_PRECISION * FEE_PRECISION
-    )
-
-    if fees > 0:
-        # ---------------- Recalculate virtual price and admin claim offset -------
-        # We withdraw token balances without touching LP shares, so virtual price goes down.
-        updated_vprice: uint256 = current_vprice - fees
-        # Do not claim fees if doing so causes virtual price to drop below 10**18.
-        if updated_vprice < 10**18:
-            return
-        # Keep xcp_profit as the gross profit signal and track claimed admin
-        # extraction separately in the same virtual-price units as `fees`.
-        # Rebalancing thresholding then compares virtual_price against:
-        #   1 + (xcp_profit - 1) * lpf - admin_claimed_profit
-        self.admin_claimed_profit += fees
-
-        # ---------------------------- Update State ------------------------------
-        self.virtual_price = updated_vprice
-        self.last_admin_fee_claim_timestamp = block.timestamp
-        self.xcp_profit_a = xcp_profit  # <-------- Cache last claimed gross profit.
-
-        # Adjust D after admin removes liquidity
-        # no _get_D() because we can't claim during ramping
-        D: uint256 = self.D
-        # Decrease D proportional to fees/virtual_price
-        self.D = D - unsafe_div(D * fees, current_vprice)
-
-        # --------------------------- Handle Transfers ---------------------------
-
-        admin_amounts: uint256[N_COINS] = empty(uint256[N_COINS])
-        for i: uint256 in range(N_COINS):
-            admin_amounts[i] = (
-                balances[i] * fees // current_vprice
+            # Admin balances are already excluded from pool accounting, so
+            # claiming transfers tokens without touching self.balances or D.
+            assert extcall IERC20(coins[i]).transfer(
+                fee_receiver,
+                admin_amounts[i],
+                default_return_value=True
             )
-            # _transfer_out tokens to admin and update self.balances. State
-            # update to self.balances occurs before external contract calls:
-            self._transfer_out(i, admin_amounts[i], fee_receiver)
 
-        log ClaimAdminFee(admin=fee_receiver, tokens=admin_amounts)
+    self.last_admin_fee_claim_timestamp = block.timestamp
+    log ClaimAdminFee(admin=fee_receiver, tokens=admin_amounts)
 
 
 @internal
@@ -2332,7 +2365,9 @@ def set_donation_parameters(
     assert protection_period > 0  # dev: "donation protection period cannot be zero"
     assert protection_period < 30 * 86_400  # dev: "donation protection period above maximum"
     assert protection_lp_threshold > 0  # dev: "donation protection threshold cannot be zero"
+    assert protection_lp_threshold <= PRECISION  # dev: "donation protection threshold above 1e18"
     assert max_shares_ratio > 0  # dev: "donation shares max ratio cannot be zero"
+    assert max_shares_ratio <= PRECISION  # dev: "donation shares max ratio above 1e18"
 
     self.donation_duration = duration
     self.donation_protection_period = protection_period
@@ -2349,13 +2384,13 @@ def set_donation_parameters(
 
 
 @internal
-def _set_fee_parameters(lp_profit_fraction: uint256, admin_fee: uint256):
-    assert lp_profit_fraction <= FEE_PRECISION  # dev: "lp profit fraction above 1e10"
+def _set_fee_parameters(reserved_profit_fraction: uint256, admin_fee: uint256):
+    assert reserved_profit_fraction <= FEE_PRECISION  # dev: "reserved profit fraction above 1e10"
     assert admin_fee <= MAX_ADMIN_FEE  # dev: "admin fee above max"
 
     self.admin_fee = admin_fee
-    self.lp_profit_fraction = lp_profit_fraction
-    log SetFeeParameters(lp_profit_fraction=lp_profit_fraction, admin_fee=admin_fee)
+    self.reserved_profit_fraction = reserved_profit_fraction
+    log SetFeeParameters(reserved_profit_fraction=reserved_profit_fraction, admin_fee=admin_fee)
 
 
 @internal
@@ -2389,11 +2424,10 @@ def _set_allowlist(add: DynArray[address, 16], remove: DynArray[address, 16]):
     log LPAllowlistChanged(user=empty(address), allowed=self.lp_allowlist[empty(address)])
 
 
-
 @external
 @nonreentrant
 def initialize(
-    lp_profit_fraction: uint256,
+    reserved_profit_fraction: uint256,
     admin_fee: uint256,
     policy: Policy,
     initial_price: uint256,
@@ -2401,8 +2435,8 @@ def initialize(
 ):
     """
     @notice One-time post-deploy initialization for init-required pools.
-    @param lp_profit_fraction The LP/DAO share of profits, with 10**10 precision.
-    @param admin_fee The DAO share of the LP/DAO bucket, with 10**10 precision.
+    @param reserved_profit_fraction Gross profit share reserved from rebalancing, with 10**10 precision.
+    @param admin_fee The DAO share of the reserved profit bucket, with 10**10 precision.
     @param policy Optional policy contract to attach.
     @param initial_price Price scale and oracle seed to use before first liquidity.
     @param allowlist_add Initial LP allowlist entries. Any non-empty address
@@ -2418,7 +2452,7 @@ def initialize(
     assert initial_price > 10**6 and initial_price < 10**30, "initial price out of bound"
 
     # Set fee params
-    self._set_fee_parameters(lp_profit_fraction, admin_fee)
+    self._set_fee_parameters(reserved_profit_fraction, admin_fee)
     # Set policy
     self._set_policy(policy)
     self.cached_price_scale = initial_price
@@ -2437,14 +2471,14 @@ def initialize(
 
 @external
 @nonreentrant
-def set_fee_parameters(lp_profit_fraction: uint256, admin_fee: uint256):
+def set_fee_parameters(reserved_profit_fraction: uint256, admin_fee: uint256):
     """
-    @notice Set LP/DAO-vs-rebalance split and DAO-vs-LP split parameters.
-    @param lp_profit_fraction The LP/DAO share of profits, with 10**10 precision.
-    @param admin_fee The DAO share of the LP/DAO bucket, with 10**10 precision.
+    @notice Set reserved-vs-rebalance split and DAO-vs-LP split parameters.
+    @param reserved_profit_fraction Gross profit share reserved from rebalancing, with 10**10 precision.
+    @param admin_fee The DAO share of the reserved profit bucket, with 10**10 precision.
     """
     self._check_admin()
-    self._set_fee_parameters(lp_profit_fraction, admin_fee)
+    self._set_fee_parameters(reserved_profit_fraction, admin_fee)
 
 
 @external
