@@ -796,17 +796,18 @@ def remove_liquidity(
         # before external calls:
         self._transfer_out(i, withdraw_amounts[i], receiver)
 
-    price_scale: uint256 = self.cached_price_scale
-    self._update_policy_state(
-        self._xp(self.balances, price_scale),
-        price_scale,
-        self.cached_price_oracle,
-        self.last_prices,
-        self.virtual_price,
-        self.xcp_profit,
-        self.D,
-        False,
-    )
+    if withdraw_amounts[0] > 0 or withdraw_amounts[1] > 0:
+        price_scale: uint256 = self.cached_price_scale
+        self._update_policy_state(
+            self._xp(self.balances, price_scale),
+            price_scale,
+            self.cached_price_oracle,
+            self.last_prices,
+            self.virtual_price,
+            self.xcp_profit,
+            self.D,
+            False,
+        )
 
     # We intentionally use the unadjusted `amount` here as the amount of lp
     # tokens burnt is `amount`, regardless of the rounding error.

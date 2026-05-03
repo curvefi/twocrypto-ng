@@ -1,7 +1,7 @@
 import boa
 import pytest
 
-from tests.utils.constants import N_COINS, VENOM_FLAG
+from tests.utils.constants import N_COINS, POLICY_DEPLOYER, VENOM_FLAG
 from tests.utils.god_mode import GodModePool
 import numpy as np
 
@@ -209,6 +209,39 @@ def test_remove_liquidity_ignores_reverting_policy_update(pool, coins, factory_a
             coins[i].balanceOf(user_account)
             == initial_user_coin_balances[i] + expected_withdraw_amounts[i]
         )
+
+
+def test_zero_balanced_remove_liquidity_skips_policy_update(pool, factory_admin):
+    with boa.env.anchor():
+        gm_pool = GodModePool(pool)
+        gm_pool.add_liquidity_balanced(amount=INITIAL_LIQUIDITY_COIN0)
+
+        policy = POLICY_DEPLOYER.deploy(pool.address)
+        pool.set_policy_contract(policy, sender=factory_admin)
+        last_ts = policy.last_pool_state().ts
+        assert last_ts > 0
+
+        boa.env.time_travel(seconds=1)
+        assert pool.remove_liquidity(0, [0] * N_COINS) == [0] * N_COINS
+
+        assert policy.last_pool_state().ts == last_ts
+
+
+def test_nonzero_balanced_remove_liquidity_updates_policy(pool, factory_admin):
+    with boa.env.anchor():
+        gm_pool = GodModePool(pool)
+        gm_pool.add_liquidity_balanced(amount=INITIAL_LIQUIDITY_COIN0)
+
+        policy = POLICY_DEPLOYER.deploy(pool.address)
+        pool.set_policy_contract(policy, sender=factory_admin)
+        last_ts = policy.last_pool_state().ts
+        assert last_ts > 0
+
+        boa.env.time_travel(seconds=1)
+        withdraw_amounts = pool.remove_liquidity(pool.balanceOf(boa.env.eoa) // 2, [0] * N_COINS)
+
+        assert withdraw_amounts[0] > 0 or withdraw_amounts[1] > 0
+        assert policy.last_pool_state().ts > last_ts
 
 
 def test_remove_liquidity_slippage(pool, coins, bob):
