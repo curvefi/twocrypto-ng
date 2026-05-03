@@ -2365,7 +2365,9 @@ def set_donation_parameters(
     assert protection_period > 0  # dev: "donation protection period cannot be zero"
     assert protection_period < 30 * 86_400  # dev: "donation protection period above maximum"
     assert protection_lp_threshold > 0  # dev: "donation protection threshold cannot be zero"
+    assert protection_lp_threshold <= PRECISION  # dev: "donation protection threshold above 1e18"
     assert max_shares_ratio > 0  # dev: "donation shares max ratio cannot be zero"
+    assert max_shares_ratio <= PRECISION  # dev: "donation shares max ratio above 1e18"
 
     self.donation_duration = duration
     self.donation_protection_period = protection_period

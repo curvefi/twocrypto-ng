@@ -148,6 +148,9 @@ def calc_token_amount(
 
     d_token, amountsp, xp = self._calc_dtoken_nofee(amounts, deposit, swap)
     if deposit and staticcall Curve(swap).D() == 0:
+        # Donation adds are rejected by the pool until regular liquidity exists.
+        if donation:
+            return 0
         if d_token <= MINIMUM_LIQUIDITY:
             return 0
         return d_token - MINIMUM_LIQUIDITY

@@ -15,6 +15,14 @@ def test_cant_donate_on_empty_pool(gm_pool):
     assert gm_pool.totalSupply() == 0
 
 
+def test_empty_pool_donation_quote_is_zero(gm_pool, views_contract):
+    amounts = [10**18, 2 * 10**18]
+
+    assert gm_pool.D() == 0
+    assert views_contract.calc_token_amount(amounts, True, gm_pool.address, True) == 0
+    assert views_contract.calc_token_amount(amounts, True, gm_pool.address, False) > 0
+
+
 @fixture()
 def gm_pool_with_liquidity(gm_pool):
     gm_pool.add_liquidity_balanced(1_000 * 10**18)
