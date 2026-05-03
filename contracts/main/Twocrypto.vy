@@ -1483,6 +1483,9 @@ def _claim_admin_fees():
         return
 
     admin_amounts: uint256[N_COINS] = self.admin_balances
+    if admin_amounts[0] == 0 and admin_amounts[1] == 0:
+        return
+
     for i: uint256 in range(N_COINS):
         if admin_amounts[i] > 0:
             self.admin_balances[i] = 0

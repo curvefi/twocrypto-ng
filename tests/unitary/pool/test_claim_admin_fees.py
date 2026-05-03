@@ -56,6 +56,10 @@ def _trigger_one_delayed_rebalance(pool_instance):
     assert pool_instance.price_scale() != price_scale_before
 
 
+def _last_admin_fee_claim_timestamp(pool_instance):
+    return pool_instance.eval("self.last_admin_fee_claim_timestamp")
+
+
 def get_pool_state(pool_instance, print_state=False, print_normalized=True):
     xcp_profit = pool_instance.xcp_profit()
     virtual_price = pool_instance.virtual_price()
@@ -222,6 +226,67 @@ def test_claim_no_rebalancing(gm_pool, fee_receiver):
     assert value_received == pytest.approx(expected_admin_value, rel=1e-8)
     assert pool_instance.xcp_profit() == xcp_profit_pre_claim
     assert [pool_instance.admin_balances(i) for i in range(2)] == [0, 0]
+
+
+def test_empty_claim_does_not_update_timestamp_or_emit(gm_pool):
+    with boa.env.anchor():
+        pool_instance = gm_pool
+        gm_pool.add_liquidity_balanced(1_500_000 * 10**18)
+        boa.env.time_travel(seconds=UNIX_DAY)
+
+        assert [pool_instance.admin_balances(i) for i in range(2)] == [0, 0]
+        last_claim_time = _last_admin_fee_claim_timestamp(pool_instance)
+
+        pool_instance.get_logs()
+        pool_instance.internal._claim_admin_fees()
+        logs = pool_instance.get_logs()
+
+        assert _last_admin_fee_claim_timestamp(pool_instance) == last_claim_time
+        assert "ClaimAdminFee" not in [type(log).__name__ for log in logs]
+
+
+def test_empty_auto_claim_does_not_consume_interval(gm_pool):
+    with boa.env.anchor():
+        pool_instance = gm_pool
+        gm_pool.add_liquidity_balanced(1_500_000 * 10**18)
+        boa.env.time_travel(seconds=UNIX_DAY)
+
+        assert [pool_instance.admin_balances(i) for i in range(2)] == [0, 0]
+        last_claim_time = _last_admin_fee_claim_timestamp(pool_instance)
+
+        pool_instance.get_logs()
+        pool_instance.remove_liquidity_one_coin(pool_instance.balanceOf(boa.env.eoa) // 100, 0, 0)
+        logs = pool_instance.get_logs()
+
+        assert _last_admin_fee_claim_timestamp(pool_instance) == last_claim_time
+        assert "ClaimAdminFee" not in [type(log).__name__ for log in logs]
+
+
+def test_nonempty_auto_claim_transfers_cached_fees(gm_pool, fee_receiver):
+    with boa.env.anchor():
+        pool_instance = gm_pool
+        gm_pool.add_liquidity_balanced(1_500_000 * 10**18)
+        work_pool(pool_instance, N_TRADES, TRADE_SIZE, update_ema=False)
+        balance_pool(pool_instance)
+        boa.env.time_travel(seconds=UNIX_DAY)
+
+        expected_admin_amounts = [pool_instance.admin_balances(i) for i in range(2)]
+        assert sum(expected_admin_amounts) > 0
+        receiver_balances_init = [coin.balanceOf(fee_receiver) for coin in pool_instance.coins]
+
+        pool_instance.get_logs()
+        pool_instance.remove_liquidity_one_coin(pool_instance.balanceOf(boa.env.eoa) // 100, 0, 0)
+        logs = pool_instance.get_logs()
+
+        receiver_balances_post = [coin.balanceOf(fee_receiver) for coin in pool_instance.coins]
+        claim_logs = [log for log in logs if type(log).__name__ == "ClaimAdminFee"]
+
+        assert receiver_balances_post == [
+            receiver_balances_init[i] + expected_admin_amounts[i] for i in range(2)
+        ]
+        assert _last_admin_fee_claim_timestamp(pool_instance) == boa.env.evm.patch.timestamp
+        assert len(claim_logs) == 1
+        assert list(claim_logs[0].tokens) == expected_admin_amounts
 
 
 def test_n_claim_no_rebalancing(gm_pool, fee_receiver):
