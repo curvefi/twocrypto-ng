@@ -640,20 +640,15 @@ def add_liquidity(
         d_token -= d_token_fee
 
         if not donation:
-            admin_d_token_fee: uint256 = unsafe_div(
-                d_token_fee * self.reserved_profit_fraction * self.admin_fee,
-                FEE_PRECISION * FEE_PRECISION
+            # Convert the admin's share of the LP haircut into a pro-rata
+            # token balance using the no-fee supply basis.
+            fee_supply: uint256 = token_supply + d_token + d_token_fee
+            balances = self._book_admin_d_token_fee(
+                balances,
+                d_token_fee,
+                fee_supply,
             )
-            if admin_d_token_fee > 0:
-                # Convert the admin's share of the LP haircut into a pro-rata
-                # token balance using the no-fee supply basis.
-                fee_supply: uint256 = token_supply + d_token + d_token_fee
-                balances = self._book_admin_token_fee(
-                    balances,
-                    admin_d_token_fee,
-                    fee_supply,
-                )
-
+            if d_token_fee > 0 and self.reserved_profit_fraction > 0 and self.admin_fee > 0:
                 xp = self._xp(balances, price_scale)
                 D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
 
@@ -910,25 +905,20 @@ def _remove_liquidity_fixed_out(
 
     j: uint256 = 1 - i
     d_token_fee: uint256 = approx_fee * token_amount // FEE_PRECISION + 1
-    admin_d_token_fee: uint256 = unsafe_div(
-        d_token_fee * self.reserved_profit_fraction * self.admin_fee,
-        FEE_PRECISION * FEE_PRECISION
+    # Fixed-out withdrawal fees are charged in LP-token units by reducing
+    # the effective D burned. Convert the admin's share of that retained
+    # LP fee into a balanced slice of post-withdraw token balances.
+    fee_supply: uint256 = self.totalSupply - token_amount + d_token_fee
+    balances: uint256[N_COINS] = self.balances
+    balances[i] -= amount_i
+    balances[j] -= dy
+
+    balances = self._book_admin_d_token_fee(
+        balances,
+        d_token_fee,
+        fee_supply,
     )
-    if admin_d_token_fee > 0:
-        # Fixed-out withdrawal fees are charged in LP-token units by reducing
-        # the effective D burned. Convert the admin's share of that retained
-        # LP fee into a balanced slice of post-withdraw token balances.
-        fee_supply: uint256 = self.totalSupply - token_amount + d_token_fee
-        balances: uint256[N_COINS] = self.balances
-        balances[i] -= amount_i
-        balances[j] -= dy
-
-        balances = self._book_admin_token_fee(
-            balances,
-            admin_d_token_fee,
-            fee_supply,
-        )
-
+    if d_token_fee > 0 and self.reserved_profit_fraction > 0 and self.admin_fee > 0:
         xp = self._xp(balances, price_scale_preop)
         D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
 
@@ -1415,17 +1405,22 @@ def tweak_price(
 
 
 @internal
-def _book_admin_token_fee(
+def _book_admin_d_token_fee(
     balances: uint256[N_COINS],
-    admin_d_token_fee: uint256,
+    d_token_fee: uint256,
     fee_supply: uint256,
 ) -> uint256[N_COINS]:
-    admin_amount: uint256 = 0
-    for i: uint256 in range(N_COINS):
-        admin_amount = unsafe_div(balances[i] * admin_d_token_fee, fee_supply)
-        self.admin_balances[i] += admin_amount
-        self.balances[i] -= admin_amount
-        balances[i] -= admin_amount
+    admin_d_token_fee: uint256 = unsafe_div(
+        d_token_fee * self.reserved_profit_fraction * self.admin_fee,
+        FEE_PRECISION * FEE_PRECISION
+    )
+    if admin_d_token_fee > 0:
+        admin_amount: uint256 = 0
+        for i: uint256 in range(N_COINS):
+            admin_amount = unsafe_div(balances[i] * admin_d_token_fee, fee_supply)
+            self.admin_balances[i] += admin_amount
+            self.balances[i] -= admin_amount
+            balances[i] -= admin_amount
     return balances
 
 
