@@ -42,6 +42,12 @@ assert (
 
 N_COINS = POOL_DEPLOYER._constants.N_COINS
 
+assert (
+    POOL_DEPLOYER._constants.MINIMUM_LIQUIDITY == VIEW_DEPLOYER._constants.MINIMUM_LIQUIDITY
+), "MINIMUM_LIQUIDITY mismatch"
+
+MINIMUM_LIQUIDITY = POOL_DEPLOYER._constants.MINIMUM_LIQUIDITY
+
 # assert (
 #     POOL_DEPLOYER._constants.MIN_GAMMA == MATH_DEPLOYER._constants.MIN_GAMMA
 # ), "MIN_GAMMA mismatch"

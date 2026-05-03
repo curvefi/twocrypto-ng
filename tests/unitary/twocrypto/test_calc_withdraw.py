@@ -11,9 +11,9 @@ def gm_pool(gm_pool):
 
 
 @pytest.mark.parametrize("method", ["fixed_out", "one_coin"])
-def test_withdraw_more_than_supply(gm_pool, method):
+def test_withdraw_more_than_supply(gm_pool, method, minimum_liquidity):
     lp_tokens = gm_pool.balanceOf(boa.env.eoa)
-    amount_to_withdraw = lp_tokens + 1
+    amount_to_withdraw = lp_tokens + minimum_liquidity + 1
 
     with boa.reverts("!amount"):
         if method == "fixed_out":

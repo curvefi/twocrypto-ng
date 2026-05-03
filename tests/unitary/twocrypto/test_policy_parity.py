@@ -20,8 +20,7 @@ def _state_snapshot(pool):
         "last_prices": pool.last_prices(),
         "virtual_price": pool.virtual_price(),
         "xcp_profit": pool.xcp_profit(),
-        "xcp_profit_a": pool.xcp_profit_a(),
-        "admin_claimed_profit": pool.admin_claimed_profit(),
+        "admin_balances": [pool.admin_balances(i) for i in range(2)],
     }
 
 

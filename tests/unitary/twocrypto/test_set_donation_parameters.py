@@ -42,7 +42,9 @@ def test_only_owner(pool):
         (0, 1, 1, 1, '"donation duration cannot be zero"'),
         (1, 0, 1, 1, '"donation protection period cannot be zero"'),
         (1, 1, 0, 1, '"donation protection threshold cannot be zero"'),
+        (1, 1, PRECISION + 1, 1, '"donation protection threshold above 1e18"'),
         (1, 1, 1, 0, '"donation shares max ratio cannot be zero"'),
+        (1, 1, 1, PRECISION + 1, '"donation shares max ratio above 1e18"'),
     ],
 )
 def test_invalid_params(pool, duration, period, threshold, max_shares_ratio, dev_reason):

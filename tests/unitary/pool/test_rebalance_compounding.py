@@ -1,7 +1,47 @@
 import boa
+import pytest
 
-from tests.utils.constants import MAX_FEE, PRECISION, UNIX_DAY
+from tests.utils.constants import FEE_PRECISION, MAX_FEE, PRECISION, UNIX_DAY, VENOM_FLAG
 from tests.utils.god_mode import GodModePool
+
+POLICY_TARGET_NUM = 102
+POLICY_TARGET_DEN = 100
+
+TWO_PERCENT_POLICY_DEPLOYER = boa.loads_partial(
+    f"""
+# pragma version 0.4.3
+# pragma optimize gas
+
+N_COINS: constant(uint256) = 2
+last_price_scale: public(uint256)
+
+
+@external
+@view
+def get_fee(xp: uint256[N_COINS]) -> uint256:
+    return 0
+
+
+@external
+@view
+def get_price_scale() -> uint256:
+    return self.last_price_scale * {POLICY_TARGET_NUM} // {POLICY_TARGET_DEN}
+
+
+@external
+def update_pool_state(
+    xp: uint256[N_COINS],
+    price_scale: uint256,
+    price_oracle: uint256,
+    last_prices: uint256,
+    virtual_price: uint256,
+    xcp_profit: uint256,
+    D: uint256,
+):
+    self.last_price_scale = price_scale
+""",
+    compiler_args={"experimental_codegen": VENOM_FLAG},
+)
 
 INITIAL_LIQ = 100_000 * PRECISION
 WORK_SWAPS = 10
@@ -9,6 +49,21 @@ WORK_RATIO = 3
 REBALANCE_STEPS = 6
 REBALANCE_RATIO_NUM = 3
 REBALANCE_RATIO_DEN = 5
+
+
+def _deploy_two_percent_policy(pool, factory_admin):
+    policy = TWO_PERCENT_POLICY_DEPLOYER.deploy()
+    pool.set_policy_contract(policy, sender=factory_admin)
+    return policy
+
+
+def _exchange_and_read_rebalance_state(pool_instance):
+    pool_instance.exchange(
+        0,
+        pool_instance.balances(0) * REBALANCE_RATIO_NUM // REBALANCE_RATIO_DEN,
+        update_ema=False,
+    )
+    return pool_instance.price_scale(), pool_instance.donation_shares()
 
 
 def _set_probe_rebalancing_params(pool_instance, factory_admin):
@@ -53,7 +108,7 @@ def _snapshot(pool_instance):
     return {
         "virtual_price": pool_instance.virtual_price(),
         "xcp_profit": pool_instance.xcp_profit(),
-        "admin_claimed_profit": pool_instance.admin_claimed_profit(),
+        "admin_balances": [pool_instance.admin_balances(i) for i in range(2)],
         "get_virtual_price": pool_instance.get_virtual_price(),
         "price_scale": pool_instance.price_scale(),
         "price_oracle": pool_instance.price_oracle(),
@@ -115,24 +170,39 @@ def _run_rebalance_probe(pool_instance):
 
 
 def _inject_threshold_probe(pool_instance):
-    pool_instance.inject_function(
-        """
+    try:
+        pool_instance.inject_function(
+            """
 @external
 @view
-def threshold_probe() -> uint256:
-    threshold_base: uint256 = (
-        10**18
-        + (max(self.xcp_profit, 10**18) - 10**18) * self.lp_profit_fraction // 10**10
-    )
-    threshold_vp: uint256 = threshold_base
-    if threshold_base > 10**18:
-        threshold_vp = unsafe_sub(
-            threshold_base,
-            min(self.admin_claimed_profit, unsafe_sub(threshold_base, 10**18)),
+def net_lp_reserve_fraction_probe() -> uint256:
+    reserved_fraction: uint256 = self.reserved_profit_fraction
+    admin_fee: uint256 = self.admin_fee
+    denominator: uint256 = 10**10 * 10**10 - reserved_fraction * admin_fee
+
+    net_lp_reserve_fraction: uint256 = 10**10
+    if denominator > 0:
+        net_lp_reserve_fraction = (
+            reserved_fraction * (10**10 - admin_fee) * 10**10 // denominator
         )
-    return threshold_vp
+    return net_lp_reserve_fraction
+
 """
-    )
+        )
+    except ValueError as e:
+        if "already injected" not in str(e):
+            raise
+
+
+def _net_lp_reserve_fraction(reserved_fraction, admin_fee):
+    denominator = FEE_PRECISION * FEE_PRECISION - reserved_fraction * admin_fee
+    if denominator == 0:
+        return FEE_PRECISION
+    return reserved_fraction * (FEE_PRECISION - admin_fee) * FEE_PRECISION // denominator
+
+
+def _threshold(xcp_profit, reserve_fraction):
+    return PRECISION + (max(xcp_profit, PRECISION) - PRECISION) * reserve_fraction // FEE_PRECISION
 
 
 def test_synthetic_vp_xcp_state_is_coherent(pool, factory_admin):
@@ -204,19 +274,113 @@ def test_rebalance_count_matches_fresh_vs_synthetic_high_state(pool, factory_adm
     )
 
 
-def test_same_block_noop_does_not_consume_rebalance_slot(pool, factory_admin):
+def test_price_scale_rebalances_only_on_first_touch_in_block(pool, factory_admin):
     with boa.env.anchor():
         boa.env.enable_fast_mode()
         pool_instance = GodModePool(pool)
+        policy = _deploy_two_percent_policy(pool, factory_admin)
         pool_instance.add_liquidity_balanced(INITIAL_LIQ)
         _set_probe_rebalancing_params(pool_instance, factory_admin)
-        _work_pool(pool_instance)
-        _balance_pool(pool_instance)
+        pool_instance.donate_balanced(INITIAL_LIQ // 20)
+        boa.env.time_travel(seconds=pool_instance.donation_duration())
+        pool_instance.eval("self.donation_protection_expiry_ts = 0")
+        boa.env.time_travel(seconds=1)
 
         price_scale_before = pool_instance.price_scale()
-        pool_instance.eval(f"self.cached_price_oracle = {price_scale_before * 13 // 10}")
-        pool_instance.eval("self.last_timestamp = block.timestamp")
+        donation_shares_before = pool_instance.donation_shares()
+        assert policy.last_price_scale() == price_scale_before
 
+        (
+            price_scale_after_first_touch,
+            donation_shares_after_first_touch,
+        ) = _exchange_and_read_rebalance_state(pool_instance)
+        assert price_scale_after_first_touch != price_scale_before
+        assert donation_shares_after_first_touch < donation_shares_before
+
+        (
+            price_scale_after_same_block,
+            donation_shares_after_same_block,
+        ) = _exchange_and_read_rebalance_state(pool_instance)
+        assert price_scale_after_same_block == price_scale_after_first_touch
+        assert donation_shares_after_same_block == donation_shares_after_first_touch
+
+        boa.env.time_travel(seconds=1)
+        (
+            price_scale_after_next_block,
+            donation_shares_after_next_block,
+        ) = _exchange_and_read_rebalance_state(pool_instance)
+
+        assert price_scale_after_next_block != price_scale_after_same_block
+        assert donation_shares_after_next_block < donation_shares_after_same_block
+
+
+@pytest.mark.parametrize(
+    "reserved_profit_fraction,admin_fee,expected_fraction",
+    [
+        (FEE_PRECISION // 2, FEE_PRECISION // 2, FEE_PRECISION // 3),
+        (FEE_PRECISION // 2, 0, FEE_PRECISION // 2),
+        (0, FEE_PRECISION // 2, 0),
+        (FEE_PRECISION, FEE_PRECISION // 2, FEE_PRECISION),
+        (FEE_PRECISION, FEE_PRECISION, FEE_PRECISION),
+    ],
+)
+def test_net_lp_reserve_fraction_probe(
+    pool, factory_admin, reserved_profit_fraction, admin_fee, expected_fraction
+):
+    with boa.env.anchor():
+        pool_instance = GodModePool(pool)
+        pool_instance.set_fee_parameters(
+            reserved_profit_fraction,
+            admin_fee,
+            sender=factory_admin,
+        )
+        _inject_threshold_probe(pool_instance)
+
+        assert pool_instance.instance.inject.net_lp_reserve_fraction_probe() == expected_fraction
+
+
+def test_net_admin_threshold_floor(pool, factory_admin):
+    with boa.env.anchor():
+        pool_instance = GodModePool(pool)
+        pool_instance.add_liquidity_balanced(INITIAL_LIQ)
+        pool_instance.set_fee_parameters(
+            FEE_PRECISION // 2, FEE_PRECISION // 2, sender=factory_admin
+        )
+        _inject_threshold_probe(pool_instance)
+
+        pool_instance.eval("self.xcp_profit = 10**18 - 1")
+        net_lp_reserve_fraction = _net_lp_reserve_fraction(
+            pool_instance.reserved_profit_fraction(),
+            pool_instance.admin_fee(),
+        )
+        assert _threshold(pool_instance.xcp_profit(), net_lp_reserve_fraction) == PRECISION
+
+
+def test_adjusted_threshold_allows_rebalance_when_raw_threshold_blocks(pool, factory_admin):
+    with boa.env.anchor():
+        boa.env.enable_fast_mode()
+        pool_instance = GodModePool(pool)
+        _deploy_two_percent_policy(pool, factory_admin)
+        pool_instance.add_liquidity_balanced(INITIAL_LIQ)
+        _set_probe_rebalancing_params(pool_instance, factory_admin)
+        _set_synthetic_high_state(pool_instance)
+
+        net_lp_reserve_fraction = _net_lp_reserve_fraction(
+            pool_instance.reserved_profit_fraction(),
+            pool_instance.admin_fee(),
+        )
+        adjusted_threshold = _threshold(pool_instance.xcp_profit(), net_lp_reserve_fraction)
+        raw_threshold = _threshold(
+            pool_instance.xcp_profit(),
+            pool_instance.reserved_profit_fraction(),
+        )
+        boosted_vp = pool_instance.virtual_price_boosted()
+
+        assert adjusted_threshold < boosted_vp
+        assert boosted_vp <= raw_threshold
+
+        boa.env.time_travel(seconds=7 * UNIX_DAY)
+        price_scale_before = pool_instance.price_scale()
         pool_instance.exchange(
             0,
             pool_instance.balances(0) * REBALANCE_RATIO_NUM // REBALANCE_RATIO_DEN,
@@ -224,20 +388,3 @@ def test_same_block_noop_does_not_consume_rebalance_slot(pool, factory_admin):
         )
 
         assert pool_instance.price_scale() != price_scale_before
-
-
-def test_admin_claimed_profit_offsets_threshold_vp_with_floor(pool):
-    with boa.env.anchor():
-        pool_instance = GodModePool(pool)
-        pool_instance.add_liquidity_balanced(INITIAL_LIQ)
-        _inject_threshold_probe(pool_instance)
-
-        pool_instance.eval("self.xcp_profit = 3 * 10**18")
-        pool_instance.eval("self.admin_claimed_profit = 0")
-        assert pool_instance.instance.inject.threshold_probe() == 2 * PRECISION
-
-        pool_instance.eval("self.admin_claimed_profit = 3 * 10**17")
-        assert pool_instance.instance.inject.threshold_probe() == 17 * PRECISION // 10
-
-        pool_instance.eval("self.admin_claimed_profit = 5 * 10**18")
-        assert pool_instance.instance.inject.threshold_probe() == PRECISION

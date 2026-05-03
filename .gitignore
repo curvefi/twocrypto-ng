@@ -143,7 +143,7 @@ reports/
 
 # misc
 /data
-todo.txt
+/notes
 node_modules
 /audits
 
