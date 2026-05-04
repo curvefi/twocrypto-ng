@@ -2449,7 +2449,7 @@ def initialize(
     assert self.D == 0  # dev: "pool already has liquidity"
 
     assert msg.sender == deploy_eoa or msg.sender == staticcall factory.admin()  # dev: "only deployer or admin"
-    assert initial_price > 10**6 and initial_price < 10**30, "initial price out of bound"
+    assert initial_price > 10**6 and initial_price < 10**30 # dev: "initial price out of bounds"
 
     # Set fee params
     self._set_fee_parameters(reserved_profit_fraction, admin_fee)
