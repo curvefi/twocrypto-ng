@@ -65,7 +65,7 @@ def _try_delayed_rebalance(pool_instance, ratio_num=150, ratio_den=100):
 
 
 def _lp_xcp_profit(pool_instance):
-    return pool_instance.eval("self.lp_xcp_profit")
+    return pool_instance.lp_xcp_profit()
 
 
 def _grow_xcp_profit(pool_instance, xcp_growth=0.05):

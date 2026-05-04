@@ -219,7 +219,7 @@ D: public(uint256)
 xcp_profit: public(uint256)
 # LP-protected xcp profit, baseline included. Rebalance threshold is exactly
 # this value; ramping losses scale it proportionally with surviving xcp profit.
-lp_xcp_profit: uint256
+lp_xcp_profit: public(uint256)
 
 virtual_price: public(uint256)  # <------ Cached (fast to read) virtual price.
 #                          The cached `virtual_price` is also used internally.
@@ -1194,9 +1194,14 @@ def tweak_price(
     # xcp_profit follows growth of virtual price. It can go down during A/gamma
     # ramps because the curve shape changes between operations.
     #
-    # lp_xcp_profit is the LP-protected xcp-profit watermark, baseline included:
+    # lp_xcp_profit is the LP-protected xcp-profit threshold, baseline included.
+    # Successful rebalances must preserve:
     #
-    #   virtual_price >= lp_xcp_profit
+    #   new_virtual_price >= lp_xcp_profit
+    #
+    # During ramping losses, current virtual_price may temporarily fall below
+    # lp_xcp_profit. That only disables rebalancing until enough profit or
+    # donation boost appears.
     #
     # Admin fees are booked immediately into token-denominated admin_balances
     # and removed from AMM-owned balances. VP and xcp_profit therefore observe
