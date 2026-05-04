@@ -1180,13 +1180,12 @@ def tweak_price(
     # The operation must not decrease VP against the fresh pre-operation state.
     # During ramps this baseline is recomputed with current A/gamma, so passive
     # curve-shape drift between calls is not attributed to the user operation.
-    assert virtual_price >= vp_preop, "virtual price decreased"
-
     # Outside ramps, cached VP is also a valid accounting baseline and must not
-    # decrease. During ramps, cached VP may be stale because A/gamma can move
-    # between operations.
-    if not is_ramping:
-        assert virtual_price >= old_virtual_price, "virtual price decreased"
+    # decrease.
+    assert (
+        virtual_price >= vp_preop and
+        (is_ramping or virtual_price >= old_virtual_price)
+    ), "virtual price decreased"
 
     # xcp_profit follows growth of virtual price (and goes down on ramping)
     xcp_profit: uint256 = self.xcp_profit + virtual_price - old_virtual_price
