@@ -1,7 +1,7 @@
 import boa
 import pytest
 
-from tests.utils.constants import FEE_PRECISION, UNIX_DAY
+from tests.utils.constants import FEE_PRECISION, PRECISION, UNIX_DAY
 
 # boa.env.evm.patch.code_size_limit = 56_000
 # TRADE_SIZE = 3 # times pool liq
@@ -54,6 +54,30 @@ def _trigger_one_delayed_rebalance(pool_instance):
     price_scale_before = pool_instance.price_scale()
     pool_instance.exchange(0, pool_instance.balances(0) // 5, update_ema=False)
     assert pool_instance.price_scale() != price_scale_before
+
+
+def _try_delayed_rebalance(pool_instance, ratio_num=150, ratio_den=100):
+    _set_price_oracle_target(pool_instance, ratio_num, ratio_den)
+    boa.env.time_travel(seconds=7 * UNIX_DAY)
+    price_scale_before = pool_instance.price_scale()
+    pool_instance.exchange(0, pool_instance.balances(0) // 5, update_ema=False)
+    return pool_instance.price_scale() != price_scale_before
+
+
+def _lp_xcp_profit(pool_instance):
+    return pool_instance.lp_xcp_profit()
+
+
+def _assert_lp_xcp_profit_invariant(pool_instance):
+    assert pool_instance.lp_xcp_profit() >= PRECISION
+    assert pool_instance.lp_xcp_profit() <= max(pool_instance.xcp_profit(), PRECISION)
+
+
+def _grow_xcp_profit(pool_instance, xcp_growth=0.05):
+    xcp_profit_before = pool_instance.xcp_profit()
+    work_pool(pool_instance, N_TRADES, TRADE_SIZE, update_ema=False, xcp_growth=xcp_growth)
+    assert pool_instance.xcp_profit() > xcp_profit_before
+    _assert_lp_xcp_profit_invariant(pool_instance)
 
 
 def _last_admin_fee_claim_timestamp(pool_instance):
@@ -639,6 +663,160 @@ def test_lp_earnings_after_delayed_rebalance_do_not_depend_on_admin_claim(gm_poo
 
         assert lp_earnings_with_claim == pytest.approx(lp_earnings_without_claim, rel=1e-8)
         assert lp_earnings_without_claim >= expected_lp_reserve * 98 // 100
+
+
+def test_admin_fee_increase_does_not_erase_historical_lp_reserve(gm_pool, factory_admin):
+    with boa.env.anchor():
+        boa.env.enable_fast_mode()
+        pool_instance = gm_pool
+        pool_instance.set_fee_parameters(
+            FEE_PRECISION // 2,
+            0,
+            sender=factory_admin,
+        )
+        pool_instance.add_liquidity_balanced(1_500_000 * 10**18)
+
+        assert pool_instance.xcp_profit() == PRECISION
+
+        work_pool(pool_instance, N_TRADES, TRADE_SIZE, update_ema=False, xcp_growth=0.2)
+        balance_pool(pool_instance, update_ema=False)
+
+        profit_growth = pool_instance.xcp_profit() - PRECISION
+        historical_lp_reserve = profit_growth * (FEE_PRECISION // 2) // FEE_PRECISION
+        protected_vp = PRECISION + historical_lp_reserve
+
+        assert profit_growth > 0
+        assert pool_instance.virtual_price() > protected_vp
+
+        # Historical profit was earned with admin_fee = 0, so half of it is
+        # LP-reserved. Raising admin_fee later must not reinterpret that reserve
+        # as zero and allow delayed rebalancing to spend through it.
+        pool_instance.set_fee_parameters(
+            FEE_PRECISION // 2,
+            FEE_PRECISION,
+            sender=factory_admin,
+        )
+        _assert_lp_xcp_profit_invariant(pool_instance)
+
+        for _ in range(20):
+            if pool_instance.virtual_price() < protected_vp:
+                break
+            if not _try_delayed_rebalance(pool_instance):
+                break
+
+        _assert_lp_xcp_profit_invariant(pool_instance)
+        assert pool_instance.virtual_price() >= protected_vp
+
+
+def test_admin_fee_decrease_does_not_create_historical_lp_reserve(gm_pool, factory_admin):
+    with boa.env.anchor():
+        boa.env.enable_fast_mode()
+        pool_instance = gm_pool
+        pool_instance.set_fee_parameters(
+            FEE_PRECISION // 2,
+            FEE_PRECISION,
+            sender=factory_admin,
+        )
+        pool_instance.add_liquidity_balanced(1_500_000 * 10**18)
+
+        _grow_xcp_profit(pool_instance)
+        assert pool_instance.xcp_profit() > PRECISION
+        assert _lp_xcp_profit(pool_instance) == PRECISION
+
+        pool_instance.set_fee_parameters(
+            FEE_PRECISION // 2,
+            0,
+            sender=factory_admin,
+        )
+        _assert_lp_xcp_profit_invariant(pool_instance)
+        assert _lp_xcp_profit(pool_instance) == PRECISION
+
+        _grow_xcp_profit(pool_instance)
+        assert _lp_xcp_profit(pool_instance) > PRECISION
+
+
+def test_reserved_fraction_decrease_does_not_release_historical_lp_reserve(gm_pool, factory_admin):
+    with boa.env.anchor():
+        boa.env.enable_fast_mode()
+        pool_instance = gm_pool
+        pool_instance.set_fee_parameters(
+            FEE_PRECISION,
+            0,
+            sender=factory_admin,
+        )
+        pool_instance.add_liquidity_balanced(1_500_000 * 10**18)
+
+        _grow_xcp_profit(pool_instance)
+        assert _lp_xcp_profit(pool_instance) == pool_instance.xcp_profit()
+
+        historical_lp_xcp_profit = _lp_xcp_profit(pool_instance)
+        historical_xcp_profit = pool_instance.xcp_profit()
+        pool_instance.set_fee_parameters(
+            0,
+            0,
+            sender=factory_admin,
+        )
+        _assert_lp_xcp_profit_invariant(pool_instance)
+        assert _lp_xcp_profit(pool_instance) == historical_lp_xcp_profit
+
+        _grow_xcp_profit(pool_instance)
+        assert pool_instance.xcp_profit() > historical_xcp_profit
+        assert _lp_xcp_profit(pool_instance) == historical_lp_xcp_profit
+
+
+def test_reserved_fraction_increase_does_not_create_historical_lp_reserve(gm_pool, factory_admin):
+    with boa.env.anchor():
+        boa.env.enable_fast_mode()
+        pool_instance = gm_pool
+        pool_instance.set_fee_parameters(
+            0,
+            0,
+            sender=factory_admin,
+        )
+        pool_instance.add_liquidity_balanced(1_500_000 * 10**18)
+
+        _grow_xcp_profit(pool_instance)
+        historical_xcp_profit = pool_instance.xcp_profit()
+        assert historical_xcp_profit > PRECISION
+        assert _lp_xcp_profit(pool_instance) == PRECISION
+
+        pool_instance.set_fee_parameters(
+            FEE_PRECISION,
+            0,
+            sender=factory_admin,
+        )
+        _assert_lp_xcp_profit_invariant(pool_instance)
+        assert _lp_xcp_profit(pool_instance) == PRECISION
+
+        _grow_xcp_profit(pool_instance)
+        assert _lp_xcp_profit(pool_instance) == (
+            PRECISION + pool_instance.xcp_profit() - historical_xcp_profit
+        )
+
+
+def test_lp_xcp_profit_scales_with_xcp_profit_loss(gm_pool):
+    with boa.env.anchor():
+        boa.env.enable_fast_mode()
+        pool_instance = gm_pool
+        pool_instance.add_liquidity_balanced(1_500_000 * 10**18)
+
+        old_D = pool_instance.D()
+        old_xp = pool_instance.xp()
+        pool_instance.eval("self.virtual_price = 3 * 10**18")
+        pool_instance.eval("self.xcp_profit = 3 * 10**18")
+        pool_instance.eval("self.lp_xcp_profit = 2 * 10**18")
+        pool_instance.eval("self.future_A_gamma_time = self.last_timestamp + 1")
+
+        pool_instance.internal.tweak_price(
+            pool_instance.internal._A_gamma(),
+            [old_xp[0] * 2, old_xp[1] * 2],
+            old_D * 2,
+            2 * PRECISION,
+        )
+
+        _assert_lp_xcp_profit_invariant(pool_instance)
+        assert pool_instance.xcp_profit() == 2 * PRECISION
+        assert _lp_xcp_profit(pool_instance) == PRECISION + PRECISION // 2
 
 
 def test_lp_deposit_fee_balanced(gm_pool, fee_receiver):
