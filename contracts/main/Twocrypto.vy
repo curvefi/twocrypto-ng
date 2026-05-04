@@ -217,6 +217,9 @@ admin_balances: public(uint256[N_COINS])
 
 D: public(uint256)
 xcp_profit: public(uint256)
+# LP-protected xcp profit, baseline included. Rebalance threshold is exactly
+# this value; ramping losses scale it proportionally with surviving xcp profit.
+lp_xcp_profit: uint256
 
 virtual_price: public(uint256)  # <------ Cached (fast to read) virtual price.
 #                          The cached `virtual_price` is also used internally.
@@ -719,6 +722,7 @@ def add_liquidity(
         self.D = D
         self.virtual_price = 10**18
         self.xcp_profit = 10**18
+        self.lp_xcp_profit = 10**18
 
         self.mint(self, MINIMUM_LIQUIDITY)
         d_token -= MINIMUM_LIQUIDITY
@@ -1187,67 +1191,95 @@ def tweak_price(
         (is_ramping or virtual_price >= old_virtual_price)
     ), "virtual price decreased"
 
-    # xcp_profit follows growth of virtual price (and goes down on ramping)
-    xcp_profit: uint256 = self.xcp_profit + virtual_price - old_virtual_price
+    # xcp_profit follows growth of virtual price. It can go down during A/gamma
+    # ramps because the curve shape changes between operations.
+    #
+    # lp_xcp_profit is the LP-protected xcp-profit watermark, baseline included:
+    #
+    #   virtual_price >= lp_xcp_profit
+    #
+    # Admin fees are booked immediately into token-denominated admin_balances
+    # and removed from AMM-owned balances. VP and xcp_profit therefore observe
+    # net-of-admin growth.
+    #
+    # `reserved_profit_fraction` keeps legacy gross-profit semantics:
+    #
+    #   gross profit before admin booking = gross_profit
+    #   reserved bucket                  = gross_profit * reserved_profit_fraction
+    #   rebalance bucket                 = gross_profit * (1 - reserved_profit_fraction)
+    #   admin tokens                     = reserved bucket * admin_fee
+    #   LP reserve                       = reserved bucket * (1 - admin_fee)
+    #
+    # Since admin tokens are already outside VP/xcp, xcp_profit sees only:
+    #
+    #   net_growth = gross_profit * (1 - reserved_profit_fraction * admin_fee)
+    #
+    # So each positive net xcp-profit delta is converted back to the LP part of
+    # the legacy gross reserve:
+    #
+    #   net_lp_reserve_fraction =
+    #       reserved_profit_fraction * (1 - admin_fee) /
+    #       (1 - reserved_profit_fraction * admin_fee)
+    #
+    # This conversion does not account admin fees in VP units. Admin fees are
+    # already token balances outside xcp_profit. It only maps the legacy gross
+    # configured reserve onto net-of-admin xcp-profit growth.
+    #
+    # Positive profit deltas are bucketed under the fee parameters active when
+    # the profit is observed, so later fee-param changes cannot reinterpret
+    # historical profit. Negative xcp-profit movement, including ramping/shape
+    # drift, scales the LP watermark proportionally with surviving profit growth,
+    # preserving old threshold semantics under losses.
+    old_xcp_profit: uint256 = self.xcp_profit
+    xcp_profit: uint256 = old_xcp_profit
+    old_lp_xcp_profit: uint256 = self.lp_xcp_profit
+    lp_xcp_profit: uint256 = old_lp_xcp_profit
+
+    if virtual_price > old_virtual_price:
+        xcp_profit += unsafe_sub(virtual_price, old_virtual_price)
+        if xcp_profit > PRECISION:
+            d_profit: uint256 = unsafe_sub(
+                xcp_profit,
+                max(old_xcp_profit, PRECISION)
+            )
+            reserved_fraction: uint256 = self.reserved_profit_fraction
+            admin_fee: uint256 = self.admin_fee
+            denominator: uint256 = (
+                FEE_PRECISION * FEE_PRECISION - reserved_fraction * admin_fee
+            )
+            # Degenerate reserved_fraction == admin_fee == FEE_PRECISION.
+            # Net fee growth should normally be zero, but if any net profit
+            # appears from rounding or exogenous sources, reserve it all.
+            if denominator > 0:
+                lp_xcp_profit += unsafe_div(
+                    d_profit * reserved_fraction * (FEE_PRECISION - admin_fee),
+                    denominator
+                )
+            else:
+                lp_xcp_profit += d_profit
+    elif virtual_price < old_virtual_price:
+        xcp_profit -= unsafe_sub(old_virtual_price, virtual_price)
+        if xcp_profit > PRECISION:
+            lp_xcp_profit = PRECISION + unsafe_div(
+                unsafe_sub(lp_xcp_profit, PRECISION) *
+                unsafe_sub(xcp_profit, PRECISION),
+                unsafe_sub(old_xcp_profit, PRECISION)
+            )
+        else:
+            lp_xcp_profit = PRECISION
+
+    if lp_xcp_profit != old_lp_xcp_profit:
+        self.lp_xcp_profit = lp_xcp_profit
     self.xcp_profit = xcp_profit
 
     # ------------ Rebalance liquidity if there's enough profits to adjust it:
-    #
-    # In this version, admin fees are booked immediately into token-denominated
-    # admin_balances and removed from AMM-owned balances. VP and xcp_profit
-    # therefore observe net-of-admin growth.
-    #
-    # `reserved_profit_fraction` keeps legacy gross-profit semantics. Let:
-    #
-    #   gross_profit = total fee/profit growth before admin is removed
-    #   reserve_fraction = reserved_profit_fraction
-    #   admin_fraction = admin_fee
-    #
-    # Then the split is:
-    #
-    #   reserved bucket  = gross_profit * reserve_fraction
-    #   rebalance bucket = gross_profit * (1 - reserve_fraction)
-    #   admin tokens     = gross_profit * reserve_fraction * admin_fraction
-    #   LP reserve       = gross_profit * reserve_fraction * (1 - admin_fraction)
-    #
-    # Since admin tokens are already outside VP/xcp, xcp_profit sees:
-    #
-    #   net_growth = gross_profit * (1 - reserve_fraction * admin_fraction)
-    #
-    # The threshold must reserve only the LP part still inside AMM accounting:
-    #
-    #   net_lp_reserve_fraction =
-    #       reserve_fraction * (1 - admin_fraction) /
-    #       (1 - reserve_fraction * admin_fraction)
-    #
-    # This preserves the legacy semantics where reserved profit is further
-    # split between admin and LPs by admin_fee. It does not account admin fees
-    # in VP units; it only maps the legacy gross configured reserve onto
-    # net-of-admin xcp_profit growth.
-
-    reserved_fraction: uint256 = self.reserved_profit_fraction
-    admin_fee: uint256 = self.admin_fee
-    denominator: uint256 = FEE_PRECISION * FEE_PRECISION - reserved_fraction * admin_fee
-
-    profit_growth: uint256 = unsafe_sub(max(xcp_profit, PRECISION), PRECISION)
-    threshold_vp: uint256 = PRECISION + profit_growth
-    if denominator > 0:
-        # If admin_fee is zero, denominator is FEE_PRECISION**2 and this
-        # reduces to profit_growth * reserved_fraction.
-        threshold_vp = PRECISION + unsafe_div(
-            profit_growth * reserved_fraction * (FEE_PRECISION - admin_fee),
-            denominator
-        )
-    # If reserved_fraction == admin_fee == FEE_PRECISION, all gross profit is
-    # booked to admin_balances and no net xcp growth remains. Keep the full
-    # threshold above to preserve "all profit reserved, no rebalancing" semantics.
 
     # user_supply < total_supply => vp_boosted > virtual_price
     # by not accounting for donation shares, virtual_price is boosted leading to rebalance trigger
     # this is approximate condition that preliminary indicates readiness for rebalancing
     vp_boosted: uint256 = 10**18 * xcp // locked_supply
     assert vp_boosted >= virtual_price, "negative donation"
-    if (vp_boosted  > threshold_vp) and (block.timestamp > last_timestamp):
+    if (vp_boosted  > lp_xcp_profit) and (block.timestamp > last_timestamp):
         #                                  ^ only rebalance once per block (first tx)
         p_policy: uint256 = 0
         if policy != empty(Policy):
@@ -1304,8 +1336,8 @@ def tweak_price(
             new_virtual_price: uint256 = 10**18 * new_xcp // total_supply
 
             donation_shares_to_burn: uint256 = 0
-            # burn donations to get to old vp, but not below threshold_vp
-            goal_vp: uint256 = max(threshold_vp, virtual_price)
+            # burn donations to get to old vp, but not below lp_xcp_profit
+            goal_vp: uint256 = max(lp_xcp_profit, virtual_price)
             if new_virtual_price < goal_vp:
                 # new_virtual_price is lower than virtual_price.
                 # We attempt to boost virtual_price by burning some donation shares
@@ -1331,7 +1363,7 @@ def tweak_price(
 
             if (
                 new_virtual_price > 10**18 and
-                new_virtual_price >= threshold_vp
+                new_virtual_price >= lp_xcp_profit
                 # only rebalance when pool preserves half of the profits
             ):
                 self.D = new_D

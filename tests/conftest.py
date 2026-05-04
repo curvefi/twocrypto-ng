@@ -14,7 +14,7 @@ from tests.utils.constants import (
 from tests.utils.embedded_periphery import load_twocrypto_with_embedded_periphery
 from tests.utils.god_mode import GodModePool
 
-# boa.env.evm.patch.code_size_limit = 56_000
+boa.env.evm.patch.code_size_limit = 56_000
 
 # Constants
 INITIAL_PRICES = [10**18, 1500 * 10**18]  # price relative to coin_id = 0
