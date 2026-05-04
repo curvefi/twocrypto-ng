@@ -1369,7 +1369,7 @@ def tweak_price(
             if (
                 new_virtual_price > 10**18 and
                 new_virtual_price >= lp_xcp_profit
-                # only rebalance when pool preserves half of the profits
+                # only rebalance when the LP-protected xcp threshold is preserved
             ):
                 self.D = new_D
                 self.virtual_price = new_virtual_price

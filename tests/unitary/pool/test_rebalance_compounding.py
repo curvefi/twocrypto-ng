@@ -108,6 +108,7 @@ def _snapshot(pool_instance):
     return {
         "virtual_price": pool_instance.virtual_price(),
         "xcp_profit": pool_instance.xcp_profit(),
+        "lp_xcp_profit": pool_instance.lp_xcp_profit(),
         "admin_balances": [pool_instance.admin_balances(i) for i in range(2)],
         "get_virtual_price": pool_instance.get_virtual_price(),
         "price_scale": pool_instance.price_scale(),
@@ -134,6 +135,19 @@ def _set_synthetic_high_state(pool_instance):
     pool_instance.eval("self.D = self.D * 3")
     pool_instance.eval("self.virtual_price = 3 * 10**18")
     pool_instance.eval("self.xcp_profit = 5 * 10**18")
+    reserved_fraction = pool_instance.reserved_profit_fraction()
+    admin_fee = pool_instance.admin_fee()
+    denominator = FEE_PRECISION * FEE_PRECISION - reserved_fraction * admin_fee
+    if denominator == 0:
+        lp_xcp_profit = 5 * PRECISION
+    else:
+        lp_xcp_profit = PRECISION + (
+            (5 * PRECISION - PRECISION)
+            * reserved_fraction
+            * (FEE_PRECISION - admin_fee)
+            // denominator
+        )
+    pool_instance.eval(f"self.lp_xcp_profit = {lp_xcp_profit}")
 
 
 def _run_rebalance_probe(pool_instance):
@@ -205,6 +219,18 @@ def _threshold(xcp_profit, reserve_fraction):
     return PRECISION + (max(xcp_profit, PRECISION) - PRECISION) * reserve_fraction // FEE_PRECISION
 
 
+def _lp_xcp_threshold(xcp_profit, reserved_fraction, admin_fee):
+    denominator = FEE_PRECISION * FEE_PRECISION - reserved_fraction * admin_fee
+    if denominator == 0:
+        return xcp_profit
+    return PRECISION + (
+        (max(xcp_profit, PRECISION) - PRECISION)
+        * reserved_fraction
+        * (FEE_PRECISION - admin_fee)
+        // denominator
+    )
+
+
 def test_synthetic_vp_xcp_state_is_coherent(pool, factory_admin):
     with boa.env.anchor():
         boa.env.enable_fast_mode()
@@ -223,6 +249,11 @@ def test_synthetic_vp_xcp_state_is_coherent(pool, factory_admin):
 
         assert synthetic_state["virtual_price"] == 3 * PRECISION
         assert synthetic_state["xcp_profit"] == 5 * PRECISION
+        assert synthetic_state["lp_xcp_profit"] == _lp_xcp_threshold(
+            synthetic_state["xcp_profit"],
+            pool_instance.reserved_profit_fraction(),
+            pool_instance.admin_fee(),
+        )
         assert synthetic_state["get_virtual_price"] == 3 * PRECISION
         assert synthetic_state["D"] == 3 * fresh_state["D"]
         assert synthetic_state["balances"] == [3 * balance for balance in fresh_state["balances"]]
@@ -365,17 +396,18 @@ def test_adjusted_threshold_allows_rebalance_when_raw_threshold_blocks(pool, fac
         _set_probe_rebalancing_params(pool_instance, factory_admin)
         _set_synthetic_high_state(pool_instance)
 
-        net_lp_reserve_fraction = _net_lp_reserve_fraction(
+        adjusted_threshold = _lp_xcp_threshold(
+            pool_instance.xcp_profit(),
             pool_instance.reserved_profit_fraction(),
             pool_instance.admin_fee(),
         )
-        adjusted_threshold = _threshold(pool_instance.xcp_profit(), net_lp_reserve_fraction)
         raw_threshold = _threshold(
             pool_instance.xcp_profit(),
             pool_instance.reserved_profit_fraction(),
         )
         boosted_vp = pool_instance.virtual_price_boosted()
 
+        assert pool_instance.lp_xcp_profit() == adjusted_threshold
         assert adjusted_threshold < boosted_vp
         assert boosted_vp <= raw_threshold
 

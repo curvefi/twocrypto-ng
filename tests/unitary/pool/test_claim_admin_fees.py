@@ -68,10 +68,16 @@ def _lp_xcp_profit(pool_instance):
     return pool_instance.lp_xcp_profit()
 
 
+def _assert_lp_xcp_profit_invariant(pool_instance):
+    assert pool_instance.lp_xcp_profit() >= PRECISION
+    assert pool_instance.lp_xcp_profit() <= max(pool_instance.xcp_profit(), PRECISION)
+
+
 def _grow_xcp_profit(pool_instance, xcp_growth=0.05):
     xcp_profit_before = pool_instance.xcp_profit()
     work_pool(pool_instance, N_TRADES, TRADE_SIZE, update_ema=False, xcp_growth=xcp_growth)
     assert pool_instance.xcp_profit() > xcp_profit_before
+    _assert_lp_xcp_profit_invariant(pool_instance)
 
 
 def _last_admin_fee_claim_timestamp(pool_instance):
@@ -690,6 +696,7 @@ def test_admin_fee_increase_does_not_erase_historical_lp_reserve(gm_pool, factor
             FEE_PRECISION,
             sender=factory_admin,
         )
+        _assert_lp_xcp_profit_invariant(pool_instance)
 
         for _ in range(20):
             if pool_instance.virtual_price() < protected_vp:
@@ -697,6 +704,7 @@ def test_admin_fee_increase_does_not_erase_historical_lp_reserve(gm_pool, factor
             if not _try_delayed_rebalance(pool_instance):
                 break
 
+        _assert_lp_xcp_profit_invariant(pool_instance)
         assert pool_instance.virtual_price() >= protected_vp
 
 
@@ -720,6 +728,7 @@ def test_admin_fee_decrease_does_not_create_historical_lp_reserve(gm_pool, facto
             0,
             sender=factory_admin,
         )
+        _assert_lp_xcp_profit_invariant(pool_instance)
         assert _lp_xcp_profit(pool_instance) == PRECISION
 
         _grow_xcp_profit(pool_instance)
@@ -747,6 +756,7 @@ def test_reserved_fraction_decrease_does_not_release_historical_lp_reserve(gm_po
             0,
             sender=factory_admin,
         )
+        _assert_lp_xcp_profit_invariant(pool_instance)
         assert _lp_xcp_profit(pool_instance) == historical_lp_xcp_profit
 
         _grow_xcp_profit(pool_instance)
@@ -775,6 +785,7 @@ def test_reserved_fraction_increase_does_not_create_historical_lp_reserve(gm_poo
             0,
             sender=factory_admin,
         )
+        _assert_lp_xcp_profit_invariant(pool_instance)
         assert _lp_xcp_profit(pool_instance) == PRECISION
 
         _grow_xcp_profit(pool_instance)
@@ -803,6 +814,7 @@ def test_lp_xcp_profit_scales_with_xcp_profit_loss(gm_pool):
             2 * PRECISION,
         )
 
+        _assert_lp_xcp_profit_invariant(pool_instance)
         assert pool_instance.xcp_profit() == 2 * PRECISION
         assert _lp_xcp_profit(pool_instance) == PRECISION + PRECISION // 2
 
