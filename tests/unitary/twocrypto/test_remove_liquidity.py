@@ -41,6 +41,7 @@ def update_pool_state(
     virtual_price: uint256,
     xcp_profit: uint256,
     D: uint256,
+    oracle_timestamp: uint256,
 ):
     if self.blocked:
         raise "blocked"
@@ -79,6 +80,7 @@ def update_pool_state(
     virtual_price: uint256,
     xcp_profit: uint256,
     D: uint256,
+    oracle_timestamp: uint256,
 ):
     if msg.gas < 249_000:
         raise "starved"
@@ -222,7 +224,7 @@ def test_remove_liquidity_ignores_reverting_policy_update(pool, coins, factory_a
     assert lp_minted > 0
     policy.set_blocked(True)
     with boa.reverts("blocked"):
-        policy.update_pool_state([0, 0], 0, 0, 0, 0, 0, 0, sender=pool.address)
+        policy.update_pool_state([0, 0], 0, 0, 0, 0, 0, 0, 0, sender=pool.address)
 
     initial_total_supply = pool.totalSupply()
     initial_pool_balances = [pool.balances(i) for i in range(N_COINS)]
@@ -273,14 +275,16 @@ def test_nonzero_balanced_remove_liquidity_updates_policy(pool, factory_admin):
 
         policy = POLICY_DEPLOYER.deploy(pool.address)
         pool.set_policy_contract(policy, sender=factory_admin)
-        last_ts = policy.last_pool_state().ts
-        assert last_ts > 0
+        last_state = policy.last_pool_state()
+        assert last_state.ts > 0
 
         boa.env.time_travel(seconds=1)
         withdraw_amounts = pool.remove_liquidity(pool.balanceOf(boa.env.eoa) // 2, [0] * N_COINS)
 
         assert withdraw_amounts[0] > 0 or withdraw_amounts[1] > 0
-        assert policy.last_pool_state().ts > last_ts
+        new_state = policy.last_pool_state()
+        assert new_state.ts == last_state.ts
+        assert new_state.D < last_state.D
 
 
 def test_low_gas_cannot_force_best_effort_policy_failure(pool, factory_admin):

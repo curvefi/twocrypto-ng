@@ -99,7 +99,8 @@ def update_pool_state(xp: uint256[N_COINS],
                         last_prices: uint256,
                         virtual_price: uint256,
                         xcp_profit: uint256,
-                        D: uint256):
+                        D: uint256,
+                        oracle_timestamp: uint256):
     assert msg.sender == POOL, "auth!"
     self.last_pool_state = PoolState(
         xp = xp,
@@ -109,7 +110,7 @@ def update_pool_state(xp: uint256[N_COINS],
         virtual_price = virtual_price,
         xcp_profit = xcp_profit,
         D = D,
-        ts = block.timestamp
+        ts = oracle_timestamp
     )
 
 

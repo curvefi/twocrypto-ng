@@ -68,7 +68,8 @@ interface Policy:
                             last_prices: uint256,
                             virtual_price: uint256,
                             xcp_profit: uint256,
-                            D: uint256): nonpayable
+                            D: uint256,
+                            oracle_timestamp: uint256): nonpayable
 
 # ------------------------------- Events -------------------------------------
 
@@ -800,7 +801,7 @@ def remove_liquidity(
         # before external calls:
         self._transfer_out(i, withdraw_amounts[i], receiver)
 
-    if withdraw_amounts[0] > 0 or withdraw_amounts[1] > 0:
+    if amount > 0:
         price_scale: uint256 = self.cached_price_scale
         self._update_policy_state(
             self._xp(self.balances, price_scale),
@@ -1474,8 +1475,8 @@ def _update_policy_state(
 ):
     policy: Policy = self.POLICY
     if policy != empty(Policy):
-        data: Bytes[260] = concat(
-            method_id("update_pool_state(uint256[2],uint256,uint256,uint256,uint256,uint256,uint256)"),
+        data: Bytes[292] = concat(
+            method_id("update_pool_state(uint256[2],uint256,uint256,uint256,uint256,uint256,uint256,uint256)"),
             abi_encode(
                 xp,
                 price_scale,
@@ -1484,6 +1485,7 @@ def _update_policy_state(
                 virtual_price,
                 xcp_profit,
                 D,
+                self.last_timestamp,
             ),
         )
         if must_succeed:

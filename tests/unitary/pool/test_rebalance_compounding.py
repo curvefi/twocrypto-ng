@@ -37,6 +37,7 @@ def update_pool_state(
     virtual_price: uint256,
     xcp_profit: uint256,
     D: uint256,
+    oracle_timestamp: uint256,
 ):
     self.last_price_scale = price_scale
 """,
