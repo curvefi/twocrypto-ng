@@ -1296,11 +1296,17 @@ def tweak_price(
         # actuation still uses the same min/max step limiter as the native path.
         # Policy semantics:
         #   p_policy == 0           => use native target (price_oracle)
-        #   p_policy == price_scale => explicit hold; no rebalance
-        #   otherwise               => explicit policy target, step-limited natively
+        #   otherwise               => policy steer target, clamped to 20%
+        #                              oracle deviation and step-limited natively.
+        # A hold target (p_policy == price_scale) remains a hold while
+        # price_scale is inside the oracle band; otherwise the band wins.
         target_price: uint256 = price_oracle
         if p_policy > 0:
-            target_price = p_policy
+            policy_bound: uint256 = unsafe_div(price_oracle, 5)
+            target_price = min(
+                max(p_policy, unsafe_sub(price_oracle, policy_bound)),
+                price_oracle + policy_bound,
+            )
 
         norm: uint256 = unsafe_div(
             unsafe_mul(target_price, 10**18), price_scale
