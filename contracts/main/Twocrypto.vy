@@ -322,11 +322,11 @@ def __init__(
         # tx.origin is accepted here because pools are deployed only via the Curve factory.
         self.deploy_eoa = tx.origin
 
-    assert gamma_A[0] > MIN_GAMMA-1, "gamma<MIN"
-    assert gamma_A[0] < MAX_GAMMA+1, "gamma>MAX"
+    assert gamma_A[0] > MIN_GAMMA-1  # dev: "gamma below minimum"
+    assert gamma_A[0] < MAX_GAMMA+1  # dev: "gamma above maximum"
 
-    assert gamma_A[1] > MIN_A-1, "A<MIN"
-    assert gamma_A[1] < MAX_A+1, "A>MAX"
+    assert gamma_A[1] > MIN_A-1  # dev: "A below minimum"
+    assert gamma_A[1] < MAX_A+1  # dev: "A above maximum"
 
     self.initial_A_gamma = packed_gamma_A
     self.future_A_gamma = packed_gamma_A
