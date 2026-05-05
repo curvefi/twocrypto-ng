@@ -644,15 +644,15 @@ def add_liquidity(
         d_token -= d_token_fee
 
         if not donation:
-            # Convert the admin's share of the LP haircut into a pro-rata
-            # token balance using the no-fee supply basis.
-            fee_supply: uint256 = token_supply + d_token + d_token_fee
-            local_balances: uint256[N_COINS] = self._apply_admin_d_token_fee(
-                balances,
-                d_token_fee,
-                fee_supply,
-            )
             if d_token_fee > 0 and self.reserved_profit_fraction > 0 and self.admin_fee > 0:
+                # Convert the admin's share of the LP haircut into a pro-rata
+                # token balance using the no-fee supply basis.
+                fee_supply: uint256 = token_supply + d_token + d_token_fee
+                local_balances: uint256[N_COINS] = self._apply_admin_d_token_fee(
+                    balances,
+                    d_token_fee,
+                    fee_supply,
+                )
                 xp = self._xp(local_balances, price_scale)
                 D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
 
@@ -919,12 +919,12 @@ def _remove_liquidity_fixed_out(
     local_balances[i] -= amount_i
     local_balances[j] -= dy
 
-    local_balances = self._apply_admin_d_token_fee(
-        local_balances,
-        d_token_fee,
-        fee_supply,
-    )
     if d_token_fee > 0 and self.reserved_profit_fraction > 0 and self.admin_fee > 0:
+        local_balances = self._apply_admin_d_token_fee(
+            local_balances,
+            d_token_fee,
+            fee_supply,
+        )
         xp = self._xp(local_balances, price_scale_preop)
         D = staticcall MATH.newton_D(A_gamma[0], A_gamma[1], xp, 0)
 
