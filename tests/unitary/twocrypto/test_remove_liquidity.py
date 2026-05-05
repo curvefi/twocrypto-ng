@@ -48,6 +48,45 @@ def update_pool_state(
     compiler_args={"experimental_codegen": VENOM_FLAG},
 )
 
+GAS_STARVED_POLICY_DEPLOYER = boa.loads_partial(
+    """
+# pragma version 0.4.3
+# pragma optimize gas
+
+N_COINS: constant(uint256) = 2
+
+last_gas: public(uint256)
+
+
+@external
+@view
+def get_fee(xp: uint256[N_COINS]) -> uint256:
+    return 0
+
+
+@external
+@view
+def get_price_scale() -> uint256:
+    return 0
+
+
+@external
+def update_pool_state(
+    xp: uint256[N_COINS],
+    price_scale: uint256,
+    price_oracle: uint256,
+    last_prices: uint256,
+    virtual_price: uint256,
+    xcp_profit: uint256,
+    D: uint256,
+):
+    if msg.gas < 249_000:
+        raise "starved"
+    self.last_gas = msg.gas
+""",
+    compiler_args={"experimental_codegen": VENOM_FLAG},
+)
+
 PRECISION = 10**18
 INITIAL_LIQUIDITY_COIN0 = 1000 * PRECISION  # Amount of coin 0 for initial balanced liquidity
 
@@ -242,6 +281,24 @@ def test_nonzero_balanced_remove_liquidity_updates_policy(pool, factory_admin):
 
         assert withdraw_amounts[0] > 0 or withdraw_amounts[1] > 0
         assert policy.last_pool_state().ts > last_ts
+
+
+def test_low_gas_cannot_force_best_effort_policy_failure(pool, factory_admin):
+    with boa.env.anchor():
+        gm_pool = GodModePool(pool)
+        gm_pool.add_liquidity_balanced(amount=INITIAL_LIQUIDITY_COIN0)
+
+        policy = GAS_STARVED_POLICY_DEPLOYER.deploy()
+        pool.set_policy_contract(policy, sender=factory_admin)
+
+        lp_to_remove = pool.balanceOf(boa.env.eoa) // 4
+        last_gas = policy.last_gas()
+        with boa.reverts():
+            pool.remove_liquidity(lp_to_remove, [0] * N_COINS, gas=280_000)
+
+        assert policy.last_gas() == last_gas
+        pool.remove_liquidity(lp_to_remove, [0] * N_COINS, gas=320_000)
+        assert policy.last_gas() >= 249_000
 
 
 def test_remove_liquidity_slippage(pool, coins, bob):

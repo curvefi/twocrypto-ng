@@ -1489,6 +1489,7 @@ def _update_policy_state(
         if must_succeed:
             raw_call(policy.address, data, max_outsize=0, revert_on_failure=True)
         else:
+            gas_before_policy_call: uint256 = msg.gas
             success: bool = raw_call(
                 policy.address,
                 data,
@@ -1496,6 +1497,11 @@ def _update_policy_state(
                 gas=250_000,
                 revert_on_failure=False,
             )
+            if not success:
+                # Best-effort updates may fail, but the caller must provide
+                # enough gas that policy OOG cannot be forced while leaving
+                # enough gas for the pool to finish the balanced withdrawal.
+                assert gas_before_policy_call >= 300_000
 
 
 @internal
