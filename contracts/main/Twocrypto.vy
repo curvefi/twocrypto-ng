@@ -692,23 +692,23 @@ def add_liquidity(
             if relative_lp_add > 0 and self.donation_shares > 0:  # sub-precision additions are expensive to stack
                 # Extend protection period
                 protection_period: uint256 = self.donation_protection_period
-                raw_extension: uint256 = (
-                    relative_lp_add * protection_period + self.donation_protection_extension_remainder
+                lp_threshold: uint256 = self.donation_protection_lp_threshold
+                # relative_lp_add <= PRECISION, protection_period < 30 days,
+                # and remainder < lp_threshold <= PRECISION.
+                raw_extension: uint256 = unsafe_add(
+                    unsafe_mul(relative_lp_add, protection_period),
+                    self.donation_protection_extension_remainder
                 )
-                extension_seconds: uint256 = unsafe_div(
-                    raw_extension,
-                    self.donation_protection_lp_threshold
-                )
-                remainder: uint256 = raw_extension - extension_seconds * self.donation_protection_lp_threshold
+                extension_seconds: uint256 = unsafe_div(raw_extension, lp_threshold)
                 current_expiry: uint256 = max(self.donation_protection_expiry_ts, block.timestamp)
-                max_expiry: uint256 = block.timestamp + protection_period
-                uncapped_expiry: uint256 = current_expiry + extension_seconds
+                max_expiry: uint256 = unsafe_add(block.timestamp, protection_period)
+                uncapped_expiry: uint256 = unsafe_add(current_expiry, extension_seconds)
                 if uncapped_expiry >= max_expiry:
                     self.donation_protection_expiry_ts = max_expiry
                     self.donation_protection_extension_remainder = 0
                 else:
                     self.donation_protection_expiry_ts = uncapped_expiry
-                    self.donation_protection_extension_remainder = remainder
+                    self.donation_protection_extension_remainder = raw_extension % lp_threshold
 
             # Regular liquidity addition
             self.mint(receiver, d_token)
