@@ -614,7 +614,6 @@ def add_liquidity(
     if self.D == 0:
         assert not donation  # dev: "donation not allowed on empty pool"
         assert self.deploy_eoa == empty(address), "!init" # also check if pool needs to be initialized
-        self.future_A_gamma_time = self.last_timestamp # Finalize ramping (makes _is_ramping return False)
 
     # -------------------- Calculate LP tokens to mint -----------------------
 
@@ -2251,6 +2250,7 @@ def ramp_A_gamma(
     @param future_time The timestamp at which the ramping will end.
     """
     self._check_admin()
+    assert self.D > 0  # dev: "pool has no liquidity"
     assert not self._is_ramping()  # dev: "ramp active"
     assert future_time > block.timestamp + MIN_RAMP_TIME - 1  # dev: "ramp time below minimum"
 

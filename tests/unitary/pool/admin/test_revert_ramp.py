@@ -8,7 +8,15 @@ def test_revert_unauthorised_ramp(pool, user):
         pool.ramp_A_gamma(1, 1, 1)
 
 
-def test_revert_ramp_while_ramping(pool, factory_admin):
+def test_revert_ramp_before_initial_liquidity(pool, factory_admin):
+    A_gamma = [pool.A(), pool.gamma()]
+    future_time = boa.env.evm.patch.timestamp + UNIX_DAY + 1
+    with boa.env.prank(factory_admin), boa.reverts(dev='"pool has no liquidity"'):
+        pool.ramp_A_gamma(A_gamma[0] + 1, A_gamma[1] + 1, future_time)
+
+
+def test_revert_ramp_while_ramping(pool_with_deposit, factory_admin):
+    pool = pool_with_deposit
     # sanity check: ramping is not active
     assert pool.initial_A_gamma_time() == 0
 
@@ -21,14 +29,16 @@ def test_revert_ramp_while_ramping(pool, factory_admin):
             pool.ramp_A_gamma(A_gamma[0], A_gamma[1], future_time)
 
 
-def test_revert_fast_ramps(pool, factory_admin):
+def test_revert_fast_ramps(pool_with_deposit, factory_admin):
+    pool = pool_with_deposit
     A_gamma = [pool.A(), pool.gamma()]
     future_time = boa.env.evm.patch.timestamp + 10
     with boa.env.prank(factory_admin), boa.reverts(dev='"ramp time below minimum"'):
         pool.ramp_A_gamma(A_gamma[0] + 1, A_gamma[1] + 1, future_time)
 
 
-def test_revert_unauthorised_stop_ramp(pool, factory_admin, user):
+def test_revert_unauthorised_stop_ramp(pool_with_deposit, factory_admin, user):
+    pool = pool_with_deposit
     # sanity check: ramping is not active
     assert pool.initial_A_gamma_time() == 0
 
@@ -41,7 +51,8 @@ def test_revert_unauthorised_stop_ramp(pool, factory_admin, user):
         pool.stop_ramp_A_gamma()
 
 
-def test_revert_ramp_too_far(pool, factory_admin):
+def test_revert_ramp_too_far(pool_with_deposit, factory_admin):
+    pool = pool_with_deposit
     # sanity check: ramping is not active
     assert pool.initial_A_gamma_time() == 0
 
