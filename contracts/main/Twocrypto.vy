@@ -1249,9 +1249,9 @@ def tweak_price(
     else: # virtual_price <= old_virtual_price:
         vp_delta: uint256 = unsafe_sub(old_virtual_price, virtual_price)
         xcp_profit -= vp_delta
-        lp_xcp_profit = lp_xcp_profit - vp_delta
+        lp_xcp_profit = max(PRECISION, lp_xcp_profit - vp_delta)
 
-    self.lp_xcp_profit = max(PRECISION, lp_xcp_profit) # vp_threshold can't go below 1
+    self.lp_xcp_profit = lp_xcp_profit # vp_threshold can't go below 1
     self.xcp_profit = xcp_profit
 
     # ------------ Rebalance liquidity if there's enough profits to adjust it:
