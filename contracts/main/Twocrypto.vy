@@ -264,7 +264,7 @@ MAX_GAMMA: constant(uint256) = 199 * 10**15 # 1.99 * 10**17
 name: public(immutable(String[64]))
 symbol: public(immutable(String[32]))
 decimals: public(constant(uint8)) = 18
-version: public(constant(String[8])) = "v2.2.0"
+version: public(constant(String[8])) = "v3.0.0"
 MINIMUM_LIQUIDITY: constant(uint256) = 10**4
 
 balanceOf: public(HashMap[address, uint256])
