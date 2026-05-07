@@ -1,12 +1,19 @@
-from tests.utils.constants import N_COINS
+from tests.utils.constants import FEE_PRECISION, N_COINS
 import pytest
 from pytest import fixture
 import boa
 
 
 @fixture(scope="module")
-def gm_pool(gm_pool):
-    # We seed the pool with 200 dollars worth of liquidity
+def gm_pool(gm_pool, factory_admin):
+    gm_pool.set_fee_parameters(FEE_PRECISION // 2, 0, sender=factory_admin)
+
+    # Seed passive liquidity first so the tested LP is not the whole pool.
+    dead_lp = boa.env.generate_address()
+    dead_lp_amounts = gm_pool.compute_balanced_amounts(900 * 10**18)
+    gm_pool.premint_amounts(dead_lp_amounts, to=dead_lp)
+    gm_pool.instance.add_liquidity(dead_lp_amounts, 0, sender=dead_lp)
+
     gm_pool.add_liquidity_balanced(100 * 10**18)
     return gm_pool
 

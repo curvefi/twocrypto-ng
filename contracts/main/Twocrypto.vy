@@ -1544,10 +1544,12 @@ def _xp(
 @internal
 @pure
 def _assert_balance(xp: uint256[N_COINS]):
+    # Pool-level post-operation guard. This is intentionally tighter than the
+    # 10_000:1 Newton guard in math, which remains the hard numerical limit.
     assert (
         xp[0] > 0 and
         xp[1] > 0 and
-        unsafe_div(max(xp[0], xp[1]), min(xp[0], xp[1])) < 10_000
+        unsafe_div(max(xp[0], xp[1]), min(xp[0], xp[1])) < 1_000
     ), "!balance"
 
 
