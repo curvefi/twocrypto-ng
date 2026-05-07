@@ -3,8 +3,13 @@ import pytest
 
 from tests.utils.constants import FEE_PRECISION
 
+MAX_ADMIN_FEE = FEE_PRECISION * 9 // 10
 
-@pytest.mark.parametrize("admin_fee", [int(i * 10**10 / 4) for i in range(5)])
+
+@pytest.mark.parametrize(
+    "admin_fee",
+    [0, FEE_PRECISION // 4, FEE_PRECISION // 2, FEE_PRECISION * 3 // 4, MAX_ADMIN_FEE],
+)
 @pytest.mark.parametrize("reserved_profit_fraction", [0, FEE_PRECISION // 2, FEE_PRECISION])
 def test_default_behavior(pool, factory_admin, admin_fee, reserved_profit_fraction):
     pool.set_fee_parameters(reserved_profit_fraction, admin_fee, sender=factory_admin)
@@ -26,7 +31,7 @@ def test_only_owner(pool):
 
 def test_admin_fee_greater_than_max(pool, factory_admin):
     with boa.reverts(dev='"admin fee above max"'):
-        pool.set_fee_parameters(0, 10**10 + 1, sender=factory_admin)
+        pool.set_fee_parameters(0, MAX_ADMIN_FEE + 1, sender=factory_admin)
 
 
 def test_reserved_profit_fraction_greater_than_precision(pool, factory_admin):

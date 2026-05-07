@@ -3,6 +3,8 @@ import pytest
 
 from tests.utils.constants import FEE_PRECISION, PRECISION, UNIX_DAY
 
+MAX_ADMIN_FEE = FEE_PRECISION * 9 // 10
+
 # boa.env.evm.patch.code_size_limit = 56_000
 # TRADE_SIZE = 3 # times pool liq
 TRADE_SIZE = 1_000_000 * 10**18
@@ -693,7 +695,7 @@ def test_admin_fee_increase_does_not_erase_historical_lp_reserve(gm_pool, factor
         # as zero and allow delayed rebalancing to spend through it.
         pool_instance.set_fee_parameters(
             FEE_PRECISION // 2,
-            FEE_PRECISION,
+            MAX_ADMIN_FEE,
             sender=factory_admin,
         )
         _assert_lp_xcp_profit_invariant(pool_instance)
@@ -714,14 +716,16 @@ def test_admin_fee_decrease_does_not_create_historical_lp_reserve(gm_pool, facto
         pool_instance = gm_pool
         pool_instance.set_fee_parameters(
             FEE_PRECISION // 2,
-            FEE_PRECISION,
+            MAX_ADMIN_FEE,
             sender=factory_admin,
         )
         pool_instance.add_liquidity_balanced(1_500_000 * 10**18)
 
         _grow_xcp_profit(pool_instance)
+        historical_lp_xcp_profit = _lp_xcp_profit(pool_instance)
+        historical_xcp_profit = pool_instance.xcp_profit()
         assert pool_instance.xcp_profit() > PRECISION
-        assert _lp_xcp_profit(pool_instance) == PRECISION
+        assert historical_lp_xcp_profit > PRECISION
 
         pool_instance.set_fee_parameters(
             FEE_PRECISION // 2,
@@ -729,10 +733,12 @@ def test_admin_fee_decrease_does_not_create_historical_lp_reserve(gm_pool, facto
             sender=factory_admin,
         )
         _assert_lp_xcp_profit_invariant(pool_instance)
-        assert _lp_xcp_profit(pool_instance) == PRECISION
+        assert _lp_xcp_profit(pool_instance) == historical_lp_xcp_profit
 
         _grow_xcp_profit(pool_instance)
+        assert pool_instance.xcp_profit() > historical_xcp_profit
         assert _lp_xcp_profit(pool_instance) > PRECISION
+        assert _lp_xcp_profit(pool_instance) > historical_lp_xcp_profit
 
 
 def test_reserved_fraction_decrease_does_not_release_historical_lp_reserve(gm_pool, factory_admin):
@@ -794,7 +800,7 @@ def test_reserved_fraction_increase_does_not_create_historical_lp_reserve(gm_poo
         )
 
 
-def test_lp_xcp_profit_scales_with_xcp_profit_loss(gm_pool):
+def test_lp_xcp_profit_subtracts_xcp_profit_loss(gm_pool):
     with boa.env.anchor():
         boa.env.enable_fast_mode()
         pool_instance = gm_pool
@@ -816,7 +822,7 @@ def test_lp_xcp_profit_scales_with_xcp_profit_loss(gm_pool):
 
         _assert_lp_xcp_profit_invariant(pool_instance)
         assert pool_instance.xcp_profit() == 2 * PRECISION
-        assert _lp_xcp_profit(pool_instance) == PRECISION + PRECISION // 2
+        assert _lp_xcp_profit(pool_instance) == PRECISION
 
 
 def test_lp_deposit_fee_balanced(gm_pool, fee_receiver):

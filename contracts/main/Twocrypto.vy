@@ -218,8 +218,6 @@ admin_balances: public(uint256[N_COINS])
 
 D: public(uint256)
 xcp_profit: public(uint256)
-# LP-protected xcp profit, baseline included. Rebalance threshold is exactly
-# this value; ramping losses scale it proportionally with surviving xcp profit.
 lp_xcp_profit: public(uint256)
 
 virtual_price: public(uint256)  # <------ Cached (fast to read) virtual price.
@@ -239,7 +237,7 @@ reserved_profit_fraction: public(uint256)
 # DAO share of LP/DAO fee split with 10**10 precision. The rest goes to LPs.
 admin_fee: public(uint256)
 
-MAX_ADMIN_FEE: constant(uint256) = FEE_PRECISION
+MAX_ADMIN_FEE: constant(uint256) = FEE_PRECISION * 9 // 10 # 90%
 MIN_FEE: constant(uint256) = FEE_PRECISION * 1 // 10 // 10_000  # <-------------------------- 0.1 BPS.
 MAX_FEE: constant(uint256) = FEE_PRECISION
 NOISE_FEE: constant(uint256) = FEE_PRECISION * 1 // 10 // 10_000  # <---------------------------- 0.1 BPS.
@@ -1229,19 +1227,14 @@ def tweak_price(
     # This conversion does not account admin fees in VP units. Admin fees are
     # already token balances outside xcp_profit. It only maps the legacy gross
     # configured reserve onto net-of-admin xcp-profit growth.
-    #
-    # Positive profit deltas are bucketed under the fee parameters active when
-    # the profit is observed, so later fee-param changes cannot reinterpret
-    # historical profit. Negative xcp-profit movement, including ramping/shape
-    # drift, scales the LP watermark proportionally with surviving profit growth,
-    # preserving old threshold semantics under losses.
+
     old_xcp_profit: uint256 = self.xcp_profit
     xcp_profit: uint256 = old_xcp_profit
-    old_lp_xcp_profit: uint256 = self.lp_xcp_profit
-    lp_xcp_profit: uint256 = old_lp_xcp_profit
+    lp_xcp_profit: uint256 = self.lp_xcp_profit
 
     if virtual_price > old_virtual_price:
         xcp_profit += unsafe_sub(virtual_price, old_virtual_price)
+        # Recovery up to PRECISION is excluded from lp profit.
         if xcp_profit > PRECISION:
             d_profit: uint256 = unsafe_sub(
                 xcp_profit,
@@ -1249,32 +1242,16 @@ def tweak_price(
             )
             reserved_fraction: uint256 = self.reserved_profit_fraction
             admin_fee: uint256 = self.admin_fee
-            denominator: uint256 = (
-                FEE_PRECISION * FEE_PRECISION - reserved_fraction * admin_fee
+            lp_xcp_profit += unsafe_div(
+                d_profit * reserved_fraction * (FEE_PRECISION - admin_fee),
+                FEE_PRECISION * FEE_PRECISION - reserved_fraction * admin_fee # admin_fee is <=0.9
             )
-            # Degenerate reserved_fraction == admin_fee == FEE_PRECISION.
-            # Net fee growth should normally be zero, but if any net profit
-            # appears from rounding or exogenous sources, reserve it all.
-            if denominator > 0:
-                lp_xcp_profit += unsafe_div(
-                    d_profit * reserved_fraction * (FEE_PRECISION - admin_fee),
-                    denominator
-                )
-            else:
-                lp_xcp_profit += d_profit
-    elif virtual_price < old_virtual_price:
-        xcp_profit -= unsafe_sub(old_virtual_price, virtual_price)
-        if xcp_profit > PRECISION:
-            lp_xcp_profit = PRECISION + unsafe_div(
-                unsafe_sub(lp_xcp_profit, PRECISION) *
-                unsafe_sub(xcp_profit, PRECISION),
-                unsafe_sub(old_xcp_profit, PRECISION)
-            )
-        else:
-            lp_xcp_profit = PRECISION
+    else: # virtual_price <= old_virtual_price:
+        vp_delta: uint256 = unsafe_sub(old_virtual_price, virtual_price)
+        xcp_profit -= vp_delta
+        lp_xcp_profit = lp_xcp_profit - vp_delta
 
-    if lp_xcp_profit != old_lp_xcp_profit:
-        self.lp_xcp_profit = lp_xcp_profit
+    self.lp_xcp_profit = max(PRECISION, lp_xcp_profit) # vp_threshold can't go below 1
     self.xcp_profit = xcp_profit
 
     # ------------ Rebalance liquidity if there's enough profits to adjust it:

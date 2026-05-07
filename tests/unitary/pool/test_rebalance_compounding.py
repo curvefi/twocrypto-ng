@@ -6,6 +6,7 @@ from tests.utils.god_mode import GodModePool
 
 POLICY_TARGET_NUM = 102
 POLICY_TARGET_DEN = 100
+MAX_ADMIN_FEE = FEE_PRECISION * 9 // 10
 
 TWO_PERCENT_POLICY_DEPLOYER = boa.loads_partial(
     f"""
@@ -447,7 +448,7 @@ def test_policy_hold_target_follows_oracle_band_outside_band(pool, factory_admin
         (FEE_PRECISION // 2, 0, FEE_PRECISION // 2),
         (0, FEE_PRECISION // 2, 0),
         (FEE_PRECISION, FEE_PRECISION // 2, FEE_PRECISION),
-        (FEE_PRECISION, FEE_PRECISION, FEE_PRECISION),
+        (FEE_PRECISION, MAX_ADMIN_FEE, FEE_PRECISION),
     ],
 )
 def test_net_lp_reserve_fraction_probe(
