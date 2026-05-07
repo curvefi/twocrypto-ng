@@ -55,6 +55,7 @@ N_COINS: constant(uint256) = 2
 PRECISION: constant(uint256) = 10**18
 FEE_PRECISION: constant(uint256) = 10**10
 MIN_FEE: constant(uint256) = FEE_PRECISION * 1 // 10 // 10_000
+MAX_FEE: constant(uint256) = FEE_PRECISION
 MINIMUM_LIQUIDITY: constant(uint256) = 10**4
 
 
@@ -396,7 +397,8 @@ def _fee(xp: uint256[N_COINS], swap: address) -> uint256:
     B = fee_params[2] * B // (unsafe_div(fee_params[2] * B, 10**18) + 10**18 - B)
 
     # mid_fee * B + out_fee * (1 - B)
-    return unsafe_div(fee_params[0] * B + fee_params[1] * (10**18 - B), 10**18)
+    fee: uint256 = unsafe_div(fee_params[0] * B + fee_params[1] * (10**18 - B), 10**18)
+    return min(MAX_FEE, max(MIN_FEE, fee))
 
 
 @internal

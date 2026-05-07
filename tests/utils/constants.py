@@ -76,13 +76,23 @@ MAX_A = POOL_DEPLOYER._constants.MAX_A
 
 UNIX_DAY = 86400
 
-MIN_FEE = POOL_DEPLOYER._constants.MIN_FEE
-
-assert POOL_DEPLOYER._constants.MAX_FEE == FACTORY_DEPLOYER._constants.MAX_FEE, "MAX_FEE mismatch"
-
-MAX_FEE = POOL_DEPLOYER._constants.MAX_FEE
+assert (
+    POOL_DEPLOYER._constants.FEE_PRECISION == VIEW_DEPLOYER._constants.FEE_PRECISION
+), "FEE_PRECISION mismatch"
 
 FEE_PRECISION = POOL_DEPLOYER._constants.FEE_PRECISION
+
+assert POOL_DEPLOYER._constants.MIN_FEE == VIEW_DEPLOYER._constants.MIN_FEE, "MIN_FEE mismatch"
+
+MIN_FEE = POOL_DEPLOYER._constants.MIN_FEE
+
+assert (
+    POOL_DEPLOYER._constants.MAX_FEE
+    == FACTORY_DEPLOYER._constants.MAX_FEE
+    == VIEW_DEPLOYER._constants.MAX_FEE
+), "MAX_FEE mismatch"
+
+MAX_FEE = POOL_DEPLOYER._constants.MAX_FEE
 
 MIN_RAMP_TIME = POOL_DEPLOYER._constants.MIN_RAMP_TIME
 

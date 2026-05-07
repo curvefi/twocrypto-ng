@@ -1627,7 +1627,8 @@ def _fee(xp: uint256[N_COINS]) -> uint256:
     B = fee_params[2] * B // (unsafe_div(fee_params[2] * B, 10**18)  + 10**18 - B)
 
     # mid_fee * B + out_fee * (1 - B)
-    return unsafe_div(fee_params[0] * B + fee_params[1] * (10**18 - B), 10**18)
+    fee: uint256 = unsafe_div(fee_params[0] * B + fee_params[1] * (10**18 - B), 10**18)
+    return min(MAX_FEE, max(MIN_FEE, fee))
 
 
 @internal
