@@ -1456,18 +1456,16 @@ def _update_policy_state(
 ):
     policy: Policy = self.POLICY
     if policy != empty(Policy):
-        data: Bytes[292] = concat(
-            method_id("update_pool_state(uint256[2],uint256,uint256,uint256,uint256,uint256,uint256,uint256)"),
-            abi_encode(
-                xp,
-                price_scale,
-                price_oracle,
-                last_prices,
-                virtual_price,
-                xcp_profit,
-                D,
-                self.last_timestamp,
-            ),
+        data: Bytes[292] = abi_encode(
+            xp,
+            price_scale,
+            price_oracle,
+            last_prices,
+            virtual_price,
+            xcp_profit,
+            D,
+            self.last_timestamp,
+            method_id=method_id("update_pool_state(uint256[2],uint256,uint256,uint256,uint256,uint256,uint256,uint256)"),
         )
         if must_succeed:
             raw_call(policy.address, data, max_outsize=0, revert_on_failure=True)
