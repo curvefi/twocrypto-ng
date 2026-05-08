@@ -82,15 +82,9 @@ assert (
 
 FEE_PRECISION = POOL_DEPLOYER._constants.FEE_PRECISION
 
-assert POOL_DEPLOYER._constants.MIN_FEE == VIEW_DEPLOYER._constants.MIN_FEE, "MIN_FEE mismatch"
-
 MIN_FEE = POOL_DEPLOYER._constants.MIN_FEE
 
-assert (
-    POOL_DEPLOYER._constants.MAX_FEE
-    == FACTORY_DEPLOYER._constants.MAX_FEE
-    == VIEW_DEPLOYER._constants.MAX_FEE
-), "MAX_FEE mismatch"
+assert POOL_DEPLOYER._constants.MAX_FEE == FACTORY_DEPLOYER._constants.MAX_FEE, "MAX_FEE mismatch"
 
 MAX_FEE = POOL_DEPLOYER._constants.MAX_FEE
 

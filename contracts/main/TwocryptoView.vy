@@ -12,7 +12,6 @@ from ethereum.ercs import IERC20
 
 interface Curve:
     def MATH() -> Math: view
-    def POLICY() -> Policy: view
     def A() -> uint256: view
     def gamma() -> uint256: view
     def price_scale() -> uint256: view
@@ -48,14 +47,9 @@ interface Math:
         i: uint256,
     ) -> uint256[2]: view
 
-interface Policy:
-    def get_fee(xp: uint256[N_COINS]) -> uint256: view
-
 N_COINS: constant(uint256) = 2
 PRECISION: constant(uint256) = 10**18
 FEE_PRECISION: constant(uint256) = 10**10
-MIN_FEE: constant(uint256) = FEE_PRECISION * 1 // 10 // 10_000
-MAX_FEE: constant(uint256) = FEE_PRECISION
 MINIMUM_LIQUIDITY: constant(uint256) = 10**4
 
 
