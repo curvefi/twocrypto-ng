@@ -631,7 +631,6 @@ def add_liquidity(
         d_token = self._xcp(D, price_scale)  # <----- Making initial virtual price equal to 1.
 
     assert d_token > 0, "nothing minted"
-    # this assert is reused for unsafe_div later
 
     d_token_fee: uint256 = 0
     if old_D > 0:
@@ -685,7 +684,7 @@ def add_liquidity(
             # --- Donation Protection & LP Spam Penalty ---
             # Extend protection to shield against donation extraction via sandwich attacks.
             # A penalty is applied for extending the protection to disincentivize spamming.
-            relative_lp_add: uint256 = unsafe_div(d_token * PRECISION, token_supply + d_token) #d_token > 0
+            relative_lp_add: uint256 = d_token * PRECISION // (token_supply + d_token)
             if relative_lp_add > 0 and self.donation_shares > 0:  # sub-precision additions are expensive to stack
                 # Extend protection period
                 protection_period: uint256 = self.donation_protection_period
