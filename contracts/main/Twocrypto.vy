@@ -1512,6 +1512,8 @@ def _claim_admin_fees():
     if admin_amounts[0] == 0 and admin_amounts[1] == 0:
         return
 
+    self.last_admin_fee_claim_timestamp = block.timestamp
+
     for i: uint256 in range(N_COINS):
         if admin_amounts[i] > 0:
             self.admin_balances[i] = 0
@@ -1524,7 +1526,6 @@ def _claim_admin_fees():
                 default_return_value=True
             )
 
-    self.last_admin_fee_claim_timestamp = block.timestamp
     log ClaimAdminFee(admin=fee_receiver, tokens=admin_amounts)
 
 
