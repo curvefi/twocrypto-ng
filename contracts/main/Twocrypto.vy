@@ -1284,7 +1284,7 @@ def tweak_price(
             )
 
         norm: uint256 = unsafe_div(
-            unsafe_mul(target_price, 10**18), price_scale
+            target_price * PRECISION, price_scale
         )
         if norm > 10**18:
             norm = unsafe_sub(norm, 10**18)
