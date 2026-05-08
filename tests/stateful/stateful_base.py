@@ -38,6 +38,12 @@ class StatefulBase(RuleBasedStateMachine):
         (int(0.3e10), 0),
     ]
 
+    def _boa_error_has(self, e: boa.BoaError, *needles: str) -> bool:
+        error = str(e)
+        if any(needle in error for needle in needles):
+            return True
+        return any(any(needle in str(frame) for needle in needles) for frame in e.stack_trace)
+
     @initialize(
         pool=pool_from_preset(),
         amount=integers(min_value=int(1e20), max_value=int(1e30)),
@@ -221,11 +227,10 @@ class StatefulBase(RuleBasedStateMachine):
         try:
             self.pool.add_liquidity(amounts, 0, user, donate, sender=user)
         except boa.BoaError as e:
-            error = str(e.stack_trace[0])
-            if donate and "donation above cap!" in str(e.stack_trace[0]):
+            if donate and self._boa_error_has(e, "donation above cap!"):
                 event("donation refused due to cap")
                 return
-            if "!balance" in error:
+            if self._boa_error_has(e, "!balance"):
                 self.can_always_withdraw(imbalanced_operations_allowed=True)
                 event("deposit refused due to imbalance")
                 return
@@ -284,17 +289,14 @@ class StatefulBase(RuleBasedStateMachine):
         try:
             expected_dy = self.pool.get_dy(i, j, dx)
         except boa.BoaError as e:
+            # we make sure that the revert was caused by the pool
+            # being too imbalanced
+            if not self._boa_error_has(e, "unsafe value for y", "unsafe values x[i]", "!balance"):
+                raise ValueError(f"Reverted for the wrong reason: {e}")
+
             # our top priority when something goes wrong is to
             # make sure that the lp can always withdraw their funds
             self.can_always_withdraw(imbalanced_operations_allowed=True)
-
-            # we make sure that the revert was caused by the pool
-            # being too imbalanced
-            error = str(e.stack_trace[0])
-            if not any(
-                msg in error for msg in ("unsafe value for y", "unsafe values x[i]", "!balance")
-            ):
-                raise ValueError(f"Reverted for the wrong reason: {error}")
 
             # we use the log10 of the equilibrium to obtain an easy interval
             # to work with. If the pool is balanced the equilibrium is 1 and
@@ -318,10 +320,9 @@ class StatefulBase(RuleBasedStateMachine):
         try:
             actual_dy = self.pool.exchange(i, j, dx, expected_dy, sender=user)
         except boa.BoaError as e:
+            if not self._boa_error_has(e, "!balance"):
+                raise ValueError(f"Reverted for the wrong reason: {e}")
             self.can_always_withdraw(imbalanced_operations_allowed=True)
-            error = str(e.stack_trace[0])
-            if "!balance" not in error:
-                raise ValueError(f"Reverted for the wrong reason: {error}")
             event("swap execution refused due to imbalance")
             return False
 
@@ -423,7 +424,7 @@ class StatefulBase(RuleBasedStateMachine):
                 ), "virtual price decreased but the amount was too high"
                 event("unsuccessful removal: virtual price decreased")
                 return
-            elif "!balance" in error_message:
+            elif self._boa_error_has(e, "!balance"):
                 self.can_always_withdraw(imbalanced_operations_allowed=True)
                 event("unsuccessful removal: imbalance guard")
                 return
@@ -522,7 +523,12 @@ class StatefulBase(RuleBasedStateMachine):
                 prev_balances = [self.pool.balances(i) for i in range(2)]
                 # withdraw all liquidity from the depositor
                 tokens = self.pool.balanceOf(d)
-                self.pool.remove_liquidity(tokens, [0] * 2, sender=d)
+                try:
+                    self.pool.remove_liquidity(tokens, [0] * 2, sender=d)
+                except boa.BoaError as e:
+                    if self._boa_error_has(e, "!balance"):
+                        raise AssertionError("balanced remove_liquidity hit !balance") from e
+                    raise
                 assert self.pool.balanceOf(d) == 0, "depositor still has LP after withdrawal"
                 # assert current balances are less as the previous ones
                 for i, b in enumerate(prev_balances):
