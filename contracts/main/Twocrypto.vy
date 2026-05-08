@@ -1477,14 +1477,14 @@ def _update_policy_state(
                 policy.address,
                 data,
                 max_outsize=0,
-                gas=250_000,
+                gas=300_000,
                 revert_on_failure=False,
             )
             if not success:
                 # Best-effort updates may fail, but the caller must provide
                 # enough gas that policy OOG cannot be forced while leaving
                 # enough gas for the pool to finish the balanced withdrawal.
-                assert gas_before_policy_call >= 300_000
+                assert gas_before_policy_call >= 500_000
 
 
 @internal

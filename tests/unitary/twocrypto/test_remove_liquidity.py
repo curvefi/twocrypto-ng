@@ -57,6 +57,12 @@ GAS_STARVED_POLICY_DEPLOYER = boa.loads_partial(
 N_COINS: constant(uint256) = 2
 
 last_gas: public(uint256)
+min_gas: public(uint256)
+
+
+@external
+def set_min_gas(_min_gas: uint256):
+    self.min_gas = _min_gas
 
 
 @external
@@ -82,7 +88,7 @@ def update_pool_state(
     D: uint256,
     oracle_timestamp: uint256,
 ):
-    if msg.gas < 249_000:
+    if msg.gas < self.min_gas:
         raise "starved"
     self.last_gas = msg.gas
 """,
@@ -293,6 +299,7 @@ def test_low_gas_cannot_force_best_effort_policy_failure(pool, factory_admin):
         gm_pool.add_liquidity_balanced(amount=INITIAL_LIQUIDITY_COIN0)
 
         policy = GAS_STARVED_POLICY_DEPLOYER.deploy()
+        policy.set_min_gas(249_000)
         pool.set_policy_contract(policy, sender=factory_admin)
 
         lp_to_remove = pool.balanceOf(boa.env.eoa) // 4
@@ -303,6 +310,12 @@ def test_low_gas_cannot_force_best_effort_policy_failure(pool, factory_admin):
         assert policy.last_gas() == last_gas
         pool.remove_liquidity(lp_to_remove, [0] * N_COINS, gas=320_000)
         assert policy.last_gas() >= 249_000
+
+        policy.set_min_gas(301_000)
+        with boa.reverts():
+            pool.remove_liquidity(lp_to_remove, [0] * N_COINS, gas=420_000)
+
+        pool.remove_liquidity(lp_to_remove, [0] * N_COINS, gas=650_000)
 
 
 def test_remove_liquidity_slippage(pool, coins, bob):
