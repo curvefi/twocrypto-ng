@@ -797,7 +797,7 @@ def remove_liquidity(
         # before external calls:
         self._transfer_out(i, withdraw_amounts[i], receiver)
 
-    if amount > 0:
+    if amount > 0 and self.POLICY != empty(Policy):
         price_scale: uint256 = self.cached_price_scale
         self._update_policy_state(
             self._xp(self.balances, price_scale),
@@ -2425,6 +2425,7 @@ def _set_fee_parameters(reserved_profit_fraction: uint256, admin_fee: uint256):
 
 @internal
 def _set_policy(policy: Policy):
+    assert policy.address != coins[0] and policy.address != coins[1]  # dev: "policy is coin"
     self.POLICY = policy
     log SetPolicyContract(policy=policy)
 
