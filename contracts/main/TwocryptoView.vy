@@ -149,9 +149,11 @@ def calc_token_amount(
         if d_token <= MINIMUM_LIQUIDITY:
             return 0
         return d_token - MINIMUM_LIQUIDITY
-    d_token -= (
-        staticcall Curve(swap).calc_token_fee(amounts, xp, donation, deposit) * d_token // FEE_PRECISION + 1
-    )
+    fee: uint256 = staticcall Curve(swap).calc_token_fee(amounts, xp, donation, deposit)
+    if deposit:
+        d_token -= fee * d_token // FEE_PRECISION + 1
+    else:
+        d_token += fee * d_token // FEE_PRECISION + 1
 
     return d_token
 
