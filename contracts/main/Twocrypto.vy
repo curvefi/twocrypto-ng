@@ -241,6 +241,7 @@ MAX_ADMIN_FEE: constant(uint256) = FEE_PRECISION * 9 // 10 # 90%
 MIN_FEE: constant(uint256) = FEE_PRECISION * 1 // 10 // 10_000  # <-------------------------- 0.1 BPS.
 MAX_FEE: constant(uint256) = FEE_PRECISION
 NOISE_FEE: constant(uint256) = FEE_PRECISION * 1 // 10 // 10_000  # <---------------------------- 0.1 BPS.
+MINIMUM_LIQUIDITY: constant(uint256) = 10**4
 
 # ----------------------- Admin params ---------------------------------------
 
@@ -265,7 +266,6 @@ name: public(immutable(String[64]))
 symbol: public(immutable(String[32]))
 decimals: public(constant(uint8)) = 18
 version: public(constant(String[8])) = "v3.0.0"
-MINIMUM_LIQUIDITY: constant(uint256) = 10**4
 
 balanceOf: public(HashMap[address, uint256])
 allowance: public(HashMap[address, HashMap[address, uint256]])
@@ -2389,6 +2389,7 @@ def set_donation_parameters(
     """
     self._check_admin()
     assert duration > 0  # dev: "donation duration cannot be zero"
+    assert duration < 365 * 86_400  # dev: "donation duration above maximum"
     # > 0 asserts are critical as unsafe_div is used throughout the code. Change cautiously!
     assert protection_period > 0  # dev: "donation protection period cannot be zero"
     assert protection_period < 30 * 86_400  # dev: "donation protection period above maximum"
