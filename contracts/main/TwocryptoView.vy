@@ -12,7 +12,6 @@ from ethereum.ercs import IERC20
 
 interface Curve:
     def MATH() -> Math: view
-    def POLICY() -> Policy: view
     def A() -> uint256: view
     def gamma() -> uint256: view
     def price_scale() -> uint256: view
@@ -48,13 +47,9 @@ interface Math:
         i: uint256,
     ) -> uint256[2]: view
 
-interface Policy:
-    def get_fee(xp: uint256[N_COINS]) -> uint256: view
-
 N_COINS: constant(uint256) = 2
 PRECISION: constant(uint256) = 10**18
 FEE_PRECISION: constant(uint256) = 10**10
-MIN_FEE: constant(uint256) = FEE_PRECISION * 1 // 10 // 10_000
 MINIMUM_LIQUIDITY: constant(uint256) = 10**4
 
 
@@ -154,9 +149,11 @@ def calc_token_amount(
         if d_token <= MINIMUM_LIQUIDITY:
             return 0
         return d_token - MINIMUM_LIQUIDITY
-    d_token -= (
-        staticcall Curve(swap).calc_token_fee(amounts, xp, donation, deposit) * d_token // FEE_PRECISION + 1
-    )
+    fee: uint256 = staticcall Curve(swap).calc_token_fee(amounts, xp, donation, deposit)
+    if deposit:
+        d_token -= fee * d_token // FEE_PRECISION + 1
+    else:
+        d_token += fee * d_token // FEE_PRECISION + 1
 
     return d_token
 
@@ -370,33 +367,6 @@ def _price_oracle(
         ) // 10**18
 
     return price_oracle
-
-
-@internal
-@view
-def _fee(xp: uint256[N_COINS], swap: address) -> uint256:
-    policy: Policy = staticcall Curve(swap).POLICY()
-    if policy != empty(Policy):
-        fee: uint256 = staticcall policy.get_fee(xp)
-        if fee != 0:
-            return min(FEE_PRECISION, max(MIN_FEE, fee))
-
-    packed_fee_params: uint256 = staticcall Curve(swap).packed_fee_params()
-    fee_params: uint256[3] = self._unpack_3(packed_fee_params)
-
-    # warm up variable with sum of balances
-    B: uint256 = xp[0] + xp[1]
-
-    # balance indicator that goes from 10**18 (perfect pool balance) to 0 (very imbalanced, 100:1 and worse)
-    # N^N * (xp[0] * xp[1]) / (xp[0] + xp[1])**2
-    B = PRECISION * N_COINS**N_COINS * xp[0] // B * xp[1] // B
-
-    # regulate slope using fee_gamma
-    # fee_gamma * balance_term / (fee_gamma * balance_term + 1 - balance_term)
-    B = fee_params[2] * B // (unsafe_div(fee_params[2] * B, 10**18) + 10**18 - B)
-
-    # mid_fee * B + out_fee * (1 - B)
-    return unsafe_div(fee_params[0] * B + fee_params[1] * (10**18 - B), 10**18)
 
 
 @internal

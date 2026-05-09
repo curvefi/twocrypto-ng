@@ -1,13 +1,20 @@
 import math
-from tests.utils.constants import N_COINS
+from tests.utils.constants import FEE_PRECISION, N_COINS
 import pytest
 from pytest import fixture
 import boa
 
 
 @fixture(scope="module")
-def gm_pool(gm_pool):
-    # We seed the pool with 200 dollars worth of liquidity
+def gm_pool(gm_pool, factory_admin):
+    gm_pool.set_fee_parameters(FEE_PRECISION // 2, 0, sender=factory_admin)
+
+    # Seed passive liquidity first so the tested LP is not the whole pool.
+    dead_lp = boa.env.generate_address()
+    dead_lp_amounts = gm_pool.compute_balanced_amounts(900 * 10**18)
+    gm_pool.premint_amounts(dead_lp_amounts, to=dead_lp)
+    gm_pool.instance.add_liquidity(dead_lp_amounts, 0, sender=dead_lp)
+
     gm_pool.add_liquidity_balanced(100 * 10**18)
     return gm_pool
 
@@ -25,8 +32,9 @@ def test_withdraw_fixed_out(i, amount_i_percent, lp_token_percent, gm_pool):
 
     t0 = gm_pool.balances_snapshot()
 
-    # Calculate how much of coin i we want to withdraw (50% of pool's balance)
-    amount_i = int(t0["pool_coins"][i] * amount_i_percent)
+    # Calculate how much of coin i we want to withdraw from the tested LP's
+    # pro-rata pool slice. The pool also contains passive pre-LP liquidity.
+    amount_i = int(t0["pool_coins"][i] * amount_to_withdraw // t0["lp_supply"] * amount_i_percent)
 
     expected_dy = gm_pool.calc_withdraw_fixed_out(amount_to_withdraw, i, amount_i)
 
@@ -71,7 +79,7 @@ def test_slippage_protection(i, amount_i_percent, lp_token_percent, gm_pool):
     amount_to_withdraw = int(lp_tokens * lp_token_percent)
 
     t0 = gm_pool.balances_snapshot()
-    amount_i = int(t0["pool_coins"][i] * amount_i_percent)
+    amount_i = int(t0["pool_coins"][i] * amount_to_withdraw // t0["lp_supply"] * amount_i_percent)
 
     with boa.env.anchor():
         expected_dy = gm_pool.calc_withdraw_fixed_out(amount_to_withdraw, i, amount_i)

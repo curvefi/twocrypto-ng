@@ -5,7 +5,8 @@ import boa
 from tests.utils.constants import UNIX_DAY
 
 
-def test_ramp_A_gamma_up(pool, factory_admin, params):
+def test_ramp_A_gamma_up(pool_with_deposit, factory_admin, params):
+    pool = pool_with_deposit
     p = copy.deepcopy(params)
     future_A = p["A"] + 10000
     future_gamma = p["gamma"] + 10000
@@ -25,7 +26,8 @@ def test_ramp_A_gamma_up(pool, factory_admin, params):
     assert current_A_gamma[1] == future_gamma
 
 
-def test_ramp_A_gamma_down(pool, factory_admin, params):
+def test_ramp_A_gamma_down(pool_with_deposit, factory_admin, params):
+    pool = pool_with_deposit
     p = copy.deepcopy(params)
     future_A = p["A"] - 10000
     future_gamma = p["gamma"] - 10000

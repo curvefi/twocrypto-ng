@@ -6,6 +6,7 @@ from tests.utils.god_mode import GodModePool
 
 POLICY_TARGET_NUM = 102
 POLICY_TARGET_DEN = 100
+MAX_ADMIN_FEE = FEE_PRECISION * 9 // 10
 
 TWO_PERCENT_POLICY_DEPLOYER = boa.loads_partial(
     f"""
@@ -37,8 +38,51 @@ def update_pool_state(
     virtual_price: uint256,
     xcp_profit: uint256,
     D: uint256,
+    oracle_timestamp: uint256,
 ):
     self.last_price_scale = price_scale
+""",
+    compiler_args={"experimental_codegen": VENOM_FLAG},
+)
+
+TARGET_POLICY_DEPLOYER = boa.loads_partial(
+    """
+# pragma version 0.4.3
+# pragma optimize gas
+
+N_COINS: constant(uint256) = 2
+target: public(uint256)
+
+
+@external
+def set_target(_target: uint256):
+    self.target = _target
+
+
+@external
+@view
+def get_fee(xp: uint256[N_COINS]) -> uint256:
+    return 0
+
+
+@external
+@view
+def get_price_scale() -> uint256:
+    return self.target
+
+
+@external
+def update_pool_state(
+    xp: uint256[N_COINS],
+    price_scale: uint256,
+    price_oracle: uint256,
+    last_prices: uint256,
+    virtual_price: uint256,
+    xcp_profit: uint256,
+    D: uint256,
+    oracle_timestamp: uint256,
+):
+    pass
 """,
     compiler_args={"experimental_codegen": VENOM_FLAG},
 )
@@ -47,8 +91,8 @@ INITIAL_LIQ = 100_000 * PRECISION
 WORK_SWAPS = 10
 WORK_RATIO = 3
 REBALANCE_STEPS = 6
-REBALANCE_RATIO_NUM = 3
-REBALANCE_RATIO_DEN = 5
+REBALANCE_RATIO_NUM = 1
+REBALANCE_RATIO_DEN = 1_000
 
 
 def _deploy_two_percent_policy(pool, factory_admin):
@@ -57,13 +101,33 @@ def _deploy_two_percent_policy(pool, factory_admin):
     return policy
 
 
+def _deploy_target_policy(pool, factory_admin):
+    policy = TARGET_POLICY_DEPLOYER.deploy()
+    pool.set_policy_contract(policy, sender=factory_admin)
+    return policy
+
+
 def _exchange_and_read_rebalance_state(pool_instance):
+    # This helper only needs to touch tweak_price. Keep the swap small so the
+    # test does not depend on driving the pool close to the imbalance guard.
     pool_instance.exchange(
         0,
-        pool_instance.balances(0) * REBALANCE_RATIO_NUM // REBALANCE_RATIO_DEN,
+        max(1, pool_instance.balances(0) * REBALANCE_RATIO_NUM // REBALANCE_RATIO_DEN),
         update_ema=False,
     )
     return pool_instance.price_scale(), pool_instance.donation_shares()
+
+
+def _prepare_policy_rebalance_pool(pool, factory_admin):
+    pool_instance = GodModePool(pool)
+    policy = _deploy_target_policy(pool, factory_admin)
+    pool_instance.add_liquidity_balanced(INITIAL_LIQ)
+    _set_probe_rebalancing_params(pool_instance, factory_admin)
+    pool_instance.donate_balanced(INITIAL_LIQ // 20)
+    boa.env.time_travel(seconds=pool_instance.donation_duration())
+    pool_instance.eval("self.donation_protection_expiry_ts = 0")
+    boa.env.time_travel(seconds=1)
+    return pool_instance, policy
 
 
 def _set_probe_rebalancing_params(pool_instance, factory_admin):
@@ -345,6 +409,38 @@ def test_price_scale_rebalances_only_on_first_touch_in_block(pool, factory_admin
         assert donation_shares_after_next_block < donation_shares_after_same_block
 
 
+def test_policy_hold_target_holds_inside_oracle_band(pool, factory_admin):
+    with boa.env.anchor():
+        boa.env.enable_fast_mode()
+        pool_instance, policy = _prepare_policy_rebalance_pool(pool, factory_admin)
+
+        price_scale_before = pool_instance.price_scale()
+        donation_shares_before = pool_instance.donation_shares()
+        policy.set_target(price_scale_before)
+
+        price_scale_after, donation_shares_after = _exchange_and_read_rebalance_state(pool_instance)
+
+        assert price_scale_after == price_scale_before
+        assert donation_shares_after == donation_shares_before
+
+
+def test_policy_hold_target_follows_oracle_band_outside_band(pool, factory_admin):
+    with boa.env.anchor():
+        boa.env.enable_fast_mode()
+        pool_instance, policy = _prepare_policy_rebalance_pool(pool, factory_admin)
+
+        price_scale_before = pool_instance.price_scale()
+        high_oracle = price_scale_before * 2
+        pool_instance.eval(f"self.cached_price_oracle = {high_oracle}")
+        pool_instance.eval(f"self.last_prices = {high_oracle}")
+        policy.set_target(price_scale_before)
+
+        price_scale_after, _ = _exchange_and_read_rebalance_state(pool_instance)
+
+        assert price_scale_after > price_scale_before
+        assert price_scale_after < high_oracle * 4 // 5
+
+
 @pytest.mark.parametrize(
     "reserved_profit_fraction,admin_fee,expected_fraction",
     [
@@ -352,7 +448,7 @@ def test_price_scale_rebalances_only_on_first_touch_in_block(pool, factory_admin
         (FEE_PRECISION // 2, 0, FEE_PRECISION // 2),
         (0, FEE_PRECISION // 2, 0),
         (FEE_PRECISION, FEE_PRECISION // 2, FEE_PRECISION),
-        (FEE_PRECISION, FEE_PRECISION, FEE_PRECISION),
+        (FEE_PRECISION, MAX_ADMIN_FEE, FEE_PRECISION),
     ],
 )
 def test_net_lp_reserve_fraction_probe(

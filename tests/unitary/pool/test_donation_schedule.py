@@ -16,27 +16,17 @@ def _trigger_burn_via_exchange(pool, ratio_num=13, ratio_den=10):
 
     pre_s = pool.donation_shares()
 
-    # Try a few increasingly large swaps to trigger a rebalance path
-    # without waiting for EMA. The helper mints funds to the sender.
-    base = 100_000 * 10**18
-    for k in range(8):
-        dx = base * (k + 1)
+    # Wash trade the pool with small swaps. This touches tweak_price and pays
+    # fees without depending on a near-limit imbalance to reach the donation
+    # burn path.
+    for k in range(100):
+        dx = pool.balances(0) // 10
         pool.eval("self.last_timestamp = block.timestamp-1")
-        pool.exchange(0, dx, update_ema=False)
+        out = pool.exchange(0, dx, update_ema=False)
         pool.eval("self.last_timestamp = block.timestamp")
         if pool.donation_shares() < pre_s:
             return True
-
-    # Try flipping direction and a lower oracle too, in case the above direction
-    # does not lead to new_vp < goal_vp in this configuration.
-    pool.eval(f"self.cached_price_oracle = {ps * ratio_den // ratio_num}")
-    pool.eval("self.last_timestamp = block.timestamp")
-    for k in range(8):
-        dx = base * (k + 1)
-        pool.eval("self.last_timestamp = block.timestamp-1")
-        pool.exchange(1, dx, update_ema=False)
-        pool.eval("self.last_timestamp = block.timestamp")
-        # to allow multiple rebalances in the same block
+        pool.exchange(1, out, update_ema=False)
         if pool.donation_shares() < pre_s:
             return True
 

@@ -1,6 +1,7 @@
 import copy
 
 import boa
+import pytest
 
 from tests.utils.constants import FEE_PRECISION, POLICY_DEPLOYER, POOL_DEPLOYER
 from tests.utils.god_mode import GodModePool
@@ -164,6 +165,25 @@ def test_non_deployer_or_admin_cannot_initialize(
 
     with boa.reverts(dev='"only deployer or admin"'):
         pool.initialize(0, 0, ZERO_ADDRESS, _initial_price(params), [], sender=bob)
+
+
+@pytest.mark.parametrize("coin_idx", [0, 1])
+def test_initialize_reverts_when_policy_is_pool_coin(
+    factory, factory_admin, coins, params, deployer, views_contract, math_contract, coin_idx
+):
+    pool = _deploy_bootstrap_pool(
+        factory, factory_admin, coins, params, deployer, views_contract, math_contract
+    )
+
+    with boa.reverts(dev='"policy is coin"'):
+        pool.initialize(
+            FEE_PRECISION // 4,
+            123,
+            coins[coin_idx].address,
+            _initial_price(params),
+            [],
+            sender=deployer,
+        )
 
 
 def test_admin_can_initialize_and_leave_whitelist_disabled(
