@@ -327,6 +327,11 @@ def __init__(
     assert gamma_A[1] > MIN_A-1  # dev: "A below minimum"
     assert gamma_A[1] < MAX_A+1  # dev: "A above maximum"
 
+    fee_params: uint256[3] = self._unpack_3(packed_fee_params)
+    assert fee_params[0] > MIN_FEE - 1  # dev: "fee below minimum"
+    assert fee_params[1] >= fee_params[0]  # dev: "mid fee above out fee"
+    assert fee_params[1] < MAX_FEE + 1  # dev: "fee above maximum"
+
     self.initial_A_gamma = packed_gamma_A
     self.future_A_gamma = packed_gamma_A
     # ------------------------------------------------------------------------
@@ -907,15 +912,15 @@ def _remove_liquidity_fixed_out(
 
     j: uint256 = 1 - i
     d_token_fee: uint256 = approx_fee * token_amount // FEE_PRECISION + 1
-    # Fixed-out withdrawal fees are charged in LP-token units by reducing
-    # the effective D burned. Convert the admin's share of that retained
-    # LP fee into a balanced slice of post-withdraw token balances.
-    fee_supply: uint256 = self.totalSupply - token_amount + d_token_fee
-    local_balances: uint256[N_COINS] = self.balances
-    local_balances[i] -= amount_i
-    local_balances[j] -= dy
 
     if d_token_fee > 0 and self.reserved_profit_fraction > 0 and self.admin_fee > 0:
+        # Fixed-out withdrawal fees are charged in LP-token units by reducing
+        # the effective D burned. Convert the admin's share of that retained
+        # LP fee into a balanced slice of post-withdraw token balances.
+        fee_supply: uint256 = self.totalSupply - token_amount + d_token_fee
+        local_balances: uint256[N_COINS] = self.balances
+        local_balances[i] -= amount_i
+        local_balances[j] -= dy
         local_balances = self._apply_admin_d_token_fee(
             local_balances,
             d_token_fee,
@@ -2319,12 +2324,10 @@ def apply_new_parameters(
 
     current_fee_params: uint256[3] = self._unpack_3(self.packed_fee_params)
 
-    if new_out_fee < MAX_FEE + 1:
-        assert new_out_fee > MIN_FEE - 1  # dev: "fee below minimum"
-    else:
+    if new_out_fee > MAX_FEE:
         new_out_fee = current_fee_params[1]
 
-    if new_mid_fee > MAX_FEE:
+    if new_mid_fee < MIN_FEE:
         new_mid_fee = current_fee_params[0]
     assert new_mid_fee <= new_out_fee  # dev: "mid fee above out fee"
 

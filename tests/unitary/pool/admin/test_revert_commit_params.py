@@ -22,7 +22,7 @@ def test_commit_incorrect_fee_params(pool, factory_admin, params):
             _apply_new_params(pool, p)
 
         p["out_fee"] = 0
-        with boa.reverts(dev='"fee below minimum"'):
+        with boa.reverts(dev='"mid fee above out fee"'):
             _apply_new_params(pool, p)
 
         # too large out_fee revert to old out_fee:

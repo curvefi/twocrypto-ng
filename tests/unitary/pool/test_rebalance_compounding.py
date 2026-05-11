@@ -132,7 +132,7 @@ def _prepare_policy_rebalance_pool(pool, factory_admin):
 
 def _set_probe_rebalancing_params(pool_instance, factory_admin):
     pool_instance.apply_new_parameters(
-        MAX_FEE + 1,
+        0,
         MAX_FEE + 1,
         PRECISION,
         0,
