@@ -11,8 +11,8 @@ numeric_columns = [
     "mid_fee",
     "out_fee",
     "fee_gamma",
-    "allowed_extra_profit",
-    "adjustment_step",
+    "adjustment_step_min",
+    "adjustment_step_max",
     "ma_exp_time",
 ]
 

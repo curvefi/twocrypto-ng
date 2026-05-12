@@ -3,11 +3,12 @@ Test suite for stableswap math implementations, comparing both Stableswap and Tw
 math contract behaviors with precise decimal handling.
 """
 
-import pytest
-import boa
-from decimal import Decimal, getcontext
 from dataclasses import dataclass
+from decimal import Decimal, getcontext
 from typing import List
+
+import boa
+import pytest
 
 # Set precision
 getcontext().prec = 78
@@ -22,8 +23,8 @@ class PoolParams:
     mid_fee: int = 26000000
     out_fee: int = 45000000
     fee_gamma: int = 230000000000000
-    allowed_extra_profit: int = 2000000000000
-    adjustment_step: int = int(10 / 100 * 10**18)  # 10%
+    adjustment_step_min: int = int(1 / 100 * 10**18)
+    adjustment_step_max: int = int(10 / 100 * 10**18)  # 10%
     ma_exp_time: int = 866
     name: str = "crypto"
     description: str = "frontend preset for volatile assets"

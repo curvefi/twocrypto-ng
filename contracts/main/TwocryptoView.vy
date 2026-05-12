@@ -21,14 +21,18 @@ interface Curve:
     def calc_token_fee(
         amounts: uint256[N_COINS], xp: uint256[N_COINS], donation: bool = False, deposit: bool = False
     ) -> uint256: view
+    def calc_withdraw_one_coin(token_amount: uint256, i: uint256) -> uint256: view
     def future_A_gamma_time() -> uint256: view
     def totalSupply() -> uint256: view
     def precisions() -> uint256[N_COINS]: view
     def packed_fee_params() -> uint256: view
+    def packed_rebalancing_params() -> uint256: view
+    def last_prices() -> uint256: view
     def last_timestamp() -> uint256: view
 
 
 interface Math:
+    def wad_exp(_power: int256) -> uint256: view
     def newton_D(
         ANN: uint256,
         gamma: uint256,
@@ -43,9 +47,44 @@ interface Math:
         i: uint256,
     ) -> uint256[2]: view
 
-
 N_COINS: constant(uint256) = 2
 PRECISION: constant(uint256) = 10**18
+FEE_PRECISION: constant(uint256) = 10**10
+MINIMUM_LIQUIDITY: constant(uint256) = 10**4
+
+
+@external
+@view
+def lp_price(
+    price_oracle: uint256,
+    price_scale: uint256,
+    swap: address,
+) -> uint256:
+    virtual_price: uint256 = 10**18 * self._xcp(
+        staticcall Curve(swap).D(),
+        price_scale,
+    ) // staticcall Curve(swap).totalSupply()
+    return 2 * virtual_price * isqrt(
+        self._price_oracle(
+            price_oracle,
+            price_scale,
+            swap,
+        ) * 10**18
+    ) // 10**18
+
+
+@external
+@view
+def price_oracle(
+    price_oracle: uint256,
+    price_scale: uint256,
+    swap: address,
+) -> uint256:
+    return self._price_oracle(
+        price_oracle,
+        price_scale,
+        swap,
+    )
 
 
 @external
@@ -59,7 +98,7 @@ def get_dy(
 
     # dy = (get_y(x + dx) - y) * (1 - fee)
     dy, xp = self._get_dy_nofee(i, j, dx, swap)
-    dy -= staticcall Curve(swap).fee_calc(xp) * dy // 10**10
+    dy -= staticcall Curve(swap).fee_calc(xp) * dy // FEE_PRECISION
 
     return dy
 
@@ -78,7 +117,7 @@ def get_dx(
     # for more precise dx (but never exact), increase num loops
     for k: uint256 in range(n_iter, bound=100):
         dx, xp = self._get_dx_fee(i, j, _dy, swap)
-        fee_dy = staticcall Curve(swap).fee_calc(xp) * _dy // 10**10
+        fee_dy = staticcall Curve(swap).fee_calc(xp) * _dy // FEE_PRECISION
         _dy = dy + fee_dy + 1
 
     return dx
@@ -89,8 +128,7 @@ def get_dx(
 def calc_withdraw_one_coin(
     token_amount: uint256, i: uint256, swap: address
 ) -> uint256:
-
-    return self._calc_withdraw_one_coin(token_amount, i, swap)[0]
+    return staticcall Curve(swap).calc_withdraw_one_coin(token_amount, i)
 
 
 @view
@@ -104,9 +142,18 @@ def calc_token_amount(
     xp: uint256[N_COINS] = empty(uint256[N_COINS])
 
     d_token, amountsp, xp = self._calc_dtoken_nofee(amounts, deposit, swap)
-    d_token -= (
-        staticcall Curve(swap).calc_token_fee(amounts, xp, donation, deposit) * d_token // 10**10 + 1
-    )
+    if deposit and staticcall Curve(swap).D() == 0:
+        # Donation adds are rejected by the pool until regular liquidity exists.
+        if donation:
+            return 0
+        if d_token <= MINIMUM_LIQUIDITY:
+            return 0
+        return d_token - MINIMUM_LIQUIDITY
+    fee: uint256 = staticcall Curve(swap).calc_token_fee(amounts, xp, donation, deposit)
+    if deposit:
+        d_token -= fee * d_token // FEE_PRECISION + 1
+    else:
+        d_token += fee * d_token // FEE_PRECISION + 1
 
     return d_token
 
@@ -120,16 +167,7 @@ def calc_fee_get_dy(i: uint256, j: uint256, dx: uint256, swap: address
     xp: uint256[N_COINS] = empty(uint256[N_COINS])
     dy, xp = self._get_dy_nofee(i, j, dx, swap)
 
-    return (staticcall Curve(swap).fee_calc(xp)) * dy // 10**10
-
-
-@external
-@view
-def calc_fee_withdraw_one_coin(
-    token_amount: uint256, i: uint256, swap: address
-) -> uint256:
-
-    return self._calc_withdraw_one_coin(token_amount, i, swap)[1]
+    return (staticcall Curve(swap).fee_calc(xp)) * dy // FEE_PRECISION
 
 
 @view
@@ -142,8 +180,10 @@ def calc_fee_token_amount(
     amountsp: uint256[N_COINS] = empty(uint256[N_COINS])
     xp: uint256[N_COINS] = empty(uint256[N_COINS])
     d_token, amountsp, xp = self._calc_dtoken_nofee(amounts, deposit, swap)
+    if deposit and staticcall Curve(swap).D() == 0:
+        return 0
 
-    return (staticcall Curve(swap).calc_token_fee(amounts, xp, donation, deposit)) * d_token // 10**10 + 1
+    return (staticcall Curve(swap).calc_token_fee(amounts, xp, donation, deposit)) * d_token // FEE_PRECISION + 1
 
 
 @internal
@@ -282,90 +322,51 @@ def _calc_dtoken_nofee(
     ]
 
     D: uint256 = staticcall math.newton_D(A, gamma, xp, 0)
-    d_token: uint256 = token_supply * D // D0
-
-    if deposit:
-        d_token -= token_supply
+    d_token: uint256 = 0
+    if D0 == 0:
+        assert deposit
+        d_token = self._xcp(D, price_scale)
     else:
-        d_token = token_supply - d_token
+        d_token = token_supply * D // D0
+
+        if deposit:
+            d_token -= token_supply
+        else:
+            d_token = token_supply - d_token
 
     return d_token, amountsp, xp
 
 
 @internal
-@view
-def _calc_withdraw_one_coin(
-    token_amount: uint256,
-    i: uint256,
-    swap: address
-) -> (uint256, uint256):
-
-    token_supply: uint256 = staticcall Curve(swap).totalSupply()
-    assert token_amount <= token_supply, "token amount more than supply"
-    assert i < N_COINS, "coin out of range"
-
-    math: Math = staticcall Curve(swap).MATH()
-
-    xx: uint256[N_COINS] = empty(uint256[N_COINS])
-    for k: uint256 in range(N_COINS):
-        xx[k] = staticcall Curve(swap).balances(k)
-
-    precisions: uint256[N_COINS] = staticcall Curve(swap).precisions()
-    A: uint256 = staticcall Curve(swap).A()
-    gamma: uint256 = staticcall Curve(swap).gamma()
-    D0: uint256 = 0
-    p: uint256 = 0
-
-    price_scale_i: uint256 = staticcall Curve(swap).price_scale() * precisions[1]
-    xp: uint256[N_COINS] = [
-        xx[0] * precisions[0],
-        unsafe_div(xx[1] * price_scale_i, PRECISION)
-    ]
-    if i == 0:
-        price_scale_i = PRECISION * precisions[0]
-
-    if staticcall Curve(swap).future_A_gamma_time() > staticcall Curve(swap).last_timestamp():
-        D0 = staticcall math.newton_D(A, gamma, xp, 0)
-    else:
-        D0 = staticcall Curve(swap).D()
-
-    D: uint256 = D0
-
-    fee: uint256 = self._fee(xp, swap)
-    dD: uint256 = token_amount * D // token_supply
-
-    D_fee: uint256 = fee * dD // (2 * 10**10) + 1
-    approx_fee: uint256 = N_COINS * D_fee * xx[i] // D
-
-    D -= (dD - D_fee)
-
-    y_out: uint256[2] = staticcall math.get_y(A, gamma, xp, D, i)
-    dy: uint256 = (xp[i] - y_out[0]) * PRECISION // price_scale_i
-    xp[i] = y_out[0]
-
-    return dy, approx_fee
+@pure
+def _xcp(D: uint256, price_scale: uint256) -> uint256:
+    return D * PRECISION // N_COINS // isqrt(PRECISION * price_scale)
 
 
 @internal
 @view
-def _fee(xp: uint256[N_COINS], swap: address) -> uint256:
+def _price_oracle(
+    price_oracle: uint256,
+    price_scale: uint256,
+    swap: address,
+) -> uint256:
+    last_prices_timestamp: uint256 = staticcall Curve(swap).last_timestamp()
+    if last_prices_timestamp < block.timestamp:
+        ma_time: uint256 = self._unpack_3(staticcall Curve(swap).packed_rebalancing_params())[2]
+        alpha: uint256 = staticcall (staticcall Curve(swap).MATH()).wad_exp(
+            -convert(
+                unsafe_sub(block.timestamp, last_prices_timestamp) * 10**18 // ma_time,
+                int256,
+            )
+        )
 
-    packed_fee_params: uint256 = staticcall Curve(swap).packed_fee_params()
-    fee_params: uint256[3] = self._unpack_3(packed_fee_params)
+        last_prices: uint256 = staticcall Curve(swap).last_prices()
+        return (
+            min(max(last_prices, unsafe_div(price_scale, 2)), price_scale * 2) * (10**18 - alpha) +
+            price_oracle * alpha
+        ) // 10**18
 
-    # warm up variable with sum of balances
-    B: uint256 = xp[0] + xp[1]
-
-    # balance indicator that goes from 10**18 (perfect pool balance) to 0 (very imbalanced, 100:1 and worse)
-    # N^N * (xp[0] * xp[1]) / (xp[0] + xp[1])**2
-    B = PRECISION * N_COINS**N_COINS * xp[0] // B * xp[1] // B
-
-    # regulate slope using fee_gamma
-    # fee_gamma * balance_term / (fee_gamma * balance_term + 1 - balance_term)
-    B = fee_params[2] * B // (unsafe_div(fee_params[2] * B, 10**18) + 10**18 - B)
-
-    # mid_fee * B + out_fee * (1 - B)
-    return unsafe_div(fee_params[0] * B + fee_params[1] * (10**18 - B), 10**18)
+    return price_oracle
 
 
 @internal

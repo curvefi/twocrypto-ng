@@ -139,10 +139,11 @@ reports/
 .idea
 **/.idea
 .vscode
+.zed
 
 # misc
 /data
-todo.txt
+/notes
 node_modules
 /audits
 

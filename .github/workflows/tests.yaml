@@ -40,4 +40,9 @@ jobs:
         run: uv sync --extra=dev
 
       - name: Run tests in ${{ matrix.folder }}
-        run: uv run pytest ${{ matrix.folder }} -n auto
+        run: |
+          if [ "${{ matrix.folder }}" = "tests/stateful" ]; then
+            uv run pytest ${{ matrix.folder }} -n 3
+          else
+            uv run pytest ${{ matrix.folder }} -n auto
+          fi

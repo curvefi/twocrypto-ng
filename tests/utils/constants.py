@@ -17,6 +17,9 @@ MATH_DEPLOYER = boa.load_partial(
 VIEW_DEPLOYER = boa.load_partial(
     "contracts/main/TwocryptoView.vy", compiler_args={"experimental_codegen": VENOM_FLAG}
 )
+POLICY_DEPLOYER = boa.load_partial(
+    "contracts/main/TwocryptoPolicy.vy", compiler_args={"experimental_codegen": VENOM_FLAG}
+)
 FACTORY_DEPLOYER = boa.load_partial(
     "contracts/main/TwocryptoFactory.vy", compiler_args={"experimental_codegen": VENOM_FLAG}
 )
@@ -38,6 +41,12 @@ assert (
 ), "N_COINS mismatch"
 
 N_COINS = POOL_DEPLOYER._constants.N_COINS
+
+assert (
+    POOL_DEPLOYER._constants.MINIMUM_LIQUIDITY == VIEW_DEPLOYER._constants.MINIMUM_LIQUIDITY
+), "MINIMUM_LIQUIDITY mismatch"
+
+MINIMUM_LIQUIDITY = POOL_DEPLOYER._constants.MINIMUM_LIQUIDITY
 
 # assert (
 #     POOL_DEPLOYER._constants.MIN_GAMMA == MATH_DEPLOYER._constants.MIN_GAMMA
@@ -66,6 +75,12 @@ MIN_A = POOL_DEPLOYER._constants.MIN_A
 MAX_A = POOL_DEPLOYER._constants.MAX_A
 
 UNIX_DAY = 86400
+
+assert (
+    POOL_DEPLOYER._constants.FEE_PRECISION == VIEW_DEPLOYER._constants.FEE_PRECISION
+), "FEE_PRECISION mismatch"
+
+FEE_PRECISION = POOL_DEPLOYER._constants.FEE_PRECISION
 
 MIN_FEE = POOL_DEPLOYER._constants.MIN_FEE
 

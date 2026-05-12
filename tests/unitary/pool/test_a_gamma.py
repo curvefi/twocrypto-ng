@@ -11,7 +11,8 @@ def test_A_gamma(pool, params):
     assert gamma == params["gamma"]
 
 
-def test_revert_ramp_A_gamma(pool, factory_admin):
+def test_revert_ramp_A_gamma(pool_with_deposit, factory_admin):
+    pool = pool_with_deposit
     A = pool.A()
     gamma = pool.gamma()
     future_A = A * 10  # 10 is too large of a jump
@@ -24,7 +25,8 @@ def test_revert_ramp_A_gamma(pool, factory_admin):
 
 
 # https://github.com/curvefi/curve-factory-crypto/blob/master/tests/test_a_gamma.py
-def test_ramp_A_gamma(pool, factory_admin):
+def test_ramp_A_gamma(pool_with_deposit, factory_admin):
+    pool = pool_with_deposit
     A = pool.A()
     gamma = pool.gamma()
     A_gamma_initial = [A, gamma]

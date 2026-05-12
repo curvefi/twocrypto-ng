@@ -120,11 +120,13 @@ class GodModePool:
             "user_lp": self.instance.balanceOf(boa.env.eoa),
             "lp_supply": self.instance.totalSupply(),
             "user_coins": [self.coins[i].balanceOf(boa.env.eoa) for i in range(N_COINS)],
-            "pool_coins": [self.instance.balances(i) for i in range(N_COINS)],
+            "pool_coins": [self.coins[i].balanceOf(self.instance) for i in range(N_COINS)],
+            "pool_owned_coins": [self.instance.balances(i) for i in range(N_COINS)],
+            "admin_coins": [self.instance.admin_balances(i) for i in range(N_COINS)],
         }
-        assert snapshot["pool_coins"] == [
-            self.coins[i].balanceOf(self.instance) for i in range(N_COINS)
-        ], "pool coins balances are not consistent"
+        assert [
+            snapshot["pool_owned_coins"][i] + snapshot["admin_coins"][i] for i in range(N_COINS)
+        ] == snapshot["pool_coins"], "pool coins balances are not consistent"
         return snapshot
 
     def get_metrics_snapshot(self):
@@ -132,13 +134,14 @@ class GodModePool:
         return {
             "virtual_price": self.instance.virtual_price(),
             "xcp_profit": self.instance.xcp_profit(),
-            "xcp_profit_a": self.instance.xcp_profit_a(),
             "price_scale": self.instance.price_scale(),
             "price_oracle": self.instance.price_oracle(),
             "total_supply": self.instance.totalSupply(),
             "D": self.instance.D(),
             "coin0_balance": self.instance.balances(0),
             "coin1_balance": self.instance.balances(1),
+            "coin0_admin_balance": self.instance.admin_balances(0),
+            "coin1_admin_balance": self.instance.admin_balances(1),
         }
 
     def premint_amounts(self, amounts, to=god):

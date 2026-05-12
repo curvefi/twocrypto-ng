@@ -1,9 +1,99 @@
 import boa
 import pytest
 
-from tests.utils.constants import N_COINS
+from tests.utils.constants import N_COINS, POLICY_DEPLOYER, VENOM_FLAG
 from tests.utils.god_mode import GodModePool
 import numpy as np
+
+REVERTING_POLICY_DEPLOYER = boa.loads_partial(
+    """
+# pragma version 0.4.3
+# pragma optimize gas
+
+N_COINS: constant(uint256) = 2
+
+blocked: public(bool)
+
+
+@external
+def set_blocked(_blocked: bool):
+    self.blocked = _blocked
+
+
+@external
+@view
+def get_fee(xp: uint256[N_COINS]) -> uint256:
+    return 0
+
+
+@external
+@view
+def get_price_scale() -> uint256:
+    return 0
+
+
+@external
+def update_pool_state(
+    xp: uint256[N_COINS],
+    price_scale: uint256,
+    price_oracle: uint256,
+    last_prices: uint256,
+    virtual_price: uint256,
+    xcp_profit: uint256,
+    D: uint256,
+    oracle_timestamp: uint256,
+):
+    if self.blocked:
+        raise "blocked"
+""",
+    compiler_args={"experimental_codegen": VENOM_FLAG},
+)
+
+GAS_STARVED_POLICY_DEPLOYER = boa.loads_partial(
+    """
+# pragma version 0.4.3
+# pragma optimize gas
+
+N_COINS: constant(uint256) = 2
+
+last_gas: public(uint256)
+min_gas: public(uint256)
+
+
+@external
+def set_min_gas(_min_gas: uint256):
+    self.min_gas = _min_gas
+
+
+@external
+@view
+def get_fee(xp: uint256[N_COINS]) -> uint256:
+    return 0
+
+
+@external
+@view
+def get_price_scale() -> uint256:
+    return 0
+
+
+@external
+def update_pool_state(
+    xp: uint256[N_COINS],
+    price_scale: uint256,
+    price_oracle: uint256,
+    last_prices: uint256,
+    virtual_price: uint256,
+    xcp_profit: uint256,
+    D: uint256,
+    oracle_timestamp: uint256,
+):
+    if msg.gas < self.min_gas:
+        raise "starved"
+    self.last_gas = msg.gas
+""",
+    compiler_args={"experimental_codegen": VENOM_FLAG},
+)
 
 PRECISION = 10**18
 INITIAL_LIQUIDITY_COIN0 = 1000 * PRECISION  # Amount of coin 0 for initial balanced liquidity
@@ -72,7 +162,7 @@ def test_remove_liquidity_partial(pool, coins, bob):
     assert pool.D() == expected_d
 
 
-def test_remove_liquidity_all(pool, coins, bob):
+def test_remove_liquidity_all(pool, coins, bob, minimum_liquidity):
     user_account = boa.env.eoa
     gm_pool = GodModePool(pool)
 
@@ -82,16 +172,17 @@ def test_remove_liquidity_all(pool, coins, bob):
     initial_lp_balance_user = pool.balanceOf(user_account)
     initial_total_supply = pool.totalSupply()
     initial_pool_balances = [pool.balances(i) for i in range(N_COINS)]
+    initial_d = pool.D()
     user_coin_balances_before_remove = [coins[i].balanceOf(user_account) for i in range(N_COINS)]
 
-    assert (
-        initial_lp_balance_user == initial_total_supply
-    )  # User (via GodMode) provided all liquidity
+    assert initial_lp_balance_user == initial_total_supply - minimum_liquidity
 
     lp_to_remove = initial_lp_balance_user
     min_amounts_to_receive = [0] * N_COINS
 
-    expected_withdraw_amounts = initial_pool_balances
+    expected_withdraw_amounts = [
+        initial_pool_balances[i] * lp_to_remove // initial_total_supply for i in range(N_COINS)
+    ]
 
     actual_withdrawn_amounts = pool.remove_liquidity(
         lp_to_remove, min_amounts_to_receive, sender=user_account
@@ -110,21 +201,121 @@ def test_remove_liquidity_all(pool, coins, bob):
     assert remove_liquidity_event is not None, "RemoveLiquidity event not found"
 
     assert remove_liquidity_event.provider == user_account
-    assert remove_liquidity_event.token_supply == 0
+    assert remove_liquidity_event.token_supply == minimum_liquidity
     for i in range(N_COINS):
         assert remove_liquidity_event.token_amounts[i] == expected_withdraw_amounts[i]
 
     assert pool.balanceOf(user_account) == 0
-    assert pool.totalSupply() == 0
+    assert pool.totalSupply() == minimum_liquidity
     final_pool_balances = [pool.balances(i) for i in range(N_COINS)]
     for i in range(N_COINS):
-        assert final_pool_balances[i] == 0
+        assert final_pool_balances[i] == initial_pool_balances[i] - expected_withdraw_amounts[i]
         assert (
             coins[i].balanceOf(user_account)
             == user_coin_balances_before_remove[i] + expected_withdraw_amounts[i]
         )
 
-    assert pool.D() == 0
+    expected_d = initial_d - (initial_d * lp_to_remove // initial_total_supply)
+    assert pool.D() == expected_d
+
+
+def test_remove_liquidity_ignores_reverting_policy_update(pool, coins, factory_admin):
+    user_account = boa.env.eoa
+    policy = REVERTING_POLICY_DEPLOYER.deploy()
+    pool.set_policy_contract(policy, sender=factory_admin)
+    assert pool.POLICY() == policy.address
+
+    gm_pool = GodModePool(pool)
+    lp_minted = gm_pool.add_liquidity_balanced(amount=INITIAL_LIQUIDITY_COIN0)
+    assert lp_minted > 0
+    policy.set_blocked(True)
+    with boa.reverts("blocked"):
+        policy.update_pool_state([0, 0], 0, 0, 0, 0, 0, 0, 0, sender=pool.address)
+
+    initial_total_supply = pool.totalSupply()
+    initial_pool_balances = [pool.balances(i) for i in range(N_COINS)]
+    initial_user_lp_balance = pool.balanceOf(user_account)
+    initial_user_coin_balances = [coins[i].balanceOf(user_account) for i in range(N_COINS)]
+
+    lp_to_remove = initial_user_lp_balance // 2
+    expected_withdraw_amounts = [
+        initial_pool_balances[i] * lp_to_remove // initial_total_supply for i in range(N_COINS)
+    ]
+
+    actual_withdrawn_amounts = pool.remove_liquidity(
+        lp_to_remove, [0] * N_COINS, sender=user_account
+    )
+
+    assert actual_withdrawn_amounts == expected_withdraw_amounts
+    assert pool.balanceOf(user_account) == initial_user_lp_balance - lp_to_remove
+    assert pool.totalSupply() == initial_total_supply - lp_to_remove
+
+    for i in range(N_COINS):
+        assert pool.balances(i) == initial_pool_balances[i] - expected_withdraw_amounts[i]
+        assert (
+            coins[i].balanceOf(user_account)
+            == initial_user_coin_balances[i] + expected_withdraw_amounts[i]
+        )
+
+
+def test_zero_balanced_remove_liquidity_skips_policy_update(pool, factory_admin):
+    with boa.env.anchor():
+        gm_pool = GodModePool(pool)
+        gm_pool.add_liquidity_balanced(amount=INITIAL_LIQUIDITY_COIN0)
+
+        policy = POLICY_DEPLOYER.deploy(pool.address)
+        pool.set_policy_contract(policy, sender=factory_admin)
+        last_ts = policy.last_pool_state().ts
+        assert last_ts > 0
+
+        boa.env.time_travel(seconds=1)
+        assert pool.remove_liquidity(0, [0] * N_COINS) == [0] * N_COINS
+
+        assert policy.last_pool_state().ts == last_ts
+
+
+def test_nonzero_balanced_remove_liquidity_updates_policy(pool, factory_admin):
+    with boa.env.anchor():
+        gm_pool = GodModePool(pool)
+        gm_pool.add_liquidity_balanced(amount=INITIAL_LIQUIDITY_COIN0)
+
+        policy = POLICY_DEPLOYER.deploy(pool.address)
+        pool.set_policy_contract(policy, sender=factory_admin)
+        last_state = policy.last_pool_state()
+        assert last_state.ts > 0
+
+        boa.env.time_travel(seconds=1)
+        withdraw_amounts = pool.remove_liquidity(pool.balanceOf(boa.env.eoa) // 2, [0] * N_COINS)
+
+        assert withdraw_amounts[0] > 0 or withdraw_amounts[1] > 0
+        new_state = policy.last_pool_state()
+        assert new_state.ts == last_state.ts
+        assert new_state.D < last_state.D
+
+
+def test_low_gas_cannot_force_best_effort_policy_failure(pool, factory_admin):
+    with boa.env.anchor():
+        gm_pool = GodModePool(pool)
+        gm_pool.add_liquidity_balanced(amount=INITIAL_LIQUIDITY_COIN0)
+
+        policy = GAS_STARVED_POLICY_DEPLOYER.deploy()
+        policy.set_min_gas(249_000)
+        pool.set_policy_contract(policy, sender=factory_admin)
+
+        lp_to_remove = pool.balanceOf(boa.env.eoa) // 4
+        last_gas = policy.last_gas()
+        with boa.reverts():
+            pool.remove_liquidity(lp_to_remove, [0] * N_COINS, gas=280_000)
+
+        assert policy.last_gas() == last_gas
+        pool.remove_liquidity(lp_to_remove, [0] * N_COINS, gas=320_000)
+        assert policy.last_gas() >= 249_000
+
+        policy.set_min_gas(301_000)
+        with boa.reverts():
+            pool.remove_liquidity(lp_to_remove, [0] * N_COINS, gas=420_000)
+
+        pool.remove_liquidity(lp_to_remove, [0] * N_COINS, gas=650_000)
 
 
 def test_remove_liquidity_slippage(pool, coins, bob):
@@ -273,6 +464,7 @@ def test_remove_liquidity_to_different_receiver(pool, coins, bob):
 
 
 @pytest.mark.parametrize("donation_present", [False, True])
+@pytest.mark.xfail(reason="pool reuse reset is replaced by permanently locked minimum liquidity")
 def test_pool_reinitialization_after_full_user_withdrawal(pool, coins, bob, donation_present):
     user_account = boa.env.eoa
     second_provider_account = bob

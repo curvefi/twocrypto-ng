@@ -8,8 +8,8 @@ def _apply_new_params(pool, params):
         params["mid_fee"],
         params["out_fee"],
         params["fee_gamma"],
-        params["allowed_extra_profit"],
-        params["adjustment_step"],
+        params["adjustment_step_min"],
+        params["adjustment_step_max"],
         params["ma_time"],
     )
 
@@ -59,24 +59,24 @@ def test_commit_accept_fee_params(pool, factory_admin, params):
     assert fee_params[2] == p["fee_gamma"]
 
 
-def test_commit_accept_allowed_extra_profit(pool, factory_admin, params):
+def test_commit_accept_adjustment_step_min(pool, factory_admin, params):
     p = copy.deepcopy(params)
-    p["allowed_extra_profit"] = 10**17
+    p["adjustment_step_min"] = 10**16
     with boa.env.prank(factory_admin):
         _apply_new_params(pool, p)
 
-    allowed_extra_profit = pool.internal._unpack_3(pool._storage.packed_rebalancing_params.get())[0]
-    assert allowed_extra_profit == p["allowed_extra_profit"]
+    adjustment_step_min = pool.internal._unpack_3(pool._storage.packed_rebalancing_params.get())[0]
+    assert adjustment_step_min == p["adjustment_step_min"]
 
 
-def test_commit_accept_adjustment_step(pool, factory_admin, params):
+def test_commit_accept_adjustment_step_max(pool, factory_admin, params):
     p = copy.deepcopy(params)
-    p["adjustment_step"] = 10**17
+    p["adjustment_step_max"] = 10**17
     with boa.env.prank(factory_admin):
         _apply_new_params(pool, p)
 
-    adjustment_step = pool.internal._unpack_3(pool._storage.packed_rebalancing_params.get())[1]
-    assert adjustment_step == p["adjustment_step"]
+    adjustment_step_max = pool.internal._unpack_3(pool._storage.packed_rebalancing_params.get())[1]
+    assert adjustment_step_max == p["adjustment_step_max"]
 
 
 def test_commit_accept_ma_time(pool, factory_admin, params):
@@ -91,14 +91,14 @@ def test_commit_accept_ma_time(pool, factory_admin, params):
 
 def test_commit_accept_rebalancing_params(pool, factory_admin, params):
     p = copy.deepcopy(params)
-    p["allowed_extra_profit"] = 10**17
-    p["adjustment_step"] = 10**17
+    p["adjustment_step_min"] = 10**16
+    p["adjustment_step_max"] = 10**17
     p["ma_time"] = 1000
 
     with boa.env.prank(factory_admin):
         _apply_new_params(pool, p)
 
     rebalancing_params = pool.internal._unpack_3(pool._storage.packed_rebalancing_params.get())
-    assert rebalancing_params[0] == p["allowed_extra_profit"]
-    assert rebalancing_params[1] == p["adjustment_step"]
+    assert rebalancing_params[0] == p["adjustment_step_min"]
+    assert rebalancing_params[1] == p["adjustment_step_max"]
     assert rebalancing_params[2] == p["ma_time"]
