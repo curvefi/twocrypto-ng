@@ -8,11 +8,10 @@ from eth_utils import keccak
 from boa.verifiers import Blockscout
 
 # deploy as blueprints
-DEPLOY = False
-ADMIN_FEE = 10**10 * 50 // 100
+DEPLOY = True
 
 
-def twocrypto_with_periphery(twocrypto_path, views_address, math_address, admin_fee):
+def twocrypto_with_periphery(twocrypto_path, views_address, math_address):
     with open(twocrypto_path, "r") as f:
         twocrypto_code = f.read()
     twocrypto_code = twocrypto_code.replace(
@@ -21,20 +20,17 @@ def twocrypto_with_periphery(twocrypto_path, views_address, math_address, admin_
     twocrypto_code = twocrypto_code.replace(
         "VIEW = Views(empty(address))", f"VIEW = Views({views_address})", 1
     )
-    twocrypto_code = twocrypto_code.replace(
-        "self.admin_fee = 10**10 * 50 // 100", f"self.admin_fee = {admin_fee}", 1
-    )
     assert f"MATH = Math({math_address})" in twocrypto_code
     assert f"VIEW = Views({views_address})" in twocrypto_code
-    assert f"self.admin_fee = {admin_fee}" in twocrypto_code
     return boa.loads_partial(twocrypto_code)
 
 
+DRPC_API_KEY = os.environ.get("DRPC_API_KEY")
 # rpc_url = "https://bsc-dataseed.bnbchain.org"
-# rpc_url = "https://eth.drpc.org"
+rpc_url = f"https://lb.drpc.org/ogrpc?network=eth&dkey={DRPC_API_KEY}"
 # rpc_url = "https://mainnet.base.org"
 # rpc_url = "https://polygon-rpc.com"
-rpc_url = "https://rpc.ankr.com/etherlink_mainnet"
+# rpc_url = "https://rpc.ankr.com/etherlink_mainnet"
 etherscan_api_key = os.environ.get("ETHERSCAN_API_KEY")
 
 # private_key = os.environ.get("WEB3_TESTNET_PK")
@@ -65,66 +61,64 @@ views_deployer = boa.load_partial(views_path)
 
 if DEPLOY:
     if boa.env.evm.patch.chain_id == 1:
-        math_address = "0x79839c2D74531A8222C0F555865aAc1834e82e51"  # eth
-        views_address = "0x35048188c02cbc9239e1e5ecb3761eF9dfDcD31f"  # eth
-    elif boa.env.evm.patch.chain_id == 56:
-        math_address = "0xd908A6ed4DCE4139f9b0F0E9c6c769539a9D7601"  # bsc
-        views_address = "0x068712A87FFCB06cd1069Ad7526bDA8Bd564A910"  # bsc
-    elif boa.env.evm.patch.chain_id == 8453:
-        math_address = "0x2Bd498ae431dC98694010950fcF8ACd3599f5512"
-        views_address = "0xFcBA2D0133F705DD8bAf250a64f1DE0d7091F5Bd"  # base
-    elif boa.env.evm.patch.chain_id == 137:
-        math_address = "0xe3AA3639BA550bED6ba5Fb9635bE89f9e35b9745"
-        views_address = "0x5183A4dFC1adbfFDbf28293ce923fD4F844Cb216"  # polygon
-    elif boa.env.evm.patch.chain_id == 42793:
-        math_address = "0xAE25375012a380D1a9B7C57021aCe72D83Cb5565"
-        views_address = "0x2f39Fc9c39E99588dae8f822ce5886D395858FA7"  # etherlink
-    else:
-        print("Deploying math contract...")
-        math_contract = math_deployer.deploy()
-        time.sleep(5)
-        print("Deploying views contract...")
-        views_contract = views_deployer.deploy()
-        time.sleep(5)
-        math_address = math_contract.address
-        views_address = views_contract.address
+        math_address = "0xBfDdF58Cb6ef84e115fF47c10e49A80B2653EA13"  # eth
+        views_address = "0x1D788b7AB488bAF5E6c3609cF7f9C9b940C4C867"  # eth
+    # elif boa.env.evm.patch.chain_id == 56:
+    #     math_address = "0xd908A6ed4DCE4139f9b0F0E9c6c769539a9D7601"  # bsc
+    #     views_address = "0x068712A87FFCB06cd1069Ad7526bDA8Bd564A910"  # bsc
+    # elif boa.env.evm.patch.chain_id == 8453:
+    #     math_address = "0x2Bd498ae431dC98694010950fcF8ACd3599f5512"
+    #     views_address = "0xFcBA2D0133F705DD8bAf250a64f1DE0d7091F5Bd"  # base
+    # elif boa.env.evm.patch.chain_id == 137:
+    #     math_address = "0xe3AA3639BA550bED6ba5Fb9635bE89f9e35b9745"
+    #     views_address = "0x5183A4dFC1adbfFDbf28293ce923fD4F844Cb216"  # polygon
+    # elif boa.env.evm.patch.chain_id == 42793:
+    #     math_address = "0xAE25375012a380D1a9B7C57021aCe72D83Cb5565"
+    #     views_address = "0x2f39Fc9c39E99588dae8f822ce5886D395858FA7"  # etherlink
+    # else:
+    print("Deploying math contract...")
+    math_contract = math_deployer.deploy()
+    time.sleep(5)
+    print("Deploying views contract...")
+    views_contract = views_deployer.deploy()
+    time.sleep(5)
+    math_address = math_contract.address
+    views_address = views_contract.address
     math_contract = math_deployer.at(math_address)
     views_contract = views_deployer.at(views_address)
     print("Deploying twocrypto contract...")
     twocrypto_deployer = twocrypto_with_periphery(
-        twocrypto_path, views_contract.address, math_contract.address, ADMIN_FEE
+        twocrypto_path, views_contract.address, math_contract.address
     )
     twocrypto_contract = twocrypto_deployer.deploy_as_blueprint()
     time.sleep(5)
 else:
     if boa.env.evm.patch.chain_id == 1:
-        math_address = "0x79839c2D74531A8222C0F555865aAc1834e82e51"  # eth
-        views_address = "0x35048188c02cbc9239e1e5ecb3761eF9dfDcD31f"  # eth
-        twocrypto_address = "0xD1FAeCA80d6FDd1DF4CBcCe4b2551b6Ee63Ae3D6"
+        math_address = "0xBfDdF58Cb6ef84e115fF47c10e49A80B2653EA13"  # eth
+        views_address = "0x1D788b7AB488bAF5E6c3609cF7f9C9b940C4C867"  # eth
+        twocrypto_address = "0x94D8e42c786C090bC5378D205C5C531D6247BC3D"
 
-    elif boa.env.evm.patch.chain_id == 56:
-        math_address = "0xd908A6ed4DCE4139f9b0F0E9c6c769539a9D7601"  # bsc
-        views_address = "0x068712A87FFCB06cd1069Ad7526bDA8Bd564A910"  # bsc
-        twocrypto_address = "0xbe365a090321E0E012f448B42feDfB74A7Ea4d9D"
-    elif boa.env.evm.patch.chain_id == 8453:
-        math_address = "0x2Bd498ae431dC98694010950fcF8ACd3599f5512"
-        views_address = "0xFcBA2D0133F705DD8bAf250a64f1DE0d7091F5Bd"  # base
-        twocrypto_address = "0x56545b4640e5f0937e56843ad8f0a3cd44fc0785"
-    elif boa.env.evm.patch.chain_id == 137:
-        math_address = "0xe3AA3639BA550bED6ba5Fb9635bE89f9e35b9745"
-        views_address = "0x5183A4dFC1adbfFDbf28293ce923fD4F844Cb216"  # polygon
-        twocrypto_address = "0xE6Ea1975544c1b4E56C900f600d7786D76Ea5944"
-    elif boa.env.evm.patch.chain_id == 42793:
-        math_address = "0xAE25375012a380D1a9B7C57021aCe72D83Cb5565"
-        views_address = "0x2f39Fc9c39E99588dae8f822ce5886D395858FA7"  # etherlink
-        twocrypto_address = "0xC6644d4CEDd3700d4b977635e623bF531D59F39C"
-    else:
-        raise ValueError(f"Chain ID {boa.env.evm.patch.chain_id} not supported")
+    # elif boa.env.evm.patch.chain_id == 56:
+    #     math_address = "0xd908A6ed4DCE4139f9b0F0E9c6c769539a9D7601"  # bsc
+    #     views_address = "0x068712A87FFCB06cd1069Ad7526bDA8Bd564A910"  # bsc
+    #     twocrypto_address = "0xbe365a090321E0E012f448B42feDfB74A7Ea4d9D"
+    # elif boa.env.evm.patch.chain_id == 8453:
+    #     math_address = "0x2Bd498ae431dC98694010950fcF8ACd3599f5512"
+    #     views_address = "0xFcBA2D0133F705DD8bAf250a64f1DE0d7091F5Bd"  # base
+    #     twocrypto_address = "0x56545b4640e5f0937e56843ad8f0a3cd44fc0785"
+    # elif boa.env.evm.patch.chain_id == 137:
+    #     math_address = "0xe3AA3639BA550bED6ba5Fb9635bE89f9e35b9745"
+    #     views_address = "0x5183A4dFC1adbfFDbf28293ce923fD4F844Cb216"  # polygon
+    #     twocrypto_address = "0xE6Ea1975544c1b4E56C900f600d7786D76Ea5944"
+    # elif boa.env.evm.patch.chain_id == 42793:
+    #     math_address = "0xAE25375012a380D1a9B7C57021aCe72D83Cb5565"
+    #     views_address = "0x2f39Fc9c39E99588dae8f822ce5886D395858FA7"  # etherlink
+    #     twocrypto_address = "0xC6644d4CEDd3700d4b977635e623bF531D59F39C"
+    # else:
+    #     raise ValueError(f"Chain ID {boa.env.evm.patch.chain_id} not supported")
     math_contract = math_deployer.at(math_address)
     views_contract = views_deployer.at(views_address)
-    twocrypto_deployer = twocrypto_with_periphery(
-        twocrypto_path, views_address, math_address, ADMIN_FEE
-    )
+    twocrypto_deployer = twocrypto_with_periphery(twocrypto_path, views_address, math_address)
     twocrypto_contract = twocrypto_deployer.at(twocrypto_address)
 
 print(f"Math: {math_contract.address}")
@@ -144,7 +138,7 @@ for contract in [math_contract, views_contract, twocrypto_contract]:
         print(e)
 
 # verify on blockscout (must change uri)
-custom_verifier = Blockscout(uri="https://explorer.etherlink.com", api_key="")
+custom_verifier = Blockscout(uri="https://explorer.blockscout.com", api_key="")
 for contract in [math_contract, views_contract, twocrypto_contract]:
     contract.ctor_calldata = b""
     try:
