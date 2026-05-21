@@ -34,7 +34,7 @@ POOL_A_PRECISION: constant(uint256) = 10_000
 @view
 def _sanity_check(pool: IFXSwap):
     assert pool.address != empty(address)
-    assert staticcall pool.A() >= POOL_A_PRECISION, "Bad A value"
+    assert staticcall pool.A() >= N_COINS**(N_COINS-1) * POOL_A_PRECISION, "Bad A value"
     assert staticcall pool.virtual_price() > 0
     assert staticcall pool.price_scale() > 0
     assert staticcall pool.price_oracle() > 0
