@@ -57,6 +57,8 @@ def _A_at_last_timestamp(pool: IFXSwap) -> uint256:
     # In case of stale pool price_oracle converges to last price and D is cached at last timestamp.
     #   If pool ramps A parameter the calculated invariant variables will be off,
     #   so we calculate them at one timestamp(of last interaction).
+    # WARNING: if the pool stayed idle until a later ramp starts, A(last_timestamp)
+    #   is no longer recoverable from the latest ramp endpoints and this can return a newer A.
     # Replicates Twocrypto._A_gamma() but evaluates it at pool.last_timestamp().
     t: uint256 = staticcall pool.last_timestamp()
     future_t: uint256 = staticcall pool.future_A_gamma_time()
