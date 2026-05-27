@@ -6,6 +6,8 @@
 @license MIT
 @notice LP oracle for Twocrypto(FXSwap)-style pools.
 @dev Reuses stable bisection solver and adjusts for pool internal price scaling.
+@dev Attention: LP pricing here depends on several components; see `lp_price()`
+    comments for important caveats.
 """
 
 from curve_std.stableswap import lp_oracle_2
@@ -143,6 +145,11 @@ def _lp_price(pool: IFXSwap, i: uint256=0) -> uint256:
 def lp_price(_pool: IFXSwap, _i: uint256=0) -> uint256:
     """
     @notice Returns LP token price in the selected coin numeraire.
+    @dev LP token price can be inflated by natural growth of the pool's
+         fee component and through successful rebalances.
+    @dev The underlying `_pool.price_oracle()` used by this LP token oracle is
+         capped to the 0.5-2.0 range relative to `_pool.price_scale()`, so the
+         LP token price returned by this oracle is capped accordingly.
     @param _pool Address of the Twocrypto(FXSwap)-style pool.
     @param _i Coin index used as the numeraire, where 0 or 1 are supported.
     @return uint256 LP price scaled to 1e18 in coin `_i` units.
