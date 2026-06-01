@@ -26,9 +26,10 @@ def twocrypto_with_periphery(twocrypto_path, views_address, math_address):
 
 
 DRPC_API_KEY = os.environ.get("DRPC_API_KEY")
+ANKR_API_KEY = os.environ.get("ANKR_API_KEY")
 # rpc_url = "https://bsc-dataseed.bnbchain.org"
-rpc_url = f"https://lb.drpc.org/ogrpc?network=eth&dkey={DRPC_API_KEY}"
-# rpc_url = "https://mainnet.base.org"
+# rpc_url = f"https://lb.drpc.org/ogrpc?network=eth&dkey={DRPC_API_KEY}"
+rpc_url = f"https://rpc.ankr.com/polygon/{ANKR_API_KEY}"
 # rpc_url = "https://polygon-rpc.com"
 # rpc_url = "https://rpc.ankr.com/etherlink_mainnet"
 etherscan_api_key = os.environ.get("ETHERSCAN_API_KEY")
@@ -63,15 +64,15 @@ if DEPLOY:
     if boa.env.evm.patch.chain_id == 1:
         math_address = "0xBfDdF58Cb6ef84e115fF47c10e49A80B2653EA13"  # eth
         views_address = "0x1D788b7AB488bAF5E6c3609cF7f9C9b940C4C867"  # eth
-    # elif boa.env.evm.patch.chain_id == 56:
-    #     math_address = "0xd908A6ed4DCE4139f9b0F0E9c6c769539a9D7601"  # bsc
-    #     views_address = "0x068712A87FFCB06cd1069Ad7526bDA8Bd564A910"  # bsc
-    # elif boa.env.evm.patch.chain_id == 8453:
-    #     math_address = "0x2Bd498ae431dC98694010950fcF8ACd3599f5512"
-    #     views_address = "0xFcBA2D0133F705DD8bAf250a64f1DE0d7091F5Bd"  # base
-    # elif boa.env.evm.patch.chain_id == 137:
-    #     math_address = "0xe3AA3639BA550bED6ba5Fb9635bE89f9e35b9745"
-    #     views_address = "0x5183A4dFC1adbfFDbf28293ce923fD4F844Cb216"  # polygon
+    elif boa.env.evm.patch.chain_id == 56:
+        math_address = "0xB9EA065629A44A73f9E7e9f99bf962992A560eb8"  # bsc
+        views_address = "0xF2E81011C13bA558076b8fd5247913e98C1cFf06"  # bsc
+    elif boa.env.evm.patch.chain_id == 8453:
+        math_address = "0x6eE54BABC0573879d821b0964ea794BF0DBb25e8"
+        views_address = "0xC6A535CE48049C219Bc62dd739219108a51294C6"  # base
+    elif boa.env.evm.patch.chain_id == 137:
+        math_address = "0x59f1C56176E98d506Bb400578DFFc63CbbA2c072"
+        views_address = "0x832732f5aFA15DbD74541Aa093a98B2aA36eEa69"  # polygon
     # elif boa.env.evm.patch.chain_id == 42793:
     #     math_address = "0xAE25375012a380D1a9B7C57021aCe72D83Cb5565"
     #     views_address = "0x2f39Fc9c39E99588dae8f822ce5886D395858FA7"  # etherlink
@@ -97,19 +98,18 @@ else:
         math_address = "0xBfDdF58Cb6ef84e115fF47c10e49A80B2653EA13"  # eth
         views_address = "0x1D788b7AB488bAF5E6c3609cF7f9C9b940C4C867"  # eth
         twocrypto_address = "0x94D8e42c786C090bC5378D205C5C531D6247BC3D"
-
-    # elif boa.env.evm.patch.chain_id == 56:
-    #     math_address = "0xd908A6ed4DCE4139f9b0F0E9c6c769539a9D7601"  # bsc
-    #     views_address = "0x068712A87FFCB06cd1069Ad7526bDA8Bd564A910"  # bsc
-    #     twocrypto_address = "0xbe365a090321E0E012f448B42feDfB74A7Ea4d9D"
-    # elif boa.env.evm.patch.chain_id == 8453:
-    #     math_address = "0x2Bd498ae431dC98694010950fcF8ACd3599f5512"
-    #     views_address = "0xFcBA2D0133F705DD8bAf250a64f1DE0d7091F5Bd"  # base
-    #     twocrypto_address = "0x56545b4640e5f0937e56843ad8f0a3cd44fc0785"
-    # elif boa.env.evm.patch.chain_id == 137:
-    #     math_address = "0xe3AA3639BA550bED6ba5Fb9635bE89f9e35b9745"
-    #     views_address = "0x5183A4dFC1adbfFDbf28293ce923fD4F844Cb216"  # polygon
-    #     twocrypto_address = "0xE6Ea1975544c1b4E56C900f600d7786D76Ea5944"
+    elif boa.env.evm.patch.chain_id == 56:
+        math_address = "0xB9EA065629A44A73f9E7e9f99bf962992A560eb8"  # bsc
+        views_address = "0xF2E81011C13bA558076b8fd5247913e98C1cFf06"  # bsc
+        twocrypto_address = "0x85C44766d26616E581aa090f1Dc69abAc46A84D6"
+    elif boa.env.evm.patch.chain_id == 8453:
+        math_address = "0x6eE54BABC0573879d821b0964ea794BF0DBb25e8"
+        views_address = "0xC6A535CE48049C219Bc62dd739219108a51294C6"  # base
+        twocrypto_address = "0x5B7dA0f56dD31df86eD34FC0b02d6BC62d4E3925"
+    elif boa.env.evm.patch.chain_id == 137:
+        math_address = "0x59f1C56176E98d506Bb400578DFFc63CbbA2c072"
+        views_address = "0x832732f5aFA15DbD74541Aa093a98B2aA36eEa69"  # polygon
+        twocrypto_address = "0xf823F26E359fBE1d3cB0ff1534B24846aC02A0Bb"
     # elif boa.env.evm.patch.chain_id == 42793:
     #     math_address = "0xAE25375012a380D1a9B7C57021aCe72D83Cb5565"
     #     views_address = "0x2f39Fc9c39E99588dae8f822ce5886D395858FA7"  # etherlink
