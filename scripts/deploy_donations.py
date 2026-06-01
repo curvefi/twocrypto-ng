@@ -29,7 +29,7 @@ DRPC_API_KEY = os.environ.get("DRPC_API_KEY")
 ANKR_API_KEY = os.environ.get("ANKR_API_KEY")
 # rpc_url = "https://bsc-dataseed.bnbchain.org"
 # rpc_url = f"https://lb.drpc.org/ogrpc?network=eth&dkey={DRPC_API_KEY}"
-rpc_url = f"https://rpc.ankr.com/polygon/{ANKR_API_KEY}"
+rpc_url = f"https://rpc.ankr.com/gnosis/{ANKR_API_KEY}"
 # rpc_url = "https://polygon-rpc.com"
 # rpc_url = "https://rpc.ankr.com/etherlink_mainnet"
 etherscan_api_key = os.environ.get("ETHERSCAN_API_KEY")
@@ -73,6 +73,9 @@ if DEPLOY:
     elif boa.env.evm.patch.chain_id == 137:
         math_address = "0x59f1C56176E98d506Bb400578DFFc63CbbA2c072"
         views_address = "0x832732f5aFA15DbD74541Aa093a98B2aA36eEa69"  # polygon
+    elif boa.env.evm.patch.chain_id == 100:
+        math_address = "0x206871A7C8F01Ea4DFe6c632131B5330cF629C21"  # gnosis
+        views_address = "0x7Da608576681c7ad4D3aC1B5F913E7b66018fe15"  # gnosis
     # elif boa.env.evm.patch.chain_id == 42793:
     #     math_address = "0xAE25375012a380D1a9B7C57021aCe72D83Cb5565"
     #     views_address = "0x2f39Fc9c39E99588dae8f822ce5886D395858FA7"  # etherlink
@@ -110,6 +113,10 @@ else:
         math_address = "0x59f1C56176E98d506Bb400578DFFc63CbbA2c072"
         views_address = "0x832732f5aFA15DbD74541Aa093a98B2aA36eEa69"  # polygon
         twocrypto_address = "0xf823F26E359fBE1d3cB0ff1534B24846aC02A0Bb"
+    elif boa.env.evm.patch.chain_id == 100:
+        math_address = "0x206871A7C8F01Ea4DFe6c632131B5330cF629C21"
+        views_address = "0x7Da608576681c7ad4D3aC1B5F913E7b66018fe15"  # gnosis
+        twocrypto_address = "0x81147a0b418fB870259feD359d0956ce85C16286"
     # elif boa.env.evm.patch.chain_id == 42793:
     #     math_address = "0xAE25375012a380D1a9B7C57021aCe72D83Cb5565"
     #     views_address = "0x2f39Fc9c39E99588dae8f822ce5886D395858FA7"  # etherlink
