@@ -4,9 +4,13 @@
 @title YBTwocryptoPolicy
 @notice Dual-EMA price-scale policy for BTC/USD YieldBasis twocrypto pools.
 @dev Advances independent fast and slow EMAs toward the pool's clamped last price.
-     The target extrapolates from slow toward fast by KAPPA, is deadbanded, and
-     is capped by a MIN-to-MAX actuator allowance that ramps over one hour.
-     Zero fee and uninitialized target outputs defer to Twocrypto's native logic.
+     The target extrapolates from slow toward fast by KAPPA, is capped by an
+     actuator allowance ramping from MIN_CAP_BPS to MAX_CAP_BPS over
+     CAP_RAMP_SECONDS since the last pool touch, then deadbanded.
+     get_fee reprices Twocrypto's skew fee with the policy's own parameters;
+     after CALM_SECONDS idle it decays linearly over FEE_RAMP_SECONDS down to
+     the MIN_DYNAMIC_FEE floor to attract a re-aligning trade.
+     Before the first pool update every output is 0, deferring to native logic.
      Checked-math overhead is negligible beside policy call and storage costs.
 """
 from snekmate.utils import math
@@ -15,15 +19,24 @@ N_COINS: constant(uint256) = 2
 PRECISION: constant(uint256) = 10**18
 BPS_SCALE: constant(uint256) = 10_000
 LN2: constant(uint256) = 693_147_180_559_945_309
-CAP_RAMP_MINUTES: constant(uint256) = 60
+FEE_PRECISION: constant(uint256) = 10**10  # mirrors Twocrypto fee precision
+MIN_FEE: constant(uint256) = FEE_PRECISION * 1 // 10 // 10_000  # 0.1 BPS.
+MAX_FEE: constant(uint256) = FEE_PRECISION
 
 POOL: public(immutable(address))
 FAST_HALF_LIFE: public(immutable(uint256))
 SLOW_HALF_LIFE: public(immutable(uint256))
-KAPPA: public(immutable(uint256))
+KAPPA: public(immutable(uint256))  # 1e18 gain: 0 = track slow, 1e18 = fast, <=2e18 beyond fast
 DEADBAND_BPS: public(immutable(uint256))
 MIN_CAP_BPS: public(immutable(uint256))
 MAX_CAP_BPS: public(immutable(uint256))
+CAP_RAMP_SECONDS: public(immutable(uint256))
+MID_FEE: public(immutable(uint256))
+OUT_FEE: public(immutable(uint256))
+FEE_GAMMA: public(immutable(uint256))
+MIN_DYNAMIC_FEE: public(immutable(uint256))  # in FEE_PRECISION units, like MID/OUT_FEE
+CALM_SECONDS: public(immutable(uint256))
+FEE_RAMP_SECONDS: public(immutable(uint256))
 
 struct State:
     last_update_ts: uint256
@@ -45,6 +58,13 @@ def __init__(
     deadband_bps: uint256,
     min_cap_bps: uint256,
     max_cap_bps: uint256,
+    cap_ramp_seconds: uint256,
+    mid_fee: uint256,
+    out_fee: uint256,
+    fee_gamma: uint256,
+    min_dynamic_fee: uint256,
+    calm_seconds: uint256,
+    fee_ramp_seconds: uint256,
 ):
     assert pool != empty(address), "pool=0"
     # EMA half-lives are bounded to 10 minutes .. 1 week.
@@ -55,6 +75,22 @@ def __init__(
     assert deadband_bps <= 60, "deadband"
     assert max_cap_bps <= 60, "max cap"
     assert min_cap_bps <= max_cap_bps, "min cap"
+    assert cap_ramp_seconds >= 60 and cap_ramp_seconds <= 604_800, "cap ramp"
+    # mid/out fee bounds mirror Twocrypto's constructor validation.
+    assert mid_fee >= MIN_FEE, "mid fee"
+    assert out_fee >= mid_fee and out_fee <= MAX_FEE, "out fee"
+    # fee_gamma bounds follow Twocrypto's apply_new_parameters, which cannot
+    # set exactly 1e18 (its keep-current sentinel); 1e18 is allowed here and
+    # makes the slope regulation an identity.
+    assert fee_gamma >= 1 and fee_gamma <= PRECISION, "fee gamma"
+    # The decay floor must be within [MIN_FEE, mid_fee]: at least the pool's
+    # own minimum (it clamps anything lower, and nonzero output keeps the 0
+    # sentinel unreachable), at most mid_fee so the skew curve, not the
+    # floor, prices a balanced pool.
+    assert min_dynamic_fee >= MIN_FEE and min_dynamic_fee <= mid_fee, "min fee"
+    # Calm is bounded to 1 week; the fee ramp to 1 minute .. 1 week.
+    assert calm_seconds <= 604_800, "calm"
+    assert fee_ramp_seconds >= 60 and fee_ramp_seconds <= 604_800, "fee ramp"
 
     POOL = pool
     FAST_HALF_LIFE = fast_half_life
@@ -63,13 +99,37 @@ def __init__(
     DEADBAND_BPS = deadband_bps
     MIN_CAP_BPS = min_cap_bps
     MAX_CAP_BPS = max_cap_bps
+    CAP_RAMP_SECONDS = cap_ramp_seconds
+    MID_FEE = mid_fee
+    OUT_FEE = out_fee
+    FEE_GAMMA = fee_gamma
+    MIN_DYNAMIC_FEE = min_dynamic_fee
+    CALM_SECONDS = calm_seconds
+    FEE_RAMP_SECONDS = fee_ramp_seconds
 
 
 @external
 @view
 def get_fee(xp: uint256[N_COINS]) -> uint256:
-    """@notice Always return 0 so Twocrypto uses its native fee logic."""
-    return 0
+    """@notice Idle-decayed skew fee, or 0 (native fee) before the first pool update."""
+    state: State = self.state
+    if state.pool_price_scale == 0:
+        return 0
+
+    # After CALM_SECONDS idle, decay linearly over FEE_RAMP_SECONDS from the
+    # skew fee down to the MIN_DYNAMIC_FEE floor to attract a re-aligning trade.
+    fee: uint256 = self._skew_fee(xp)
+    idle: uint256 = block.timestamp - state.last_update_ts
+    if idle > CALM_SECONDS:
+        fee_decay_progress: uint256 = self._linear_ramp(
+            idle - CALM_SECONDS, FEE_RAMP_SECONDS, 0, BPS_SCALE
+        )
+        # Discount a progress fraction of the decayable gap; safe because the
+        # constructor bounds MIN_DYNAMIC_FEE by mid_fee <= skew fee.
+        discount: uint256 = (fee - MIN_DYNAMIC_FEE) * fee_decay_progress // BPS_SCALE
+        fee -= discount
+    # fee >= MIN_DYNAMIC_FEE >= MIN_FEE > 0: the 0 sentinel is unreachable.
+    return fee
 
 
 @external
@@ -91,8 +151,8 @@ def get_price_scale() -> uint256:
         return 0
 
     current_scale: uint256 = state.pool_price_scale
-    dt: uint256 = block.timestamp - state.last_update_ts
-    emas: uint256[2] = self._get_emas(state, dt)
+    idle: uint256 = block.timestamp - state.last_update_ts
+    emas: uint256[2] = self._get_emas(state, idle)
     fast_ema: uint256 = emas[0]
     slow_ema: uint256 = emas[1]
 
@@ -108,15 +168,13 @@ def get_price_scale() -> uint256:
     # ---- Staleness-ramped native actuator cap.
     # Mirrors Twocrypto tweak_price's hardcoded norm / 5 actuator: a
     # 5 * cap_bps target gap becomes at most a cap_bps price-scale step.
-    # The bps-discrete cap interpolates from MIN to MAX over CAP_RAMP_MINUTES.
-    minutes_since_update: uint256 = min(dt // 60, CAP_RAMP_MINUTES)
-    cap_bps: uint256 = MIN_CAP_BPS + (
-        (MAX_CAP_BPS - MIN_CAP_BPS) * minutes_since_update // CAP_RAMP_MINUTES
-    )
-    max_step: uint256 = current_scale * 5 * cap_bps // BPS_SCALE
+    # Unlike the fee ramp, the cap has no calm period (calm = 0): it grows
+    # from MIN_CAP_BPS immediately after the last pool touch.
+    cap_bps: uint256 = self._linear_ramp(idle, CAP_RAMP_SECONDS, MIN_CAP_BPS, MAX_CAP_BPS)
+    max_target_gap: uint256 = current_scale * 5 * cap_bps // BPS_SCALE
     target = min(
-        max(target, current_scale - max_step),
-        current_scale + max_step,
+        max(target, current_scale - max_target_gap),
+        current_scale + max_target_gap,
     )
 
     # ---- Deadband: return a nonzero hold target.
@@ -154,13 +212,38 @@ def update_pool_state(
         )
         return
 
+    # Settled update: same shape as the seed above, differing only in the
+    # EMA source (settled from the previous observation instead of seeded).
     emas: uint256[2] = self._get_emas(state, block.timestamp - state.last_update_ts)
-    state.last_update_ts = block.timestamp
-    state.last_prices = last_prices
-    state.fast_ema = emas[0]
-    state.slow_ema = emas[1]
-    state.pool_price_scale = price_scale
-    self.state = state
+    self.state = State(
+        last_update_ts=block.timestamp,
+        last_prices=last_prices,
+        fast_ema=emas[0],
+        slow_ema=emas[1],
+        pool_price_scale=price_scale,
+    )
+
+
+@internal
+@pure
+def _linear_ramp(dt: uint256, ramp_seconds: uint256, from_bps: uint256, to_bps: uint256) -> uint256:
+    # Linear from_bps -> to_bps as dt goes 0 -> ramp_seconds, then flat.
+    # Callers guarantee ramp_seconds > 0 and to_bps >= from_bps.
+    return from_bps + (to_bps - from_bps) * min(dt, ramp_seconds) // ramp_seconds
+
+
+@internal
+@view
+def _skew_fee(xp: uint256[N_COINS]) -> uint256:
+    # Twocrypto's _fee formula with the policy's own MID_FEE/OUT_FEE/FEE_GAMMA.
+    # B is a balance indicator: 10**18 at perfect balance, approaching 0 as
+    # imbalance grows (~0.04e18 at 100:1): N^N * xp[0] * xp[1] / (xp[0] + xp[1])**2.
+    B: uint256 = xp[0] + xp[1]
+    B = PRECISION * N_COINS**N_COINS * xp[0] // B * xp[1] // B
+    # Regulate slope: fee_gamma * B / (fee_gamma * B + 1 - B).
+    B = FEE_GAMMA * B // (FEE_GAMMA * B // PRECISION + PRECISION - B)
+    # mid_fee * B + out_fee * (1 - B).
+    return (MID_FEE * B + OUT_FEE * (PRECISION - B)) // PRECISION
 
 
 @internal
