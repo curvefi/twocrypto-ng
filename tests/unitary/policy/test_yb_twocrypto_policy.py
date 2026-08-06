@@ -192,7 +192,7 @@ def test_view_projection_matches_same_timestamp_state_commit(pool, math_contract
     assert policy.get_price_scale() == current + _compensated_target_gap(current, 0)
 
 
-def test_bearish_underflow_fallback_is_staleness_capped(math_contract):
+def test_bearish_zero_saturation_is_staleness_capped(math_contract):
     pool = POOL_DEPLOYER.deploy(100 * PRECISION, 200 * PRECISION)
     policy = _deploy(
         pool,
@@ -207,6 +207,27 @@ def test_bearish_underflow_fallback_is_staleness_capped(math_contract):
     slow = _ema(math_contract, 200 * PRECISION, 50 * PRECISION, 6_000, 604_800)
     assert 15 * (slow - fast) // 10 >= slow
     assert policy.get_price_scale() == 97 * PRECISION
+
+
+def test_bearish_zero_saturation_preserves_bearish_direction(math_contract):
+    pool = POOL_DEPLOYER.deploy(PRECISION, 200 * PRECISION)
+    policy = _deploy(
+        pool,
+        fast_half_life=600,
+        slow_half_life=604_800,
+        kappa=15 * PRECISION // 10,
+        initialize=False,
+    )
+    current = PRECISION
+    last_prices = PRECISION // 2
+    _update(policy, pool, current, last_prices, 200 * PRECISION)
+    boa.env.time_travel(seconds=3_000)
+
+    fast = _ema(math_contract, 200 * PRECISION, last_prices, 3_000, 600)
+    slow = _ema(math_contract, 200 * PRECISION, last_prices, 3_000, 604_800)
+    assert fast > current
+    assert 15 * (slow - fast) // 10 >= slow
+    assert policy.get_price_scale() == current - _compensated_target_gap(current, 3_000)
 
 
 def test_same_block_latest_last_prices_win_without_advancing_slow_ema(pool):

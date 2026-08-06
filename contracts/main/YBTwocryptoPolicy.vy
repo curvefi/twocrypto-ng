@@ -81,7 +81,12 @@ def get_emas() -> uint256[2]:
     snapshot: State = self.state
     if snapshot.price_scale == 0:
         return [0, 0]
-    return self._project_emas(snapshot, block.timestamp - snapshot.last_update_ts)
+    fast: uint256 = 0
+    slow: uint256 = 0
+    fast, slow = self._project_emas(
+        snapshot, block.timestamp - snapshot.last_update_ts
+    )
+    return [fast, slow]
 
 
 @external
@@ -101,17 +106,17 @@ def get_price_scale() -> uint256:
     )
     deadband: uint256 = DEADBAND
 
-    emas: uint256[2] = self._project_emas(snapshot, elapsed)
-    fast: uint256 = emas[0]
-    slow: uint256 = emas[1]
+    fast: uint256 = 0
+    slow: uint256 = 0
+    fast, slow = self._project_emas(snapshot, elapsed)
 
-    # Extrapolate from slow toward fast; fall back to fast instead of underflowing.
+    # Extrapolate the slow-to-fast spread by kappa; clamp a negative target to zero.
     raw_target: uint256 = 0
     if fast >= slow:
         raw_target = slow + KAPPA * (fast - slow) // PRECISION
     else:
-        bearish_step: uint256 = KAPPA * (slow - fast) // PRECISION
-        raw_target = slow - bearish_step if bearish_step < slow else fast
+        step: uint256 = KAPPA * (slow - fast) // PRECISION
+        raw_target = slow - min(step, slow)
 
     ema_gap: uint256 = (
         raw_target - current if raw_target >= current else current - raw_target
@@ -150,11 +155,9 @@ def update_pool_state(
     slow: uint256 = price_oracle
     if previous.price_scale != 0:
         # Settle toward the preceding sample before storing the new one.
-        emas: uint256[2] = self._project_emas(
+        fast, slow = self._project_emas(
             previous, block.timestamp - previous.last_update_ts
         )
-        fast = emas[0]
-        slow = emas[1]
 
     self.state = State(
         last_update_ts=block.timestamp,
@@ -167,15 +170,15 @@ def update_pool_state(
 
 @internal
 @view
-def _project_emas(snapshot: State, dt: uint256) -> uint256[2]:
-    return [
+def _project_emas(snapshot: State, dt: uint256) -> (uint256, uint256):
+    return (
         self._ema(
             snapshot.fast_ema, snapshot.last_prices, snapshot.price_scale, dt, FAST_HALF_LIFE
         ),
         self._ema(
             snapshot.slow_ema, snapshot.last_prices, snapshot.price_scale, dt, SLOW_HALF_LIFE
         ),
-    ]
+    )
 
 
 @internal
