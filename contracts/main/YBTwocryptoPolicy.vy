@@ -118,8 +118,8 @@ def get_price_scale() -> uint256:
         raw_target - current if raw_target >= current else current - raw_target
     )
 
-    # Compare the raw relative target gap with the inclusive deadband without
-    # division or precision loss.
+    # ema_gap / current <= deadband / (BPS_SCALE * PRECISION).
+    # Cross-multiply to preserve precision at the inclusive boundary.
     if ema_gap * BPS_SCALE * PRECISION <= current * deadband:
         return current
 
