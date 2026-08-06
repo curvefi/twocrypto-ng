@@ -3,7 +3,7 @@ import pytest
 
 
 PRECISION = 10**18
-ACTUATOR_DIVISOR = 5
+TWEAK_PRICE_MULTIPLIER = 5
 CAP_RAMP_SECONDS = 3_600
 POLICY_DEPLOYER = boa.load_partial("contracts/main/YBTwocryptoPolicy.vy")
 POOL_DEPLOYER = boa.load_partial("tests/mocks/YBPolicyPoolMock.vy")
@@ -20,8 +20,8 @@ def _deploy(
     slow_half_life=7_200,
     kappa=2 * PRECISION,
     deadband_bps=0,
-    min_cap_bps=1,
-    max_cap_bps=60,
+    min_cap_bps=1 * PRECISION,
+    max_cap_bps=60 * PRECISION,
     initialize=True,
 ):
     policy = POLICY_DEPLOYER.deploy(
@@ -55,12 +55,16 @@ def _ema(math_contract, ema, last_prices, dt, half_life):
     return (last_prices * (PRECISION - alpha) + ema * alpha) // PRECISION
 
 
-def _allowed_target_gap(current, seconds, min_cap_bps=1, max_cap_bps=60):
+def _compensated_target_gap(
+    current,
+    seconds,
+    min_cap_bps=1 * PRECISION,
+    max_cap_bps=60 * PRECISION,
+):
     elapsed = min(seconds, CAP_RAMP_SECONDS)
-    min_cap = min_cap_bps * PRECISION // 10_000
-    max_cap = max_cap_bps * PRECISION // 10_000
-    current_cap = min_cap + (max_cap - min_cap) * elapsed // CAP_RAMP_SECONDS
-    return current * ACTUATOR_DIVISOR * current_cap // PRECISION
+    current_cap = min_cap_bps + ((max_cap_bps - min_cap_bps) * elapsed // CAP_RAMP_SECONDS)
+    desired_move = current * current_cap // (10_000 * PRECISION)
+    return TWEAK_PRICE_MULTIPLIER * desired_move
 
 
 def test_deployment_is_empty_until_first_authenticated_pool_push(pool):
@@ -71,8 +75,8 @@ def test_deployment_is_empty_until_first_authenticated_pool_push(pool):
     assert policy.SLOW_HALF_LIFE() == 7_200
     assert policy.KAPPA() == 2 * PRECISION
     assert policy.DEADBAND_BPS() == 0
-    assert policy.MIN_CAP_BPS() == 1
-    assert policy.MAX_CAP_BPS() == 60
+    assert policy.MIN_CAP_BPS() == 1 * PRECISION
+    assert policy.MAX_CAP_BPS() == 60 * PRECISION
     assert policy.get_fee([PRECISION, PRECISION]) == 0
     assert policy.get_emas() == [0, 0]
     assert policy.get_price_scale() == 0
@@ -166,8 +170,9 @@ def test_view_projection_matches_same_timestamp_state_commit(pool, math_contract
     boa.env.time_travel(seconds=3_600)
     fast = _ema(math_contract, 100 * PRECISION, 120 * PRECISION, 3_600, 3_600)
     slow = _ema(math_contract, 100 * PRECISION, 120 * PRECISION, 3_600, 7_200)
-    expected_target = slow + 2 * (fast - slow)
-    expected_target = min(expected_target, current * 10_300 // 10_000)
+    raw_target = slow + 2 * (fast - slow)
+    desired_move = min(raw_target - current, current * 60 // 10_000)
+    expected_target = current + TWEAK_PRICE_MULTIPLIER * desired_move
     assert policy.get_emas() == [fast, slow]
     target_before = policy.get_price_scale()
 
@@ -180,7 +185,7 @@ def test_view_projection_matches_same_timestamp_state_commit(pool, math_contract
     assert updated.last_prices == 130 * PRECISION
     assert updated.last_update_ts == boa.env.evm.patch.timestamp
     assert policy.get_emas() == [fast, slow]
-    assert policy.get_price_scale() == current + _allowed_target_gap(current, 0)
+    assert policy.get_price_scale() == current + _compensated_target_gap(current, 0)
 
 
 def test_bearish_underflow_fallback_is_staleness_capped(math_contract):
@@ -229,7 +234,7 @@ def test_cap_ramps_with_fractional_bps_precision(pool, seconds, last_prices, dir
     _update(policy, pool, current, observation, observation)
     boa.env.time_travel(seconds=seconds)
 
-    expected = current + direction * _allowed_target_gap(current, seconds)
+    expected = current + direction * _compensated_target_gap(current, seconds)
     assert policy.get_price_scale() == expected
 
 
@@ -238,13 +243,39 @@ def test_cap_ramps_with_fractional_bps_precision(pool, seconds, last_prices, dir
     [0, 1, 12, 59, 60, 299, 300, 360, 3_599, 3_600],
 )
 def test_cap_interpolates_between_nonzero_endpoints(pool, seconds):
-    policy = _deploy(pool, min_cap_bps=5, max_cap_bps=60, initialize=False)
+    policy = _deploy(
+        pool,
+        min_cap_bps=5 * PRECISION,
+        max_cap_bps=60 * PRECISION,
+        initialize=False,
+    )
     current = 100 * PRECISION
     _update(policy, pool, current, 200 * PRECISION, 200 * PRECISION)
     boa.env.time_travel(seconds=seconds)
 
-    expected = current + _allowed_target_gap(current, seconds, 5, 60)
+    expected = current + _compensated_target_gap(current, seconds, 5 * PRECISION, 60 * PRECISION)
     assert policy.get_price_scale() == expected
+
+
+def test_half_ramp_numerical_example(pool):
+    policy = _deploy(
+        pool,
+        kappa=PRECISION,
+        deadband_bps=10 * PRECISION,
+        min_cap_bps=20 * PRECISION,
+        max_cap_bps=60 * PRECISION,
+        initialize=False,
+    )
+    current = 50 * PRECISION
+    raw_target = 51 * PRECISION
+    _update(policy, pool, current, raw_target, raw_target)
+    boa.env.time_travel(seconds=1_800)
+
+    assert policy.DEADBAND_BPS() == 10 * PRECISION
+    assert policy.MIN_CAP_BPS() == 20 * PRECISION
+    assert policy.MAX_CAP_BPS() == 60 * PRECISION
+    # Halfway cap = 40 bps: desired gap 0.2, returned gap 5 * 0.2 = 1.0.
+    assert policy.get_price_scale() == raw_target
 
 
 def test_authenticated_update_resets_staleness_cap(pool):
@@ -252,70 +283,87 @@ def test_authenticated_update_resets_staleness_cap(pool):
     current = 100 * PRECISION
     _update(policy, pool, current, 200 * PRECISION, 200 * PRECISION)
     boa.env.time_travel(seconds=600)
-    assert policy.get_price_scale() == current + _allowed_target_gap(current, 600)
+    assert policy.get_price_scale() == current + _compensated_target_gap(current, 600)
 
     touched_at = boa.env.evm.patch.timestamp
     _update(policy, pool, current, 200 * PRECISION)
 
     assert policy.state().last_update_ts == touched_at
-    assert policy.get_price_scale() == current + _allowed_target_gap(current, 0)
+    assert policy.get_price_scale() == current + _compensated_target_gap(current, 0)
 
 
 @pytest.mark.parametrize("direction", [-1, 1])
-def test_deadband_is_exact_in_native_move_units(pool, direction):
+def test_deadband_is_exact_in_policy_target_units(pool, direction):
     policy = _deploy(
         pool,
         kappa=PRECISION,
-        deadband_bps=10,
-        min_cap_bps=60,
-        max_cap_bps=60,
+        deadband_bps=10 * PRECISION,
+        min_cap_bps=60 * PRECISION,
+        max_cap_bps=60 * PRECISION,
         initialize=False,
     )
     current = 100 * PRECISION
-    # A 50 bps policy gap requests a 10 bps native move: inclusive deadband.
-    boundary = current + direction * current * 50 // 10_000
+    # A 10 bps policy gap is the inclusive deadband boundary.
+    boundary = current + direction * current * 10 // 10_000
     _update(policy, pool, current, boundary, boundary)
     assert policy.get_price_scale() == current
 
-    # 50.9 bps requests 10.18 bps and must not be hidden by integer-bps flooring.
+    # A 10.9 bps gap must not be hidden by integer-bps flooring.
     policy = _deploy(
         pool,
         kappa=PRECISION,
-        deadband_bps=10,
-        min_cap_bps=60,
-        max_cap_bps=60,
+        deadband_bps=10 * PRECISION,
+        min_cap_bps=60 * PRECISION,
+        max_cap_bps=60 * PRECISION,
         initialize=False,
     )
-    beyond = current + direction * current * 509 // 100_000
+    beyond = current + direction * current * 109 // 100_000
     _update(policy, pool, current, beyond, beyond)
-    assert policy.get_price_scale() == beyond
+    expected = current + direction * TWEAK_PRICE_MULTIPLIER * abs(beyond - current)
+    assert policy.get_price_scale() == expected
 
 
 def test_deadband_checks_raw_signal_before_cap(pool):
-    policy = _deploy(pool, kappa=PRECISION, deadband_bps=10, initialize=False)
+    policy = _deploy(
+        pool,
+        kappa=PRECISION,
+        deadband_bps=10 * PRECISION,
+        initialize=False,
+    )
     current = 100 * PRECISION
-    raw_target = current * 10_060 // 10_000  # 60 bps gap => 12 bps native request
+    raw_target = current * 10_060 // 10_000  # 60 bps policy target gap
     _update(policy, pool, current, raw_target, raw_target)
 
-    # The 12 bps raw signal clears the 10 bps deadband, then the fresh 1 bps
-    # cap limits the returned target to a 5 bps gap.
-    assert policy.get_price_scale() == current + _allowed_target_gap(current, 0)
+    # The 60 bps raw signal clears the 10 bps deadband. The fresh cap limits
+    # the desired move to 1 bps; the returned target gap is therefore 5 bps.
+    assert policy.get_price_scale() == current + _compensated_target_gap(current, 0)
 
 
 def test_deadband_and_cap_are_relative_to_current_scale(pool):
     current = 69 * PRECISION
-    policy = _deploy(pool, kappa=PRECISION, deadband_bps=10, initialize=False)
+    policy = _deploy(
+        pool,
+        kappa=PRECISION,
+        deadband_bps=10 * PRECISION,
+        initialize=False,
+    )
+    assert policy.DEADBAND_BPS() == 10 * PRECISION
 
-    # A 10 bps native deadband corresponds to a 50 bps target gap: 0.345 at 69.
-    boundary = current + current * ACTUATOR_DIVISOR * 10 // 10_000
+    # A 10 bps policy deadband is an absolute gap of 0.069 at a price of 69.
+    boundary = current + current * 10 // 10_000
     _update(policy, pool, current, boundary, boundary)
     assert policy.get_price_scale() == current
 
-    policy = _deploy(pool, kappa=PRECISION, deadband_bps=10, initialize=False)
-    raw_target = current + PRECISION // 2  # 0.5 / 69 / 5 = 14.49 bps native
+    policy = _deploy(
+        pool,
+        kappa=PRECISION,
+        deadband_bps=10 * PRECISION,
+        initialize=False,
+    )
+    raw_target = current + PRECISION // 2  # 0.5 / 69 = 72.46 bps
     _update(policy, pool, current, raw_target, raw_target)
 
-    assert policy.get_price_scale() == current + _allowed_target_gap(current, 0)
+    assert policy.get_price_scale() == current + _compensated_target_gap(current, 0)
 
 
 @pytest.mark.parametrize(
@@ -346,10 +394,10 @@ def test_get_fee_always_returns_native_fallback(pool, xp):
         ({"slow_half_life": 599}, "slow half-life"),
         ({"fast_half_life": 7_201}, "half-life order"),
         ({"kappa": 2 * PRECISION + 1}, "kappa"),
-        ({"deadband_bps": 61}, "deadband"),
-        ({"max_cap_bps": 61}, "max cap"),
+        ({"deadband_bps": 61 * PRECISION}, "deadband"),
+        ({"max_cap_bps": 61 * PRECISION}, "max cap"),
         ({"min_cap_bps": 0}, "min cap"),
-        ({"min_cap_bps": 61}, "min cap"),
+        ({"min_cap_bps": 61 * PRECISION}, "min cap"),
     ],
 )
 def test_constructor_rejects_out_of_range_parameters(pool, kwargs, reason):

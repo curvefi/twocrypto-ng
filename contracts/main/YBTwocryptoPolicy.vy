@@ -5,9 +5,9 @@
 @notice Policy-owned dual-EMA price-scale controller for YieldBasis Twocrypto pools.
 @dev Each authenticated pool touch settles both EMAs toward the preceding
      last_prices observation, stores the new observation, and restarts a
-     one-hour linear cap ramp. The deadband and cap are expressed in bps of
-     intended price-scale movement; returned targets are five times farther
-     because Twocrypto's native actuator moves one-fifth of the target gap.
+     one-hour linear cap ramp. The deadband and cap apply to the raw relative
+     gap between the current scale and dual-EMA target. Only the final capped
+     gap is multiplied by five for Twocrypto's downstream actuator.
      get_fee returns 0 so the pool keeps its native dynamic fee.
 """
 from snekmate.utils import math
@@ -16,16 +16,16 @@ N_COINS: constant(uint256) = 2
 PRECISION: constant(uint256) = 10**18
 BPS_SCALE: constant(uint256) = 10_000
 LN2: constant(uint256) = 693_147_180_559_945_309
-ACTUATOR_DIVISOR: constant(uint256) = 5
+TWEAK_PRICE_MULTIPLIER: constant(uint256) = 5
 CAP_RAMP_SECONDS: constant(uint256) = 3_600
 
 POOL: public(immutable(address))
 FAST_HALF_LIFE: public(immutable(uint256))
 SLOW_HALF_LIFE: public(immutable(uint256))
-KAPPA: public(immutable(uint256))  # 1e18: slow + KAPPA * (fast - slow)
-DEADBAND_BPS: public(immutable(uint256))
-MIN_CAP_BPS: public(immutable(uint256))
-MAX_CAP_BPS: public(immutable(uint256))
+KAPPA: public(immutable(uint256))  # 1e18 gain: 0 = slow, 1e18 = fast
+DEADBAND_BPS: public(immutable(uint256))  # 1e18 = 1 bp
+MIN_CAP_BPS: public(immutable(uint256))  # 1e18 = 1 bp
+MAX_CAP_BPS: public(immutable(uint256))  # 1e18 = 1 bp
 
 struct State:
     last_update_ts: uint256
@@ -53,10 +53,10 @@ def __init__(
     assert slow_half_life >= 600 and slow_half_life <= 604_800, "slow half-life"
     assert fast_half_life <= slow_half_life, "half-life order"
     assert kappa <= 2 * PRECISION, "kappa"
-    # Deadband and cap knobs describe native movement, not the 5x target gap.
-    assert deadband_bps <= 60, "deadband"
-    assert max_cap_bps <= 60, "max cap"
-    assert min_cap_bps >= 1 and min_cap_bps <= max_cap_bps, "min cap"
+    # BPS knobs have 1e18 fractional precision: 10e18 means 10 bps.
+    assert deadband_bps <= 60 * PRECISION, "deadband"
+    assert max_cap_bps <= 60 * PRECISION, "max cap"
+    assert min_cap_bps >= PRECISION and min_cap_bps <= max_cap_bps, "min cap"
 
     POOL = pool
     FAST_HALF_LIFE = fast_half_life
@@ -87,7 +87,7 @@ def get_emas() -> uint256[2]:
 @external
 @view
 def get_price_scale() -> uint256:
-    """@notice Return the capped EMA target, or 0 until the pool initializes the policy."""
+    """@notice Return a compensated target for Twocrypto, or 0 before initialization."""
     snapshot: State = self.state
     current: uint256 = snapshot.price_scale
     if current == 0:
@@ -96,37 +96,40 @@ def get_price_scale() -> uint256:
     elapsed: uint256 = block.timestamp - snapshot.last_update_ts
     ramp_time: uint256 = min(elapsed, CAP_RAMP_SECONDS)
 
-    # Relative native-move thresholds in 1e18 precision, where 1e18 is 100%.
-    min_cap: uint256 = MIN_CAP_BPS * PRECISION // BPS_SCALE
-    max_cap: uint256 = MAX_CAP_BPS * PRECISION // BPS_SCALE
-    current_cap: uint256 = min_cap + (
-        (max_cap - min_cap) * ramp_time // CAP_RAMP_SECONDS
+    # Fractional-bps policy thresholds: 10e18 means 10 bps.
+    current_cap: uint256 = MIN_CAP_BPS + (
+        (MAX_CAP_BPS - MIN_CAP_BPS) * ramp_time // CAP_RAMP_SECONDS
     )
-    deadband: uint256 = DEADBAND_BPS * PRECISION // BPS_SCALE
+    deadband: uint256 = DEADBAND_BPS
 
     emas: uint256[2] = self._project_emas(snapshot, elapsed)
     fast: uint256 = emas[0]
     slow: uint256 = emas[1]
 
     # Extrapolate from slow toward fast; fall back to fast instead of underflowing.
-    target: uint256 = 0
+    raw_target: uint256 = 0
     if fast >= slow:
-        target = slow + KAPPA * (fast - slow) // PRECISION
+        raw_target = slow + KAPPA * (fast - slow) // PRECISION
     else:
         bearish_step: uint256 = KAPPA * (slow - fast) // PRECISION
-        target = slow - bearish_step if bearish_step < slow else fast
+        raw_target = slow - bearish_step if bearish_step < slow else fast
 
-    raw_gap: uint256 = target - current if target >= current else current - target
+    ema_gap: uint256 = (
+        raw_target - current if raw_target >= current else current - raw_target
+    )
 
-    # Native requested move = raw_gap / current / 5. Cross-multiply so the
-    # inclusive deadband comparison does not lose precision.
-    if raw_gap * PRECISION <= current * ACTUATOR_DIVISOR * deadband:
+    # Compare the raw relative target gap with the inclusive deadband without
+    # division or precision loss.
+    if ema_gap * BPS_SCALE * PRECISION <= current * deadband:
         return current
 
-    # The policy target must be 5x farther away to produce current_cap natively.
-    allowed_gap: uint256 = current * ACTUATOR_DIVISOR * current_cap // PRECISION
+    max_move: uint256 = current * current_cap // (BPS_SCALE * PRECISION)
+    desired_move: uint256 = min(ema_gap, max_move)
 
-    return min(max(target, current - allowed_gap), current + allowed_gap)
+    # Twocrypto requests one-fifth of its target gap, so compensate only here.
+    target_gap: uint256 = TWEAK_PRICE_MULTIPLIER * desired_move
+    # Constructor bounds limit target_gap to 5 * 60 bps = 3% of current.
+    return current + target_gap if raw_target >= current else current - target_gap
 
 
 @external
