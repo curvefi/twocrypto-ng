@@ -14,7 +14,6 @@ from snekmate.utils import math
 
 N_COINS: constant(uint256) = 2
 PRECISION: constant(uint256) = 10**18
-BPS_SCALE: constant(uint256) = 10_000
 LN2: constant(uint256) = 693_147_180_559_945_309
 TWEAK_PRICE_MULTIPLIER: constant(uint256) = 5
 CAP_RAMP_SECONDS: constant(uint256) = 3_600
@@ -23,9 +22,10 @@ POOL: public(immutable(address))
 FAST_HALF_LIFE: public(immutable(uint256))
 SLOW_HALF_LIFE: public(immutable(uint256))
 KAPPA: public(immutable(uint256))  # 1e18 gain: 0 = slow, 1e18 = fast
-DEADBAND_BPS: public(immutable(uint256))  # 1e18 = 1 bp
-MIN_CAP_BPS: public(immutable(uint256))  # 1e18 = 1 bp
-MAX_CAP_BPS: public(immutable(uint256))  # 1e18 = 1 bp
+# Relative WADs: 1e18 = 100%.
+DEADBAND: public(immutable(uint256))
+MIN_CAP: public(immutable(uint256))
+MAX_CAP: public(immutable(uint256))
 
 struct State:
     last_update_ts: uint256
@@ -43,9 +43,9 @@ def __init__(
     fast_half_life: uint256,
     slow_half_life: uint256,
     kappa: uint256,
-    deadband_bps: uint256,
-    min_cap_bps: uint256,
-    max_cap_bps: uint256,
+    deadband: uint256,
+    min_cap: uint256,
+    max_cap: uint256,
 ):
     assert pool != empty(address), "pool=0"
     # Bound EMA memory to 10 minutes .. 1 week; equality is a useful one-EMA mode.
@@ -53,18 +53,18 @@ def __init__(
     assert slow_half_life >= 600 and slow_half_life <= 604_800, "slow half-life"
     assert fast_half_life <= slow_half_life, "half-life order"
     assert kappa <= 2 * PRECISION, "kappa"
-    # BPS knobs have 1e18 fractional precision: 10e18 means 10 bps.
-    assert deadband_bps <= 60 * PRECISION, "deadband"
-    assert max_cap_bps <= 60 * PRECISION, "max cap"
-    assert min_cap_bps >= PRECISION and min_cap_bps <= max_cap_bps, "min cap"
+    # Relative WADs: 1e18 is 100%; accepted cap range is 1 .. 60 bps.
+    assert deadband <= 60 * PRECISION // 10_000, "deadband"
+    assert max_cap <= 60 * PRECISION // 10_000, "max cap"
+    assert min_cap >= PRECISION // 10_000 and min_cap <= max_cap, "min cap"
 
     POOL = pool
     FAST_HALF_LIFE = fast_half_life
     SLOW_HALF_LIFE = slow_half_life
     KAPPA = kappa
-    DEADBAND_BPS = deadband_bps
-    MIN_CAP_BPS = min_cap_bps
-    MAX_CAP_BPS = max_cap_bps
+    DEADBAND = deadband
+    MIN_CAP = min_cap
+    MAX_CAP = max_cap
 
 
 @external
@@ -96,11 +96,10 @@ def get_price_scale() -> uint256:
     elapsed: uint256 = block.timestamp - snapshot.last_update_ts
     ramp_time: uint256 = min(elapsed, CAP_RAMP_SECONDS)
 
-    # Fractional-bps policy thresholds: 10e18 means 10 bps.
-    current_cap: uint256 = MIN_CAP_BPS + (
-        (MAX_CAP_BPS - MIN_CAP_BPS) * ramp_time // CAP_RAMP_SECONDS
+    current_cap: uint256 = MIN_CAP + (
+        (MAX_CAP - MIN_CAP) * ramp_time // CAP_RAMP_SECONDS
     )
-    deadband: uint256 = DEADBAND_BPS
+    deadband: uint256 = DEADBAND
 
     emas: uint256[2] = self._project_emas(snapshot, elapsed)
     fast: uint256 = emas[0]
@@ -118,12 +117,12 @@ def get_price_scale() -> uint256:
         raw_target - current if raw_target >= current else current - raw_target
     )
 
-    # ema_gap / current <= deadband / (BPS_SCALE * PRECISION).
+    # ema_gap / current <= deadband / PRECISION.
     # Cross-multiply to preserve precision at the inclusive boundary.
-    if ema_gap * BPS_SCALE * PRECISION <= current * deadband:
+    if ema_gap * PRECISION <= current * deadband:
         return current
 
-    max_move: uint256 = current * current_cap // (BPS_SCALE * PRECISION)
+    max_move: uint256 = current * current_cap // PRECISION
     desired_move: uint256 = min(ema_gap, max_move)
 
     # Twocrypto requests one-fifth of its target gap, so compensate only here.
