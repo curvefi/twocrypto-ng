@@ -120,18 +120,6 @@ def _portfolio_value(pool: IFXSwap, i: uint256=0) -> uint256:
     return x_py
 
 
-@view
-@external
-def portfolio_value(_pool: IFXSwap, _i: uint256=0) -> uint256:
-    """
-    @notice Returns the pool portfolio value in the selected coin numeraire.
-    @param _pool Address of the Twocrypto(FXSwap)-style pool.
-    @param _i Coin index used as the numeraire, where 0 or 1 are supported.
-    @return uint256 Portfolio value scaled to 1e18 in coin `_i` units.
-    """
-    return self._portfolio_value(_pool, _i)
-
-
 @internal
 @view
 def _lp_price(pool: IFXSwap, i: uint256=0) -> uint256:
