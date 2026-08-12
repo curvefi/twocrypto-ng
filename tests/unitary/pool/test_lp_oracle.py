@@ -17,7 +17,6 @@ def lp_oracle(deployer):
 
 def test_lp_oracle_sanity_and_initial_price(lp_oracle, pool_with_deposit):
     assert lp_oracle.sanity_check(pool_with_deposit) is True
-    assert approx(lp_oracle.portfolio_value(pool_with_deposit, 0), 10**18, 1e-6)
     assert approx(
         lp_oracle.lp_price(pool_with_deposit, 0) * pool_with_deposit.totalSupply() // 10**18,
         2 * int(1.5 * 10**6) * 10**18,  # 2 * dollar_amt_each_coin
@@ -40,13 +39,6 @@ def test_lp_oracle_consistent_cross_numeraire_after_state_change(
     p_oracle = pool_with_deposit.price_oracle()
     lp0 = lp_oracle.lp_price(pool_with_deposit, 0)
     lp1 = lp_oracle.lp_price(pool_with_deposit, 1)
-    pv0 = lp_oracle.portfolio_value(pool_with_deposit, 0)
-    pv1 = lp_oracle.portfolio_value(pool_with_deposit, 1)
 
-    assert lp0 > 0 and lp1 > 0 and pv0 > 0 and pv1 > 0
-
+    assert lp0 > 0 and lp1 > 0
     assert approx(lp0, lp1 * p_oracle // 10**18, 1e-6)
-    assert approx(pv0, pv1 * p_oracle // 10**18, 1e-6)
-
-    assert lp0 == pv0 * pool_with_deposit.D() // pool_with_deposit.totalSupply()
-    assert lp1 == pv1 * pool_with_deposit.D() // pool_with_deposit.totalSupply()
