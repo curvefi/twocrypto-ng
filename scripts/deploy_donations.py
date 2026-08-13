@@ -30,7 +30,7 @@ ANKR_API_KEY = os.environ.get("ANKR_API_KEY")
 # rpc_url = "https://bsc-dataseed.bnbchain.org"
 # rpc_url = f"https://lb.drpc.org/ogrpc?network=eth&dkey={DRPC_API_KEY}"
 # rpc_url = f"https://rpc.ankr.com/gnosis/{ANKR_API_KEY}"
-rpc_url = f"https://rpc.ankr.com/avalanche/{ANKR_API_KEY}"
+rpc_url = f"https://rpc.ankr.com/arbitrum/{ANKR_API_KEY}"
 
 # rpc_url = "https://polygon-rpc.com"
 # rpc_url = "https://rpc.ankr.com/etherlink_mainnet"
@@ -81,6 +81,9 @@ if DEPLOY:
     elif boa.env.evm.patch.chain_id == 43114:
         math_address = "0xFC687EFAFED297b765eDEcF8179c32195597C2df"
         views_address = "0x845b942DeEF9BC20a39A8b34B23e8c33aC2921BF"  # avax
+    elif boa.env.evm.patch.chain_id == 42161:
+        math_address = "0xe28A23C5BfD057dd0Ed398Fa6bb9d33ABb41c044"
+        views_address = "0x72cf2650Ea77BdFfB4eEcb4b70EcC7137FFCA0e5"  # arbitrum
 
     # elif boa.env.evm.patch.chain_id == 42793:
     #     math_address = "0xAE25375012a380D1a9B7C57021aCe72D83Cb5565"
@@ -127,6 +130,10 @@ else:
         math_address = "0xFC687EFAFED297b765eDEcF8179c32195597C2df"
         views_address = "0x845b942DeEF9BC20a39A8b34B23e8c33aC2921BF"  # avax
         twocrypto_address = "0x8271e06E5887FE5ba05234f5315c19f3Ec90E8aD"
+    elif boa.env.evm.patch.chain_id == 42161:
+        math_address = "0xe28A23C5BfD057dd0Ed398Fa6bb9d33ABb41c044"
+        views_address = "0x72cf2650Ea77BdFfB4eEcb4b70EcC7137FFCA0e5"
+        twocrypto_address = "0x8c8CD70277b02E24aa9afE3dbAD1Ee10443eff2D"
     # elif boa.env.evm.patch.chain_id == 42793:
     #     math_address = "0xAE25375012a380D1a9B7C57021aCe72D83Cb5565"
     #     views_address = "0x2f39Fc9c39E99588dae8f822ce5886D395858FA7"  # etherlink
@@ -154,8 +161,13 @@ for contract in [math_contract, views_contract, twocrypto_contract]:
     except Exception as e:
         print(e)
 
-# verify on blockscout (must change uri)
-custom_verifier = Blockscout(uri="https://explorer.blockscout.com", api_key="")
+# verify on blockscout
+blockscout_url = (
+    "https://arbitrum.blockscout.com"
+    if boa.env.evm.patch.chain_id == 42161
+    else "https://explorer.blockscout.com"
+)
+custom_verifier = Blockscout(uri=blockscout_url, api_key="")
 for contract in [math_contract, views_contract, twocrypto_contract]:
     contract.ctor_calldata = b""
     try:
