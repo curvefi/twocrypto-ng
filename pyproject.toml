@@ -44,7 +44,7 @@ dev = [
 ]
 
 [tool.uv.sources]
-curve-std = { git = "https://github.com/curvefi/curve-std", rev = "949ae6c0a2c3dfb9e6808aa6d2ca9b737a5afd59" }
+curve-std = { git = "https://github.com/curvefi/curve-std", rev = "048cb23d0ed4c48768815ea5c46d4a676da8de35" }
 
 [tool.ruff]
 line-length = 100

@@ -25,6 +25,9 @@ FIXED_USERS = [boa.env.generate_address() for _ in range(3)]
 FRACTION_DENOM = 10_000
 INITIAL_FUNDS = 10**45
 HUGE_MA_TIME = 10**20
+# Mirror curve_std.stableswap.lp_oracle_2.MIN_P/MAX_P.
+LP_ORACLE_MIN_SCALED_PRICE = 10**16
+LP_ORACLE_MAX_SCALED_PRICE = 10**20
 
 
 class LPOracleRampingStateful(RuleBasedStateMachine):
@@ -170,7 +173,14 @@ class LPOracleRampingStateful(RuleBasedStateMachine):
                 note("[DONATE][SKIP] zero amounts")
                 return
 
-            token_out = self.pool.calc_token_amount(amounts, True)
+            try:
+                token_out = self.pool.calc_token_amount(amounts, True)
+            except boa.BoaError as exc:
+                err = self._err_msg(exc)
+                if "!balance" in err:
+                    note("[DONATE][FAILURE] quote outside supported balance range")
+                    return
+                raise
             below_cap = (
                 token_out
                 < (token_out + self.pool.totalSupply())
@@ -233,9 +243,9 @@ class LPOracleRampingStateful(RuleBasedStateMachine):
         if total_supply == 0:
             return
         p = self.pool.last_prices()
-        p_scaled = p / self.pool.price_scale()
-        if p_scaled <= 0.0001 or p_scaled >= 10_000:  # out of bounds for convergence
-            note("[PORTFOLIO_VALUE][SKIP] price out of reasonable bounds")
+        p_scaled = p * 10**18 // self.pool.price_scale()
+        if not LP_ORACLE_MIN_SCALED_PRICE <= p_scaled <= LP_ORACLE_MAX_SCALED_PRICE:
+            note("[PORTFOLIO_VALUE][SKIP] price outside LP oracle solver bounds")
             return
         with boa.env.anchor():
             self.pool.eval(f"self.cached_price_oracle = {p}")
@@ -245,7 +255,16 @@ class LPOracleRampingStateful(RuleBasedStateMachine):
             x = self.pool.balances(0) * precisions[0]
             y = self.pool.balances(1) * precisions[1]
             lp_price = self.lp_oracle.lp_price(self.pool)
-            assert lp_price * total_supply // 10**18 == pytest.approx(x + p * y // 10**18, rel=2e-6)
+            portfolio_value = x + p * y // 10**18
+
+            # Proportional withdrawals round token amounts down while scaling D exactly.
+            # Allow one atomic unit of each coin when comparing against the D-based oracle.
+            atomic_value = precisions[0] + (p * precisions[1] + 10**18 - 1) // 10**18
+            assert lp_price * total_supply // 10**18 == pytest.approx(
+                portfolio_value,
+                rel=2e-6,
+                abs=atomic_value,
+            )
 
 
 LPOracleRampingStateful.TestCase.settings = settings(
