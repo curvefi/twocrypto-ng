@@ -54,8 +54,8 @@ def test_check_packed_params_on_deployment(pool, params, coins):
     unpacked_rebalancing_params = pool.internal._unpack_3(
         pool._storage.packed_rebalancing_params.get()
     )
-    assert params["allowed_extra_profit"] == unpacked_rebalancing_params[0]
-    assert params["adjustment_step"] == unpacked_rebalancing_params[1]
+    assert params["adjustment_step_min"] == unpacked_rebalancing_params[0]
+    assert params["adjustment_step_max"] == unpacked_rebalancing_params[1]
     assert params["ma_time"] == unpacked_rebalancing_params[2]
 
     # check packed A_gamma
@@ -107,8 +107,8 @@ def test_revert_deploy_without_implementations(
                 params["mid_fee"],  # mid_fee: uint256
                 params["out_fee"],  # out_fee: uint256
                 params["fee_gamma"],  # fee_gamma: uint256
-                params["allowed_extra_profit"],  # allowed_extra_profit: uint256
-                params["adjustment_step"],  # adjustment_step: uint256
+                params["adjustment_step_min"],  # adjustment_step_min: uint256
+                params["adjustment_step_max"],  # adjustment_step_max: uint256
                 params["ma_time"],  # ma_exp_time: uint256
                 params["initial_prices"][1],  # initial_price: uint256
             )

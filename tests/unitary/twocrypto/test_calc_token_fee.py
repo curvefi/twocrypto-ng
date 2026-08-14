@@ -1,7 +1,8 @@
-from tests.utils.god_mode import GodModePool
-from tests.utils.constants import N_COINS, NOISE_FEE
-import pytest
 import boa
+import pytest
+
+from tests.utils.constants import N_COINS, NOISE_FEE
+from tests.utils.god_mode import GodModePool
 
 INITIAL_LIQUIDITY = 1000 * 10**18
 
@@ -24,7 +25,11 @@ def test_fee_increases_with_spot_imbalance(pool, i):
     pool.add_liquidity_balanced(100_000_000 * 10**18)
 
     # Perform exchange to unbalance the pool
-    pool.exchange(i, 10_000_000 * 10**18)
+    dx = 10_000_000 * 10**18
+    if i == 1:
+        dx = dx * 10**18 // pool.price_scale()
+
+    pool.exchange(i, dx)
 
     # Get current balances
     balances = pool.balances()
@@ -128,3 +133,19 @@ def test_calc_token_fee_view_donation_protection(pool, user_account, bob):
     base_fee = pool.calc_token_fee(charlie_adds_amounts, gm_pool.xp(), False, False)
     assert final_fee == pytest.approx(base_fee)
     assert final_fee < last_fee
+
+
+def test_calc_token_fee_view_matches_internal_for_withdrawals(pool):
+    with boa.env.anchor():
+        gm_pool = GodModePool(pool)
+        gm_pool.add_liquidity_balanced(1_000_000 * 10**18)
+
+        balances = gm_pool.balances()
+        amounts = [balances[0] // 20, balances[1] // 200]
+        post_remove_balances = [balances[i] - amounts[i] for i in range(N_COINS)]
+        xp_post_remove = pool.internal._xp(post_remove_balances, pool.price_scale())
+
+        expected_fee = pool.internal._calc_token_fee(amounts, xp_post_remove, False, False, False)
+        quoted_fee = pool.calc_token_fee(amounts, xp_post_remove, False, False)
+
+        assert quoted_fee == expected_fee

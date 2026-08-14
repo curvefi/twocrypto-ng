@@ -252,7 +252,7 @@ class ImbalancedLiquidityStateful(OnlyBalancedLiquidityStateful):
     def virtual_price(self):
         # we disable this invariant because claiming admin fees can break it.
         # claiming admin_fees can lead to a decrease in the virtual price
-        # however the pool is still profitable as long as xcpx is increasing.
+        # while xcp_profit remains monotone in the non-ramping model.
         pass
 
 
@@ -391,7 +391,13 @@ class DonateStateful(ImbalancedLiquidityStateful):
 
             # we correct the decimals of the imbalanced amounts
             imbalanced_amounts = self.correct_all_decimals(imbalanced_amounts)
-            token_out = self.pool.calc_token_amount(imbalanced_amounts, True)
+            try:
+                token_out = self.pool.calc_token_amount(imbalanced_amounts, True)
+            except boa.BoaError as e:
+                if "!balance" in str(e):
+                    amount *= 0.9
+                    continue
+                raise
             if (
                 token_out
                 < (token_out + self.pool.totalSupply())
