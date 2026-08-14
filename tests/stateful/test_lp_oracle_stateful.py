@@ -62,7 +62,8 @@ class LPOracleRampingStateful(RuleBasedStateMachine):
         self.pool.add_liquidity(initial_amounts, 0, FIXED_USERS[0], False, sender=FIXED_USERS[0])
         # initial deposit does not update prices
         self.pool.eval(
-            "self.tweak_price(self._A_gamma(), self._xp(self.balances, self.cached_price_scale), self.D)"
+            "self.tweak_price(self._A_gamma(), self._xp(self.balances, self.cached_price_scale), "
+            "self.D, self.virtual_price)"
         )
         note("seeded pool with balanced deposit")
 
