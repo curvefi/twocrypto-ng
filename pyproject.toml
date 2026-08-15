@@ -18,7 +18,6 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "titanoboa==0.2.8",
-    "web3>=7.12.1",
     "keyring>=25.6.0",
     "base58>=2.1.1",
     "cryptography>=45.0.5",
@@ -27,7 +26,6 @@ dev = [
     "eth-typing",
     "eth-utils",
     "rich",
-    "titanoboa-zksync",
     "pytest-forked>=1.6.0",
     "pytest-xdist==3.6.1",
     "mamushi==0.0.4",
