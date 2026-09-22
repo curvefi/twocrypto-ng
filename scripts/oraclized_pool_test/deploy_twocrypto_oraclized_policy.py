@@ -10,6 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import boa
+from boa.explorer import Etherscan
 from dotenv import load_dotenv
 from eth_account import Account
 from eth_utils import keccak
@@ -130,7 +131,7 @@ def deploy(factory, pool_source, policy_source, args):
         raise RuntimeError("Pool/policy readback did not match deployment settings")
     print(f"Pool configured: RPF={args.rpf_bps} bp, admin fee={args.admin_fee_bps} bp")
     print(f"Planned donation: {PLANNED_DONATION_BPS} bp (offchain; not submitted)")
-    return pool_address, policy.address
+    return pool_address, policy
 
 
 def main():
@@ -143,6 +144,9 @@ def main():
     encrypted_key = os.environ.get("ENCRYPTED_PK")
     if not encrypted_key:
         raise ValueError("ENCRYPTED_PK is required")
+    etherscan_api_key = os.environ.get("ETHERSCAN_API_KEY")
+    if not etherscan_api_key:
+        raise ValueError("ETHERSCAN_API_KEY is required to verify the policy")
 
     boa.set_network_env(CONFIG.rpc_url)
     if boa.env.evm.patch.chain_id != CONFIG.chain_id:
@@ -155,7 +159,11 @@ def main():
     factory = boa.load_partial("contracts/main/TwocryptoFactory.vy").at(CONFIG.factory)
     pool_source = boa.load_partial("contracts/main/Twocrypto.vy")
     policy_source = boa.load_partial("contracts/main/YBOraclizedPolicy.vy")
-    deploy(factory, pool_source, policy_source, CONFIG)
+    _, policy = deploy(factory, pool_source, policy_source, CONFIG)
+
+    verifier = Etherscan(api_key=etherscan_api_key, chain_id=CONFIG.chain_id)
+    boa.verify(policy, verifier=verifier, wait=True)
+    print(f"Policy verified: https://etherscan.io/address/{policy.address}#code")
 
 
 if __name__ == "__main__":
