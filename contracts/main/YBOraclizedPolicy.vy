@@ -8,8 +8,10 @@
      one-hour linear cap ramp. The deadband and cap apply to the raw relative
      gap between the current scale and dual-EMA target. Only the final capped
      gap is multiplied by five for Twocrypto's downstream actuator.
-     get_fee adds Pyth edge discounts with square-root report-age inflation.
+     Reported fees are capped at fallback and rise toward it with square-root age.
      Reports do not modify the dual-EMA driver.
+     A is cached: keepers must call refresh_a during any pool ramp. Quotes do
+     not read live A or detect ramps.
 """
 from snekmate.utils import math
 
@@ -51,7 +53,6 @@ interface Pool:
     def price_scale() -> uint256: view  # Guarded: only outside a pool operation.
     def D() -> uint256: view
     def A() -> uint256: view
-    def future_A_gamma_time() -> uint256: view
 
 A_MULTIPLIER: constant(uint256) = 10000
 FEE_PRECISION: constant(uint256) = 10**10
@@ -66,7 +67,7 @@ POOL_A: public(uint256)
 
 struct Parameters:
     fallback_fee: uint256  # Raw fee when informed pricing is unavailable.
-    base_fee: uint256  # Minimum informed raw fee.
+    base_fee: uint256  # Minimum returned policy fee.
     capture: uint256  # PRECISION fraction of reported edge above the base fee.
     max_report_age_ms: uint256
     report_expiry_s: uint256  # Observation age at which swap fees reach fallback.
@@ -75,12 +76,9 @@ struct Parameters:
 struct Report:
     asset_price: uint256  # Pyth USD price; fees assume coin0 is worth one USD.
     observation_us: uint256
-    message_us: uint256
-    delivered_at: uint256
-    delivered_in_block: uint256
 
 
-parameters: public(Parameters)  # Set only at deployment.
+fee_params: public(immutable(Parameters))
 report: public(Report)
 
 
@@ -116,7 +114,7 @@ def __init__(
     assert min_cap >= PRECISION // 10_000 and min_cap <= max_cap, "min cap"
 
     POOL = pool
-    # A is assumed static. Call refresh_a after any deliberate pool ramp.
+    # Quotes use this cache; keepers must refresh it if A changes.
     self.POOL_A = staticcall Pool(pool).A()
     FAST_HALF_LIFE = fast_half_life
     SLOW_HALF_LIFE = slow_half_life
@@ -135,102 +133,128 @@ def __init__(
     PYTH = pyth
     FEED_ID = feed_id
     CHANNEL = channel
-    self.parameters = params
+    fee_params = params
 
 
 @external
 @view
 def get_fee(xp: uint256[2]) -> uint256:
-    params: Parameters = self.parameters
+    last_report: Report = self.report
+    report_age_us: uint256 = block.timestamp * 1_000_000 - last_report.observation_us
+    return self._get_fee(xp, last_report.asset_price, report_age_us)
+
+
+@external
+@view
+def get_fee_with_report(
+    xp: uint256[2], report_price: uint256, report_age_us: uint256
+) -> uint256:
+    """Preview the fee at a gross endpoint with an unverified price and observation age."""
+    return self._get_fee(xp, report_price, report_age_us)
+
+
+@internal
+@view
+def _get_fee(
+    xp: uint256[2], report_price: uint256, report_age_us: uint256
+) -> uint256:
+    params: Parameters = fee_params
     fallback_fee: uint256 = params.fallback_fee
-    previous: State = self.state
+    last_pool_state: State = self.state
 
-    if previous.D == 0:
-        return fallback_fee
-    # A proportional exit can succeed without its callback. Reject a stale snapshot.
-    if staticcall Pool(POOL).D() != previous.D:
-        return fallback_fee
-
-    if xp[0] >= previous.xp[0] and xp[1] >= previous.xp[1]:
+    if xp[0] >= last_pool_state.xp[0] and xp[1] >= last_pool_state.xp[1]:
         return fallback_fee  # Deposit or unchanged quote.
-    if xp[0] <= previous.xp[0] and xp[1] <= previous.xp[1]:
+    if xp[0] <= last_pool_state.xp[0] and xp[1] <= last_pool_state.xp[1]:
         return fallback_fee  # Withdrawal.
 
-    # Opposite balance changes identify a swap. Age comes from the signed observation.
-    latest: Report = self.report
-    if latest.asset_price == 0:
+    # Opposite balance changes identify a swap.
+    if report_price == 0:
         return fallback_fee
-    report_age_us: uint256 = block.timestamp * 1_000_000 - latest.observation_us
     if report_age_us >= params.report_expiry_s * 1_000_000:
         return fallback_fee
-    report_price: uint256 = latest.asset_price
-    if previous.price_scale == 0 or previous.xp[0] == 0 or previous.xp[1] == 0:
+
+    D: uint256 = last_pool_state.D
+    price_scale: uint256 = last_pool_state.price_scale
+    if D == 0 or price_scale == 0 or last_pool_state.xp[0] == 0 or last_pool_state.xp[1] == 0:
         return fallback_fee
-    coin_in: uint256 = 0 if xp[0] > previous.xp[0] else 1
-    coin_out: uint256 = 1 - coin_in
-
-    input_value: uint256 = xp[coin_in] - previous.xp[coin_in]
-    output_value: uint256 = previous.xp[coin_out] - xp[coin_out]
-
-    # Value both sides in coin0 at the report, allowing for quote rounding.
-    if coin_in == 1:
-        if input_value <= 1:
-            return fallback_fee
-        if input_value - 1 > max_value(uint256) // report_price:
-            return fallback_fee
-        input_value = (input_value - 1) * report_price // previous.price_scale
-    else:
-        if output_value == max_value(uint256):
-            return fallback_fee
-        if output_value + 1 > max_value(uint256) // report_price:
-            return fallback_fee
-        if (output_value + 1) * report_price > max_value(uint256) - previous.price_scale + 1:
-            return fallback_fee
-        output_value = (
-            (output_value + 1) * report_price + previous.price_scale - 1
-        ) // previous.price_scale
-    if output_value == 0:
+    # A proportional exit can succeed without its callback. Reject a stale snapshot.
+    if staticcall Pool(POOL).D() != D:
         return fallback_fee
 
-    reported_edge: uint256 = FEE_PRECISION - min(
-        FEE_PRECISION, input_value * FEE_PRECISION // output_value
+    coin_in: uint256 = 0 if xp[0] > last_pool_state.xp[0] else 1
+    reported_edge: uint256 = self._reported_edge(
+        xp, last_pool_state.xp, price_scale, report_price, coin_in
     )
-    fee: uint256 = self._discounted_fee(reported_edge, report_age_us)
+    if reported_edge == 0:
+        return fallback_fee
+
+    fee: uint256 = self._reported_fee(reported_edge, report_age_us)
+    # No discount remains to restrict when the fee reaches fallback.
     if fee >= fallback_fee:
         return fallback_fee
+    if not self._is_corrective_swap(
+        xp, last_pool_state.xp, D, price_scale, report_price, coin_in
+    ):
+        return fallback_fee
+    return max(fee, params.base_fee)
 
-    # The copied math is valid only while the cached deployment-time A is current.
-    if staticcall Pool(POOL).future_A_gamma_time() > block.timestamp:
-        return fallback_fee
-    if self.POOL_A == 0 or staticcall Pool(POOL).A() != self.POOL_A:
-        return fallback_fee
-    if previous.price_scale == 0:
-        return fallback_fee
 
-    p_before: uint256 = self._get_p(previous.xp, previous.D, self.POOL_A)
-    p_after: uint256 = self._get_p(xp, previous.D, self.POOL_A)
+@internal
+@pure
+def _reported_edge(
+    xp: uint256[2],
+    previous_xp: uint256[2],
+    price_scale: uint256,
+    report_price: uint256,
+    coin_in: uint256,
+) -> uint256:
+    """Value both sides in coin0 at the report; zero means no positive edge."""
+    coin_out: uint256 = 1 - coin_in
+    input_value: uint256 = xp[coin_in] - previous_xp[coin_in]
+    output_value: uint256 = previous_xp[coin_out] - xp[coin_out]
+
+    if coin_in == 1:
+        input_value = input_value * report_price // price_scale
+    else:
+        output_value = output_value * report_price // price_scale
+    if input_value >= output_value:
+        return 0
+    # Round positive edge up in fee units.
+    return FEE_PRECISION - input_value * FEE_PRECISION // output_value
+
+
+@internal
+@view
+def _is_corrective_swap(
+    xp: uint256[2],
+    previous_xp: uint256[2],
+    D: uint256,
+    price_scale: uint256,
+    report_price: uint256,
+    coin_in: uint256,
+) -> bool:
+    A: uint256 = self.POOL_A
+    p_before: uint256 = self._get_p(previous_xp, D, [A, 0])
+    p_after: uint256 = self._get_p(xp, D, [A, 0])
     if p_before == 0 or p_after == 0:
-        return fallback_fee
-    if max(p_before, p_after) > max_value(uint256) // previous.price_scale:
-        return fallback_fee
+        return False
+    if max(p_before, p_after) > max_value(uint256) // price_scale:
+        return False
 
     # Convert invariant prices into coin0 per coin1, matching report_price.
-    p_before = p_before * previous.price_scale // PRECISION
-    p_after = p_after * previous.price_scale // PRECISION
+    p_before = p_before * price_scale // PRECISION
+    p_after = p_after * price_scale // PRECISION
     if p_before == 0 or p_after == 0:
-        return fallback_fee
+        return False
 
-    corrective: bool = False
     if coin_in == 0:
-        corrective = p_before < p_after and p_after <= report_price
-    else:
-        corrective = p_before > p_after and p_after >= report_price
-    return fee if corrective else fallback_fee
+        return p_before < p_after and p_after <= report_price
+    return p_before > p_after and p_after >= report_price
 
 
 @external
 def refresh_a():
-    """@notice Refresh cached A after the pool's amplification ramp changes."""
+    """@notice Permissionless refresh cached A whenever the pool's amplification changes."""
     self.POOL_A = staticcall Pool(POOL).A()
 
 
@@ -394,9 +418,6 @@ def deliver_oracle_report(report_data: Bytes[112]):
     self.report = Report(
         asset_price=asset_price,
         observation_us=observation_us,
-        message_us=message_us,
-        delivered_at=block.timestamp,
-        delivered_in_block=block.number,
     )
     log ReportAccepted(
         asset_price=asset_price,
@@ -409,12 +430,12 @@ def deliver_oracle_report(report_data: Bytes[112]):
 def _verify_report(
     report_data: Bytes[112], fee_paid: uint256
 ) -> (uint256, uint256, uint256):
-    assert fee_paid == staticcall PythLazer(PYTH).verification_fee(), "verification fee"
     assert len(report_data) == 112, "report length"
     payload: Bytes[41] = b""
     signer: address = empty(address)
     payload, signer = extcall PythLazer(PYTH).verifyUpdate(report_data, value=fee_paid)
     assert signer != empty(address), "signer"
+    assert len(payload) == 41, "payload length"
 
     # Only parse authenticated bytes. Require one feed and the exact property layout.
     assert convert(slice(payload, 0, 4), uint256) == 2479346549, "payload magic"
@@ -443,7 +464,7 @@ def _verify_report(
         and message_us <= slot_us
     ), "report time"
     assert (
-        slot_us - observation_us <= self.parameters.max_report_age_ms * 1_000
+        slot_us - observation_us <= fee_params.max_report_age_ms * 1_000
     ), "report too old"
     assert observation_us > self.report.observation_us, "observation not newer"
     return asset_price, observation_us, message_us
@@ -451,8 +472,8 @@ def _verify_report(
 
 @internal
 @view
-def _discounted_fee(reported_edge: uint256, report_age_us: uint256) -> uint256:
-    params: Parameters = self.parameters
+def _reported_fee(reported_edge: uint256, report_age_us: uint256) -> uint256:
+    params: Parameters = fee_params
     expiry_us: uint256 = params.report_expiry_s * 1_000_000
     if report_age_us >= expiry_us:
         return params.fallback_fee
@@ -461,43 +482,37 @@ def _discounted_fee(reported_edge: uint256, report_age_us: uint256) -> uint256:
     fresh_fee: uint256 = min(
         params.fallback_fee, params.base_fee + params.capture * excess_edge // PRECISION
     )
-    # Round the age surcharge up in fee units: ceil(delta * sqrt(age / expiry)).
+    if report_age_us == 0 or fresh_fee == params.fallback_fee:
+        return max(fresh_fee, params.base_fee)
+
+    # Age removes the discount; round the surcharge up in fee units.
     delta: uint256 = params.fallback_fee - fresh_fee
     numerator: uint256 = delta * delta * report_age_us
-    premium: uint256 = isqrt(numerator // expiry_us)
-    if premium * premium * expiry_us < numerator:
-        premium += 1
-    return fresh_fee + premium
+    adjustment: uint256 = isqrt(numerator // expiry_us)
+    if adjustment * adjustment * expiry_us < numerator:
+        adjustment += 1
+    return max(fresh_fee + adjustment, params.base_fee)
 
 
 @internal
 @pure
-def _get_p(_xp: uint256[N_COINS], _D: uint256, A: uint256) -> uint256:
-    """Return the fee-free marginal price in 1e18 coin0-per-coin1 units."""
-    if A == 0 or _D == 0 or _xp[0] == 0 or _xp[1] == 0:
-        return 0
-    if A > max_value(uint256) // N_COINS:
-        return 0
-    ANN: uint256 = A * N_COINS
-    Dr: uint256 = _D // N_COINS**N_COINS
+def _get_p(
+    _xp: uint256[N_COINS], _D: uint256, _A_gamma: uint256[N_COINS]
+) -> uint256:
+    """
+    @notice Calculates dx/dy.
+    @dev Output needs to be multiplied with price_scale to get the actual value.
+    @param _xp Balances of the pool.
+    @param _D Current value of D.
+    @param _A_gamma Amplification coefficient and gamma.
+    """
+    # dx_0 / dx_1 only, however can have any number of coins in pool
+    ANN: uint256 = unsafe_mul(_A_gamma[0], N_COINS)
+    Dr: uint256 = unsafe_div(_D, N_COINS**N_COINS)
+
     for i: uint256 in range(N_COINS):
-        if Dr > max_value(uint256) // _D:
-            return 0
         Dr = Dr * _D // _xp[i]
-    if ANN > max_value(uint256) // _xp[0]:
-        return 0
-    xp0_A: uint256 = ANN * _xp[0] // A_MULTIPLIER
-    if Dr > max_value(uint256) // _xp[0]:
-        return 0
-    dr_xp0: uint256 = Dr * _xp[0] // _xp[1]
-    if xp0_A > max_value(uint256) - dr_xp0:
-        return 0
-    numerator: uint256 = xp0_A + dr_xp0
-    if numerator > max_value(uint256) // PRECISION:
-        return 0
-    if xp0_A > max_value(uint256) - Dr:
-        return 0
-    denominator: uint256 = xp0_A + Dr
-    if denominator == 0:
-        return 0
-    return PRECISION * numerator // denominator
+
+    xp0_A: uint256 = unsafe_div(ANN * _xp[0], A_MULTIPLIER)
+
+    return 10**18 * (xp0_A + unsafe_div(Dr * _xp[0], _xp[1])) // (xp0_A + Dr)
