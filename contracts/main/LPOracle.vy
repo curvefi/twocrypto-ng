@@ -36,10 +36,11 @@ POOL_A_PRECISION: constant(uint256) = 10_000
 @view
 def _sanity_check(pool: IFXSwap):
     assert pool.address != empty(address)
-    assert staticcall pool.A() >= N_COINS**(N_COINS-1) * POOL_A_PRECISION, "Bad A value"
+    assert staticcall pool.A() >= N_COINS**(N_COINS - 1) * POOL_A_PRECISION, "Bad A value"
     assert staticcall pool.virtual_price() > 0
     assert staticcall pool.price_scale() > 0
     assert staticcall pool.price_oracle() > 0
+
 
 @view
 @external
@@ -74,7 +75,6 @@ def _A_at_last_timestamp(pool: IFXSwap) -> uint256:
 
     if t <= initial_t:
         return initial_A
-
     # Interpolate linearly in the same way as Twocrypto._A_gamma().
     duration: uint256 = future_t - initial_t
     elapsed: uint256 = t - initial_t
@@ -88,10 +88,8 @@ def _A_at_last_timestamp(pool: IFXSwap) -> uint256:
 def _scaled_A_raw_from_A(A_pool: uint256) -> uint256:
     # Pool stores A as: A_true * N_COINS**(N_COINS-1) * 10_000.
     # Solver expects: A_true * solver.A_PRECISION.
-    return unsafe_div(
-        A_pool * lp_oracle_2.A_PRECISION,
-        N_COINS**(N_COINS-1) * POOL_A_PRECISION
-    )
+    return unsafe_div(A_pool * lp_oracle_2.A_PRECISION, N_COINS**(N_COINS - 1) * POOL_A_PRECISION)
+
 
 @internal
 @view
@@ -102,9 +100,10 @@ def _scaled_price(pool: IFXSwap) -> uint256:
     p_scale: uint256 = staticcall pool.price_scale()
     return unsafe_div(p_oracle * PRECISION, p_scale)
 
+
 @internal
 @view
-def _portfolio_value(pool: IFXSwap, i: uint256=0) -> uint256:
+def _portfolio_value(pool: IFXSwap, i: uint256 = 0) -> uint256:
     assert i < N_COINS
 
     p_oracle: uint256 = staticcall pool.price_oracle()
@@ -122,7 +121,7 @@ def _portfolio_value(pool: IFXSwap, i: uint256=0) -> uint256:
 
 @internal
 @view
-def _lp_price(pool: IFXSwap, i: uint256=0) -> uint256:
+def _lp_price(pool: IFXSwap, i: uint256 = 0) -> uint256:
     D: uint256 = staticcall pool.D()
     total_supply: uint256 = staticcall pool.totalSupply()
     return self._portfolio_value(pool, i) * D // total_supply
@@ -130,7 +129,7 @@ def _lp_price(pool: IFXSwap, i: uint256=0) -> uint256:
 
 @view
 @external
-def lp_price(_pool: IFXSwap, _i: uint256=0) -> uint256:
+def lp_price(_pool: IFXSwap, _i: uint256 = 0) -> uint256:
     """
     @notice Returns LP token price in the selected coin numeraire.
     @dev LP token price can be inflated by natural growth of the pool's
