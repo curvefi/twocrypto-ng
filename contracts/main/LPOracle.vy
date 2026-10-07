@@ -5,8 +5,10 @@
 @author Curve.Fi
 @license MIT
 @notice LP oracle for Twocrypto(FXSwap)-style pools.
-@dev Reuses stable bisection solver and adjusts for pool internal price scaling.
-@dev Attention: LP pricing here depends on several components; see `lp_price()`
+@dev Reuses the curve-std StableSwap solver (`lp_oracle_2`) and adjusts for pool
+    internal price scaling.
+
+    Attention: LP pricing here depends on several components; see `lp_price()`
     comments for important caveats.
 """
 
@@ -47,6 +49,7 @@ def _sanity_check(pool: IFXSwap):
 def sanity_check(_pool: IFXSwap) -> bool:
     """
     @notice Validates core pool parameters required by this oracle.
+    @dev Meant for integration-time validation: `lp_price()` does not call it.
     @param _pool Address of the Twocrypto(FXSwap)-style pool.
     @return bool True if all sanity checks pass, otherwise reverts.
     """
@@ -132,11 +135,28 @@ def _lp_price(pool: IFXSwap, i: uint256 = 0) -> uint256:
 def lp_price(_pool: IFXSwap, _i: uint256 = 0) -> uint256:
     """
     @notice Returns LP token price in the selected coin numeraire.
-    @dev LP token price can be inflated by natural growth of the pool's
+    @dev LP token price can be atomically inflated by natural growth of the pool's
          fee component and through successful rebalances.
-    @dev The underlying `_pool.price_oracle()` used by this LP token oracle is
+
+         WARNING: a rebalance moves `_pool.price_scale()` in a discrete step, so
+         the LP token price can jump, including downwards, within a single pool
+         interaction. The size of the jump depends on the pool's `price_scale`
+         adjustment step. A position that is healthy before a rebalance can be
+         undercollateralized after it: integrations, e.g. lending markets, must
+         size their collateral buffers (LTV) accordingly.
+
+         The underlying `_pool.price_oracle()` used by this LP token oracle is
          capped to the 0.5-2.0 range relative to `_pool.price_scale()`, so the
          LP token price returned by this oracle is capped accordingly.
+
+         `_pool.price_oracle()` is an EMA of the pool spot price. In a pool
+         with low liquidity it can be biased at low cost, and the bias persists
+         for about the pool's EMA time even after liquidity is added. Do not use
+         this oracle for low-liquidity pools.
+
+         The amplification is evaluated at `_pool.last_timestamp()` to match
+         the cached `_pool.D()`. If the pool stays idle until a later A ramp
+         starts, that value is not recoverable and a newer A is used.
     @param _pool Address of the Twocrypto(FXSwap)-style pool.
     @param _i Coin index used as the numeraire, where 0 or 1 are supported.
     @return uint256 LP price scaled to 1e18 in coin `_i` units.
