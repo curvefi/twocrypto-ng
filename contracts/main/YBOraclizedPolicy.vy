@@ -37,7 +37,6 @@ interface Pool:
     def D() -> uint256: view
     def admin_fee() -> uint256: view
     def balances(i: uint256) -> uint256: view
-    def last_prices() -> uint256: view
     def price_scale() -> uint256: view  # Nonreentrant: reverts inside a pool operation.
     def user_supply() -> uint256: view
     def balanceOf(account: address) -> uint256: view
@@ -117,8 +116,8 @@ struct Report:
     observation_us: uint256  # Pyth feed update time; kept on a kill as the replay watermark.
 
 
-# Pool geometry as of the last callback or sync(), EMAs as of the last callback.
-# get_fee compares a quote's balances with it.
+# Pool geometry as of the last callback or sync(), EMAs and spot as of the last
+# callback. get_fee compares a quote's balances with it.
 struct State:
     last_update_ts: uint256  # block.timestamp of the last callback
     fast_ema: uint256
@@ -126,6 +125,7 @@ struct State:
     price_scale: uint256
     xp: uint256[N_COINS]  # balances, coin1 scaled by price_scale
     D: uint256
+    last_prices: uint256  # the pool's spot after the last callback's operation
 
 
 config: public(PolicyConfig)
@@ -382,7 +382,7 @@ def get_price_scale() -> uint256:
     @notice Twocrypto's price_scale target, or 0 for the native target before
             attachment or while killed.
     @dev The EMAs observe the stored report while younger than report_lifetime,
-         else this touch's post-trade last_prices. The target is
+         else the pool's spot after the previous touch. The target is
          fast + w * (observed - fast) with w = min(1, |fast / slow - 1| / trend_gate),
          or fast when trend_gate is 0. Each touch requests half the gap to it, at
          most step_cap of price_scale; the pool's oracle clamp, step limits and
@@ -397,7 +397,7 @@ def get_price_scale() -> uint256:
     if scale == 0:
         return 0
 
-    observed_price: uint256 = self._observed_price()
+    observed_price: uint256 = self._observation(snapshot)
     fast: uint256 = 0
     slow: uint256 = 0
     fast, slow = self._project_emas(snapshot, observed_price)
@@ -432,22 +432,24 @@ def get_emas() -> uint256[2]:
         return [0, 0]
     fast: uint256 = 0
     slow: uint256 = 0
-    fast, slow = self._project_emas(snapshot, self._observed_price())
+    fast, slow = self._project_emas(snapshot, self._observation(snapshot))
     return [fast, slow]
 
 
 @internal
 @view
-def _observed_price() -> uint256:
+def _observation(snapshot: State) -> uint256:
     """
-    @dev The observed price outside the callback: the live report, else this
-         trade's last_prices, which the pool writes before asking for the target.
-         The pool is read only when needed.
+    @dev What the EMAs and the target observe: the live report, else the pool's
+         spot after the previous callback's operation, as in the pool's own EMA,
+         so a touch cannot steer them with its own trade. Bounded to
+         [scale / 2, 2 * scale].
     """
     price: uint256 = self._observed_report()
-    if price != 0:
-        return price
-    return staticcall Pool(POOL).last_prices()
+    if price == 0:
+        price = snapshot.last_prices
+    scale: uint256 = snapshot.price_scale
+    return min(max(price, scale // 2), 2 * scale)
 
 
 @internal
@@ -473,12 +475,9 @@ def _project_emas(snapshot: State, observation: uint256) -> (uint256, uint256):
     dt: uint256 = block.timestamp - snapshot.last_update_ts
     if dt == 0:  # Later touches of a block keep the EMAs.
         return snapshot.fast_ema, snapshot.slow_ema
-    # Bound one observation to [scale / 2, 2 * scale].
-    scale: uint256 = snapshot.price_scale
-    price: uint256 = min(max(observation, scale // 2), 2 * scale)
     return (
-        self._ema(snapshot.fast_ema, price, dt, self.config.driver.fast_half_life),
-        self._ema(snapshot.slow_ema, price, dt, self.config.driver.slow_half_life),
+        self._ema(snapshot.fast_ema, observation, dt, self.config.driver.fast_half_life),
+        self._ema(snapshot.slow_ema, observation, dt, self.config.driver.slow_half_life),
     )
 
 
@@ -506,7 +505,8 @@ def update_pool_state(
 ):
     """
     @notice Pool callback after every operation, with its post-operation state:
-            gate LT deposits, settle the EMAs and store the fee snapshot.
+            gate LT deposits, settle the EMAs and store the snapshot, whose
+            spot the next touch observes.
     @dev A balanced removal calls back best-effort with 300k gas: if this fails,
          the pool carries on with a stale snapshot when it had at least 500k gas
          before the call, and reverts otherwise. That path reads one pool value.
@@ -522,10 +522,7 @@ def update_pool_state(
     fast: uint256 = price_oracle
     slow: uint256 = price_oracle
     if snapshot.price_scale != 0:
-        observed_price: uint256 = self._observed_report()
-        if observed_price == 0:
-            observed_price = last_prices
-        fast, slow = self._project_emas(snapshot, observed_price)
+        fast, slow = self._project_emas(snapshot, self._observation(snapshot))
 
     self.state = State(
         last_update_ts=block.timestamp,
@@ -534,6 +531,7 @@ def update_pool_state(
         price_scale=price_scale,
         xp=xp,
         D=D,
+        last_prices=last_prices,
     )
 
 
@@ -611,8 +609,13 @@ def _update_lt_gate(stable: uint256, old_stable: uint256):
     surplus: uint256 = lp_balance - min(lp_balance, collateral)
     old_surplus: uint256 = self.amm_surplus
 
-    # Nothing recorded yet (attachment, or the first add to an empty pool): record only.
-    if old_supply != 0:
+    # Nothing recorded yet: record only. At attachment the surplus is gifts. The
+    # first add to an empty pool meets an empty book, whose LP is that add's own
+    # unbooked LT deposit, not a gift.
+    if old_supply == 0:
+        if collateral == 0:
+            surplus = 0
+    else:
         added_lp: uint256 = supply - old_supply
         # An LT deposit leaves its minted LP unbooked on the LevAMM. An unrecorded
         # gift can make another add look like one, never the reverse.

@@ -8,6 +8,25 @@ an address an interrupted run printed to resume without redeploying.
 Attaching the policy (pool.set_policy_contract) is a pool admin action: a Curve
 DAO vote through the factory admin. It is not taken here; the script prints the
 calldata, together with the backtest's companion pool and LevAMM settings.
+
+Operating the attached policy (the contract source stays as deployed and verified):
+- LT deposits must pass the debt that keeps the LevAMM book's ratio, solved from
+  debt == pool.calc_token_amount([debt, assets], True) * amm.get_debt() // amm.collateral_amount()
+  (proportional_debt in the policy tests). In 15 daily samples over the two weeks
+  before deployment, a debt from a price, assets * price_oracle, sat 29 bp below
+  to 85 bp above it, outside the 1 bp band every time. LT.preview_deposit does not run
+  the check: verify the inequality and simulate the whole route.
+- An A ramp: the owner sets base_fee to fallback_fee before the ramp. Once a swap
+  past the ramp's end has checkpointed the final A (pool.last_timestamp() >=
+  pool.future_A_gamma_time()), anyone calls sync() and the owner restores base_fee.
+  The driver and the LT check keep running; killing the policy would turn the LT
+  check off.
+- The pool's admin fee must stay 0 for the LT check to measure deposited debt.
+- The pool's get_dx can under-quote an input whose swap crosses the report and
+  pays fallback_fee; confirm with get_dy.
+- The keeper must deliver a report more often than report_lifetime (90 minutes).
+  Past it, the averages and the target follow the pool's spot after the previous
+  touch, as the pool's own EMA does.
 """
 
 import os

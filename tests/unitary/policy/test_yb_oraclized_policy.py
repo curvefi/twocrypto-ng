@@ -20,6 +20,7 @@ from scripts.deploy_yb_oraclized_policy import CONFIG as PRODUCTION
 from scripts.deploy_yb_oraclized_policy import companion_calls
 from scripts.deploy_yb_oraclized_policy import constructor_args
 from scripts.deploy_yb_oraclized_policy import deploy as deploy_script
+from tests.conftest import _deploy_pool
 from tests.utils.constants import POOL_DEPLOYER
 
 WAD = 10**18
@@ -498,32 +499,34 @@ def test_report_rejects_short_authenticated_payload(setup):
 class LeanDriver:
     """
     report_lean.hpp get_price_scale/update_state in floating point (half-gap
-    step law): the observation is the stored report while its age is below
-    report_lifetime_s, else the pool's last_prices.
+    step law), with the contract's two departures from it: without a live report
+    (age below report_lifetime_s) the observation is the pool's last_prices from
+    the previous touch, not this one's, and the target blend sees the observation
+    clamped to [scale / 2, 2 * scale], as the EMAs do.
     """
 
     def __init__(self, driver=DRIVER):
         self.fast_hl, self.slow_hl, self.gate, self.cap, self.lifetime = driver
         self.gate /= WAD
         self.cap /= WAD
-        self.ts = self.fast = self.slow = self.scale = None
+        self.ts = self.fast = self.slow = self.scale = self.spot = None
 
-    def observation(self, now, last_report, last_prices):
+    def observation(self, now, last_report):
         price, observation_us = last_report
         age = max(now * 10**6 - observation_us, 0)
-        return price / WAD if price and age < self.lifetime * 10**6 else last_prices / WAD
+        o = price / WAD if price and age < self.lifetime * 10**6 else self.spot
+        return min(max(o, self.scale / 2), 2 * self.scale)
 
     def emas(self, observation, now):
         dt = now - self.ts
         if dt == 0:
             return self.fast, self.slow
-        o = min(max(observation, self.scale / 2), 2 * self.scale)
         af = math.exp(-math.log(2) * dt / self.fast_hl)
         a_s = math.exp(-math.log(2) * dt / self.slow_hl)
-        return o * (1 - af) + self.fast * af, o * (1 - a_s) + self.slow * a_s
+        return observation * (1 - af) + self.fast * af, observation * (1 - a_s) + self.slow * a_s
 
-    def target(self, now, last_report, last_prices):
-        o = self.observation(now, last_report, last_prices)
+    def target(self, now, last_report):
+        o = self.observation(now, last_report)
         fast, slow = self.emas(o, now)
         target = fast
         if self.gate > 0:
@@ -536,8 +539,8 @@ class LeanDriver:
         if self.scale is None:
             self.fast = self.slow = price_oracle / WAD
         else:
-            self.fast, self.slow = self.emas(self.observation(now, last_report, last_prices), now)
-        self.ts, self.scale = now, price_scale / WAD
+            self.fast, self.slow = self.emas(self.observation(now, last_report), now)
+        self.ts, self.scale, self.spot = now, price_scale / WAD, last_prices / WAD
 
 
 @pytest.mark.parametrize("seed", [1, 2, 3])
@@ -569,6 +572,7 @@ def test_driver_matches_report_lean_reference(seed, driver):
 
             boa.env.time_travel(seconds=rng.choice([0, 1, 12, 12, 60, 600, 3_600, 7_200]))
             spot = spot * (1000 + rng.randint(-30, 30)) // 1000
+            # This touch's own post-trade spot, which the target must not see.
             pool.eval(f"self.last_prices = {spot}")
             if rng.random() < 0.4:
                 observed = boa.env.evm.patch.timestamp * 10**6 - rng.randrange(12_000_000)
@@ -576,7 +580,7 @@ def test_driver_matches_report_lean_reference(seed, driver):
                     price = spot * (10_000 + rng.randint(-50, 50)) // 10_000
                     policy.deliver_oracle_report(report(price, observed), value=1)
             target = policy.get_price_scale()
-            expected = lean.target(boa.env.evm.patch.timestamp, tuple(policy.report()), spot)
+            expected = lean.target(boa.env.evm.patch.timestamp, tuple(policy.report()))
             assert math.isclose(target / WAD, expected, rel_tol=1e-12, abs_tol=1e-15 * scale / WAD)
             # The pool steps one fifth of the requested gap.
             scale = scale + (target - scale) // 5
@@ -585,7 +589,7 @@ def test_driver_matches_report_lean_reference(seed, driver):
 def test_observed_price_is_report_for_its_lifetime(setup):
     pool, policy = setup
     toward = [10**24 + 99 * WAD, 10**24 - 100 * WAD]  # coin0 in, toward the report
-    pool.eval(f"self.last_prices = {90 * WAD}")
+    push(policy, pool, spot=90 * WAD)
     boa.env.time_travel(seconds=1)
     policy.deliver_oracle_report(report(101 * WAD), value=1)
     assert policy.internal._observed_report() == 101 * WAD
@@ -604,7 +608,7 @@ def test_zero_report_lifetime_never_observes_a_report(setup):
     pool, policy = setup
     toward = [10**24 + 99 * WAD, 10**24 - 100 * WAD]
     policy.set_policy_config(config(driver=DRIVER[:4] + (0,)))
-    pool.eval(f"self.last_prices = {90 * WAD}")
+    push(policy, pool, spot=90 * WAD)
     boa.env.time_travel(seconds=1)
     # Even a report observed after block.timestamp (age 0): fees still use it.
     policy.deliver_oracle_report(
@@ -620,20 +624,20 @@ def test_target_weight_and_step_cap(setup):
     cap_move = scale * DRIVER[3] // WAD
     # Fresh attachment: fast == slow == oracle, so the target is the fast EMA.
     with boa.env.anchor():
-        pool.eval(f"self.last_prices = {150 * WAD}")
+        push(policy, pool, spot=150 * WAD)
         assert policy.get_price_scale() == scale  # dt = 0: EMAs and target unchanged.
     # A large move: trend >= gate, the target is the observation, the cap binds.
     for price, sign in ((150 * WAD, 1), (60 * WAD, -1)):
         with boa.env.anchor():
+            push(policy, pool, spot=price)  # The spot the next touch observes.
             boa.env.time_travel(seconds=3_600)
-            pool.eval(f"self.last_prices = {price}")
             fast, slow = policy.get_emas()
             assert abs(fast - slow) * WAD // slow >= DRIVER[2]
             assert policy.get_price_scale() == scale + sign * 5 * cap_move
     # Below the cap half the gap is requested, five times over.
     with boa.env.anchor():
+        push(policy, pool, spot=100 * WAD + 10**15)
         boa.env.time_travel(seconds=60)
-        pool.eval(f"self.last_prices = {100 * WAD + 10**15}")
         fast, slow = policy.get_emas()
         trend = (fast - slow) * WAD // slow
         assert 0 < trend < DRIVER[2]
@@ -669,11 +673,95 @@ def test_zero_trend_gate_follows_the_fast_ema():
     with boa.env.anchor():
         pool = boa.loads(POOL_MOCK)
         policy = deploy(pool, driver=DRIVER[:2] + (0, 60 * WAD // 10_000) + DRIVER[4:])
-        push(policy, pool)
+        push(policy, pool, spot=101 * WAD)
         boa.env.time_travel(seconds=600)
-        pool.eval(f"self.last_prices = {101 * WAD}")
         fast, _ = policy.get_emas()
+        assert fast > 100 * WAD
         assert policy.get_price_scale() == 100 * WAD + 5 * ((fast - 100 * WAD) // 2)
+
+
+def test_a_touch_cannot_steer_the_driver_with_its_own_spot(setup):
+    """
+    Without a live report the driver observes the pool's spot after the previous
+    touch, as the pool's own EMA does: a trade cannot move the EMAs or the target
+    with its own post-trade spot, and an unwind in the same block erases it.
+    """
+    pool, policy = setup
+    boa.env.time_travel(seconds=3_600)  # A quiet hour without reports.
+    quiet = policy.get_price_scale()
+    # The first touch of the block pushes the spot to 150: tweak_price writes it
+    # before asking for the target, then passes it to the callback.
+    pool.eval(f"self.last_prices = {150 * WAD}")
+    assert policy.get_price_scale() == quiet == 100 * WAD
+    push(policy, pool, spot=150 * WAD)
+    assert (policy.state().fast_ema, policy.state().slow_ema) == (100 * WAD, 100 * WAD)
+    # Its unwind in the same block leaves the spot the next block observes.
+    push(policy, pool, spot=100 * WAD)
+    boa.env.time_travel(seconds=12)
+    assert policy.get_emas() == [100 * WAD, 100 * WAD]
+    assert policy.get_price_scale() == 100 * WAD
+    # A spot that stays is observed from the next touch on.
+    push(policy, pool, spot=150 * WAD)
+    boa.env.time_travel(seconds=12)
+    fast, slow = policy.get_emas()
+    assert fast > slow > 100 * WAD
+
+
+def test_the_target_sees_the_bounded_observation():
+    """The trend blend uses the observation bounded like the EMAs' input: [scale / 2, 2 * scale]."""
+    with boa.env.anchor():
+        pool = boa.loads(POOL_MOCK)
+        gate, cap = (
+            WAD // 10,
+            60 * WAD // 10_000,
+        )  # A small blend weight keeps the step below the cap.
+        policy = deploy(pool, driver=(3_600, 7_200, gate, cap, DRIVER[4]))
+        push(policy, pool)
+        scale = 100 * WAD
+        for spot in (1_000 * WAD, 10 * WAD):
+            with boa.env.anchor():
+                push(policy, pool, spot=spot)
+                boa.env.time_travel(seconds=1)
+                fast, slow = policy.get_emas()
+                trend = (fast - slow if fast >= slow else slow - fast) * WAD // slow
+                requests = []
+                for o in (min(max(spot, scale // 2), 2 * scale), spot):
+                    if o >= fast:
+                        target = fast + (o - fast) * trend // gate
+                    else:
+                        target = fast - (fast - o) * trend // gate
+                    gap = target - scale if target >= scale else scale - target
+                    assert gap // 2 < scale * cap // WAD
+                    move = gap // 2
+                    requests.append(scale + 5 * move if target >= scale else scale - 5 * move)
+                bounded, raw = requests
+                assert policy.get_price_scale() == bounded != raw
+
+
+@pytest.mark.parametrize("source", ["spot", "report"])
+def test_settlement_bounds_with_the_previous_scale(source):
+    """A callback whose operation also moved price_scale settles within the old scale's bound."""
+    with boa.env.anchor():
+        pool = boa.loads(POOL_MOCK)
+        policy = deploy(pool)
+        lean = LeanDriver()
+        far = 1_000 * WAD  # Ten times price_scale: bounded to 200, not 201.
+        spot = far if source == "spot" else 100 * WAD
+        push(policy, pool, spot=spot)
+        lean.update(boa.env.evm.patch.timestamp, (0, 0), spot, 100 * WAD, 100 * WAD)
+        boa.env.time_travel(seconds=600)
+        if source == "report":
+            policy.deliver_oracle_report(report(far), value=1)
+        push(policy, pool, scale=1005 * WAD // 10, spot=100 * WAD)
+        lean.update(
+            boa.env.evm.patch.timestamp, tuple(policy.report()), 100 * WAD, 0, 1005 * WAD // 10
+        )
+        state = policy.state()
+        assert math.isclose(state.fast_ema / WAD, lean.fast, rel_tol=1e-12)
+        assert math.isclose(state.slow_ema / WAD, lean.slow, rel_tol=1e-12)
+        alpha = math.exp(-math.log(2) * 600 / DRIVER[0])
+        assert math.isclose(state.fast_ema / WAD, 200 * (1 - alpha) + 100 * alpha, rel_tol=1e-12)
+        assert not math.isclose(state.fast_ema / WAD, 201 * (1 - alpha) + 100 * alpha, rel_tol=1e-9)
 
 
 # Argon's vectors: report_lean.hpp evaluated with uint256 arithmetic for candidate
@@ -831,7 +919,9 @@ REPORT_LEAN_FEE_VECTORS = [
     ),
 ]
 # (name, dt since the last update or None before attachment, fast, slow, price_scale,
-#  touch report, pool last_prices, price_oracle, target, fast after, slow after)
+#  touch report, pool last_prices, price_oracle, target, fast after, slow after).
+# report_lean observes this touch's last_prices and the contract the previous
+# touch's: the harness gives both touches the vector's value.
 REPORT_LEAN_DRIVER_VECTORS = [
     (
         "uninitialized_first_touch_seeds_oracle",
@@ -912,7 +1002,8 @@ REPORT_LEAN_DRIVER_VECTORS = [
         2493453923088420358240,
     ),
     (
-        "dt3600_extreme_obs_clamped_for_ema_unclamped_for_target",
+        # report_lean leaves the target's observation unclamped; the cap binds either way.
+        "dt3600_extreme_obs_clamped_cap_binds",
         3600,
         2500000000000000000000,
         2500000000000000000000,
@@ -937,7 +1028,7 @@ def test_fee_matches_report_lean_vectors(vector):
         now = boa.env.evm.patch.timestamp
         policy.eval(
             f"self.state = State(last_update_ts={now}, fast_ema={scale}, slow_ema={scale},"
-            f" price_scale={scale}, xp={old}, D={D})"
+            f" price_scale={scale}, xp={old}, D={D}, last_prices={scale})"
         )
         policy.eval(
             f"self.report = Report(asset_price={price}, observation_us={now * 10**6 - age_us})"
@@ -958,13 +1049,12 @@ def test_driver_matches_report_lean_vectors(vector):
         last = 0 if dt is None else now - dt
         policy.eval(
             f"self.state = State(last_update_ts={last}, fast_ema={fast}, slow_ema={slow},"
-            f" price_scale={scale}, xp=[10**24, 10**24], D=2 * 10**24)"
+            f" price_scale={scale}, xp=[10**24, 10**24], D=2 * 10**24, last_prices={last_prices})"
         )
         if touch_report:
             policy.eval(
                 f"self.report = Report(asset_price={touch_report}, observation_us={now * 10**6})"
             )
-        pool.eval(f"self.last_prices = {last_prices}")
         assert policy.get_price_scale() == target
         push(policy, pool, scale=scale or oracle, spot=last_prices, oracle=oracle)
         assert (policy.state().fast_ema, policy.state().slow_ema) == (fast_after, slow_after)
@@ -974,7 +1064,7 @@ def test_driver_matches_report_lean_vectors(vector):
 # 521415 with the listed report_lifetime_s: one touch with a stored report of the
 # listed age (negative: observed after the block). Printed by a C++ program that
 # calls the header's get_price_scale and update_state; floating point, so compared to
-# 1e-12. Prices in USD.
+# 1e-12. Prices in USD. As above, both touches carry the vector's last_prices.
 LIFETIME_FEES = (50_000_000, 675 * WAD // 1_000, 175_000_000, 300)
 LIFETIME_DRIVER = (4_800, 9_600, 7 * WAD // 1_000, 5 * WAD // 1_000)  # report_lifetime per vector
 # (name, report_lifetime, dt, fast, slow, price_scale, stored report (0: dropped), its
@@ -1126,12 +1216,12 @@ def test_driver_matches_report_lean_lifetime_vectors(vector):
         now = boa.env.evm.patch.timestamp
         policy.eval(
             f"self.state = State(last_update_ts={now - dt}, fast_ema={fast * WAD}, slow_ema={slow * WAD},"
-            f" price_scale={scale * WAD}, xp=[10**24, 10**24], D=2 * 10**24)"
+            f" price_scale={scale * WAD}, xp=[10**24, 10**24], D=2 * 10**24,"
+            f" last_prices={last_prices * WAD})"
         )
         policy.eval(
             f"self.report = Report(asset_price={price * WAD}, observation_us={(now - age) * 10**6})"
         )
-        pool.eval(f"self.last_prices = {last_prices * WAD}")
         assert math.isclose(policy.get_price_scale() / WAD, target, rel_tol=1e-12)
         push(policy, pool, scale=scale * WAD, spot=last_prices * WAD, oracle=oracle * WAD)
         assert math.isclose(policy.state().fast_ema / WAD, fast_after, rel_tol=1e-12)
@@ -1261,21 +1351,21 @@ def test_owner_sets_policy_config(setup):
 
 def test_driver_config_applies_from_the_next_touch(setup):
     pool, policy = setup
+    push(policy, pool, spot=104 * WAD)  # Same timestamp: only the spot changes.
     boa.env.time_travel(seconds=1_800)
-    pool.eval(f"self.last_prices = {104 * WAD}")
     before = policy.get_emas()
     driver = (900, 1_800, WAD // 1_000, 60 * WAD // 10_000, DRIVER[4])
     policy.set_policy_config(config(driver=driver))
     # No checkpoint: the new half-lives cover the whole interval since the last touch.
     lean = LeanDriver(driver=driver)
-    lean.update(boa.env.evm.patch.timestamp - 1_800, (0, 0), 100 * WAD, 100 * WAD, 100 * WAD)
+    lean.update(boa.env.evm.patch.timestamp - 1_800, (0, 0), 104 * WAD, 100 * WAD, 100 * WAD)
     fast, slow = lean.emas(104.0, boa.env.evm.patch.timestamp)
     after = policy.get_emas()
     assert after != before
     assert math.isclose(after[0] / WAD, fast, rel_tol=1e-12)
     assert math.isclose(after[1] / WAD, slow, rel_tol=1e-12)
     # trend_gate and step_cap shape the very next target.
-    expected = lean.target(boa.env.evm.patch.timestamp, (0, 0), 104 * WAD)
+    expected = lean.target(boa.env.evm.patch.timestamp, (0, 0))
     assert math.isclose(policy.get_price_scale() / WAD, expected, rel_tol=1e-12)
     assert policy.get_price_scale() == 100 * WAD + 5 * (100 * WAD * driver[3] // WAD)
 
@@ -1330,7 +1420,6 @@ def test_kill_switch(setup):
     pool, policy = setup
     candidate = [10**24 + 99 * WAD, 10**24 - 100 * WAD]
     boa.env.time_travel(seconds=600)
-    pool.eval(f"self.last_prices = {120 * WAD}")
     faulty = report(101 * WAD)
     policy.deliver_oracle_report(faulty, value=1)
     observed = policy.report().observation_us
@@ -1354,12 +1443,12 @@ def test_kill_switch(setup):
 
     policy.set_killed(False)  # The owner may revive it, as may the emergency admin.
     assert not policy.is_killed()
-    assert policy.get_price_scale() > 100 * WAD
     assert policy.get_fee(candidate) == FEES[2]  # No discount before a new report.
     assert policy.internal._observed_report() == 0
     with boa.reverts("observation not newer"):
         policy.deliver_oracle_report(faulty, value=1)  # The dropped report stays dropped.
-    boa.env.time_travel(seconds=1)
+    boa.env.time_travel(seconds=600)  # The EMAs follow the last touch's spot.
+    assert policy.get_price_scale() > 100 * WAD
     policy.deliver_oracle_report(report(101 * WAD), value=1)
     assert policy.get_fee(candidate) < FEES[2]
 
@@ -1578,6 +1667,34 @@ def test_sync_before_attachment_leaves_the_gate_unseeded(market, user, factory_a
     assert_caches_follow_ledgers(SimpleNamespace(pool=pool, market=amm, policy=fresh))
 
 
+def test_first_lt_deposit_into_an_empty_pool_is_not_a_gift(
+    factory, factory_admin, params, coins, deployer
+):
+    """
+    On an empty pool the policy's first callback is the first deposit. When that is
+    an LT deposit, its LP reaches the LevAMM before the book records it, and must
+    not be remembered as a gift: later off-ratio deposits would skip the check.
+    """
+    with boa.env.anchor():
+        pool = POOL_DEPLOYER.at(_deploy_pool(factory, params, coins, deployer))
+        book = boa.loads(MARKET_MOCK, pool.address)
+        boa.deal(coins[0], book, 10**30)
+        boa.deal(coins[1], book, 10**27)
+        pool.set_fee_parameters(pool.reserved_profit_fraction(), 0, sender=factory_admin)
+        policy = deploy(pool, amm=book)
+        pool.set_policy_contract(policy, sender=factory_admin)  # Empty: no callback yet.
+        assert pool.D() == 0 and policy.cached_supply() == 0
+        book.deposit(10 * WAD, 15_000 * WAD)
+        m = SimpleNamespace(pool=pool, market=book, policy=policy)
+        assert_caches_follow_ledgers(m)  # The booked mint is not a gift.
+        debt = proportional_debt(pool, book, WAD)
+        for off in (debt * 101 // 100, debt * 99 // 100):
+            with boa.reverts("LT deviation"):
+                book.deposit(WAD, off)
+        book.deposit(WAD, debt)
+        assert_caches_follow_ledgers(m)
+
+
 @pytest.mark.parametrize("repair", ["sync", "revive"])
 def test_resync_repairs_a_failed_removal_callback(market, user, repair):
     pool, amm, policy = market.pool, market.market, market.policy
@@ -1675,10 +1792,10 @@ def test_balanced_removal_callback_fits_its_gas(market):
     policy.update_pool_state(*args, sender=pool.address, gas=300_000)
     used = policy._computation.get_gas_used()
     # boa keeps slots warm and dirty across calls, so add what a fresh transaction
-    # pays on top: a cold read of every slot the callback touches (14 policy: state 7,
+    # pays on top: a cold read of every slot the callback touches (15 policy: state 8,
     # is_killed, report 2, report_lifetime, 2 half-lives, cached_supply; 2 pool), and a
-    # full reset for the 8 slots it can write. A removal reads nothing from the LevAMM.
-    worst = used + 16 * 2_100 + 8 * 2_900
+    # full reset for the 9 slots it can write. A removal reads nothing from the LevAMM.
+    worst = used + 17 * 2_100 + 9 * 2_900
     assert worst < 150_000, (used, worst)
 
 
@@ -1710,14 +1827,21 @@ def test_real_pool_quote_swap_and_withdrawal(market, user, coin_in, report_price
     assert_caches_follow_ledgers(market)
 
 
-def test_amplification_ramp(market, user, factory_admin):
-    """During an A ramp a swap pays fallback_fee while a get_dy quote may not."""
+@pytest.mark.parametrize("flat_fee", [False, True])
+def test_amplification_ramp(market, user, factory_admin, flat_fee):
+    """
+    During an A ramp a swap pays fallback_fee while a get_dy quote may not. With
+    base_fee raised to fallback_fee for the ramp, quotes and swaps agree and the
+    LT gate stays on, which killing the policy would turn off.
+    """
     pool, policy, coins = market.pool, market.policy, market.coins
     # At equal value D is the same for any A, so imbalance the pool first: then
     # the ramp makes the pool re-solve D before it asks for the fee.
     boa.deal(coins[1], user, 300 * WAD)
     with boa.env.prank(user):
         pool.exchange(1, 0, 300 * WAD, 0)
+    if flat_fee:
+        policy.set_policy_config(config(fees=(FEES[2], *FEES[1:])))
     end = boa.env.evm.patch.timestamp + 86_400
     pool.ramp_A_gamma(pool.A() * 2, pool.gamma(), end, sender=factory_admin)
     dx = 1_000 * WAD
@@ -1735,9 +1859,17 @@ def test_amplification_ramp(market, user, factory_admin):
     boa.env.time_travel(seconds=3_600)
     with boa.env.anchor():
         quote, received, rate = swap()
-        # The swap re-solved D and paid fallback; the quote kept the old D and its discount.
         assert FEES[2] - 1 <= rate <= FEES[2]
-        assert received < quote
+        if flat_fee:
+            assert received == quote
+            amm = market.market
+            debt = proportional_debt(pool, amm, WAD)
+            with boa.reverts("LT deviation"):
+                amm.deposit(WAD, debt * 10_003 // 10_000)
+            amm.deposit(WAD, debt)
+        else:
+            # The swap re-solved D and paid fallback; the quote kept the old D and its discount.
+            assert received < quote
     # After the ramp's last checkpoint and a sync(), quotes and swaps agree again.
     boa.env.time_travel(seconds=86_400)
     boa.deal(coins[1], user, WAD)
@@ -1745,6 +1877,8 @@ def test_amplification_ramp(market, user, factory_admin):
         pool.exchange(1, 0, WAD // 100, 0)
     policy.sync()
     assert policy.cached_A() == pool.A()
+    if flat_fee:
+        policy.set_policy_config(config())
     quote, received, rate = swap()
     assert received == quote
     assert rate < FEES[2] - 1
