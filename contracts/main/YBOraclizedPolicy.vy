@@ -42,6 +42,22 @@ interface Pool:
     def balanceOf(account: address) -> uint256: view
     def coins(i: uint256) -> address: view
     def precisions() -> uint256[N_COINS]: view
+    # For get_dy_with_report, as TwocryptoView reads them.
+    def POLICY() -> address: view
+    def MATH() -> Math: view
+    def gamma() -> uint256: view
+    def future_A_gamma_time() -> uint256: view
+    def last_timestamp() -> uint256: view
+    def fee_calc(xp: uint256[N_COINS]) -> uint256: view
+
+
+interface Math:
+    def get_y(
+        ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: uint256
+    ) -> uint256[2]: view
+    def newton_D(
+        ANN: uint256, gamma: uint256, x_unsorted: uint256[N_COINS], K0_prev: uint256
+    ) -> uint256: view
 
 
 interface LevAMM:
@@ -690,8 +706,24 @@ def _verify_report(
     report_data: Bytes[112], fee_paid: uint256, oracle: OracleConfig
 ) -> (uint256, uint256, uint256):
     """
-    @dev Authenticate the report with Pyth and decode its payload, which must be
-         one feed with exactly these properties. Big-endian byte ranges:
+    @dev Authenticate the report with Pyth and decode its payload.
+    @return (coin1 price in USD 1e18, observation time us, message time us)
+    """
+    assert len(report_data) == 112, "report length"
+    payload: Bytes[41] = b""
+    signer: address = empty(address)
+    payload, signer = extcall PythLazer(oracle.verifier).verifyUpdate(report_data, value=fee_paid)
+    assert signer != empty(address), "signer"
+    assert len(payload) == 41, "payload length"
+    return self._decode_payload(payload, oracle)
+
+
+@internal
+@view
+def _decode_payload(payload: Bytes[41], oracle: OracleConfig) -> (uint256, uint256, uint256):
+    """
+    @dev The payload must be one feed with exactly these properties. Big-endian
+         byte ranges:
              [0:4]    magic                PYTH_PAYLOAD_MAGIC
              [4:12]   message time, us
              [12]     channel              oracle.channel
@@ -707,14 +739,6 @@ def _verify_report(
              [33:41]  observation time, us
     @return (coin1 price in USD 1e18, observation time us, message time us)
     """
-    assert len(report_data) == 112, "report length"
-    payload: Bytes[41] = b""
-    signer: address = empty(address)
-    payload, signer = extcall PythLazer(oracle.verifier).verifyUpdate(report_data, value=fee_paid)
-    assert signer != empty(address), "signer"
-    assert len(payload) == 41, "payload length"
-
-    # Only parse authenticated bytes.
     assert convert(slice(payload, 0, 4), uint256) == PYTH_PAYLOAD_MAGIC, "payload magic"
     assert convert(slice(payload, 12, 1), uint8) == oracle.channel, "channel"
     assert slice(payload, 13, 1) == b"\x01", "one feed"
@@ -827,3 +851,83 @@ def _set_oracle_config(oracle: OracleConfig):
     ), "price bounds"
     self.oracle = oracle
     log SetOracleConfig(oracle=oracle)
+
+
+# ----------------------------------- Quotes ------------------------------------
+
+
+@external
+@view
+def get_dy_with_report(
+    i: uint256, j: uint256, dx: uint256, report_data: Bytes[112], block_timestamp: uint256
+) -> uint256:
+    """
+    @notice pool.get_dy(i, j, dx) with this signed report stored, its age taken
+            at block_timestamp (say the next block's).
+    @dev A convenience view: the signature is not verified and the report is not
+         admitted, only decoded. The pool's state, A included, is this block's.
+    """
+    report_price: uint256 = 0
+    observation_us: uint256 = 0
+    message_us: uint256 = 0
+    report_price, observation_us, message_us = self._decode_payload(
+        slice(report_data, 71, 41), self.oracle
+    )
+    now_us: uint256 = block_timestamp * 1_000_000
+    return self._quote(i, j, dx, report_price, now_us - min(now_us, observation_us))
+
+
+@external
+@view
+def get_dy_with_report_age(
+    i: uint256, j: uint256, dx: uint256, report_price: uint256, report_age_us: uint256
+) -> uint256:
+    """
+    @notice pool.get_dy(i, j, dx) with a stored report of this price (1e18 = $1)
+            observed report_age_us before the block; pass age 0 for an
+            observation after block.timestamp.
+    """
+    return self._quote(i, j, dx, report_price, report_age_us)
+
+
+# TwocryptoView.get_dy with the pool's state read directly. Like it, during an A
+# ramp the quote can keep a discount that the swap loses (see _get_fee).
+@internal
+@view
+def _quote(
+    i: uint256, j: uint256, dx: uint256, report_price: uint256, report_age_us: uint256
+) -> uint256:
+    assert i != j and i < N_COINS and j < N_COINS, "coin index out of range"
+    # A detached policy no longer prices the pool's swaps.
+    assert staticcall Pool(POOL).POLICY() == self, "not attached"
+
+    math_contract: Math = staticcall Pool(POOL).MATH()
+    precisions: uint256[N_COINS] = staticcall Pool(POOL).precisions()
+    xp: uint256[N_COINS] = [staticcall Pool(POOL).balances(0), staticcall Pool(POOL).balances(1)]
+    price_scale: uint256 = staticcall Pool(POOL).price_scale()
+    A: uint256 = staticcall Pool(POOL).A()
+    gamma: uint256 = staticcall Pool(POOL).gamma()
+
+    D: uint256 = staticcall Pool(POOL).D()
+    if staticcall Pool(POOL).future_A_gamma_time() > staticcall Pool(POOL).last_timestamp():
+        ramp_xp: uint256[N_COINS] = [
+            xp[0] * precisions[0], xp[1] * price_scale * precisions[1] // PRECISION
+        ]
+        D = staticcall math_contract.newton_D(A, gamma, ramp_xp, 0)
+
+    xp[i] += dx
+    xp = [xp[0] * precisions[0], xp[1] * price_scale * precisions[1] // PRECISION]
+
+    y_out: uint256[2] = staticcall math_contract.get_y(A, gamma, xp, D, j)
+    assert y_out[0] < xp[j], "unsafe value for y"
+    dy: uint256 = xp[j] - y_out[0] - 1
+    xp[j] = y_out[0]
+    if j > 0:
+        dy = dy * PRECISION // price_scale
+    dy //= precisions[j]
+
+    fee: uint256 = self._get_fee(xp, report_price, report_age_us)
+    if fee == 0:  # Killed: the pool's native fee.
+        fee = staticcall Pool(POOL).fee_calc(xp)
+    # The pool clamps fees to [MIN_FEE, FEE_PRECISION]; config bounds keep this one inside.
+    return dy - fee * dy // FEE_PRECISION

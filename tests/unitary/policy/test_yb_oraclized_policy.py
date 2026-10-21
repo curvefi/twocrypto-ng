@@ -60,7 +60,7 @@ def verification_fee() -> uint256:
 @external
 @payable
 def verifyUpdate(report: Bytes[112]) -> (Bytes[41], address):
-    assert msg.value == 1 and slice(report, 0, 1) == b"\\x00", "verification failed"
+    assert msg.value == 1 and slice(report, 4, 1) == b"\\x00", "verification failed"
     return slice(report, 71, 41), self
 """
 
@@ -184,7 +184,8 @@ def report(price, observation_us=None, message_us=None, feed=2, channel=3):
         observation_us,
     )
     assert len(payload) == 41
-    return bytes(71) + payload
+    # Pyth's EVM envelope: format magic, a 65-byte signature, the payload length.
+    return bytes.fromhex("2a22999a") + bytes(65) + (41).to_bytes(2, "big") + payload
 
 
 def config(fees=FEES, driver=DRIVER, tolerance=TOLERANCE):
@@ -452,7 +453,7 @@ def test_report_admission(setup):
         (report(100 * WAD, now, feed=1), "feed"),
         (report(100 * WAD, now, channel=1), "channel"),
         (report(100 * WAD, now)[:-1], "report length"),
-        (b"\xff" + report(100 * WAD, now)[1:], "verification failed"),
+        (report(100 * WAD, now)[:4] + b"\xff" + report(100 * WAD, now)[5:], "verification failed"),
     ):
         with boa.reverts(reason):
             policy.deliver_oracle_report(payload, value=1)
@@ -1882,6 +1883,170 @@ def test_amplification_ramp(market, user, factory_admin, flat_fee):
     quote, received, rate = swap()
     assert received == quote
     assert rate < FEES[2] - 1
+
+
+def store_report(policy, price, age_s):
+    """Deliver the report when admissible (age within 12 s), else write it as stored."""
+    observation_us = (boa.env.evm.patch.timestamp - age_s) * 10**6
+    if age_s <= 12:
+        policy.deliver_oracle_report(report(price, observation_us), value=1)
+    else:
+        policy.eval(f"self.report = Report(asset_price={price}, observation_us={observation_us})")
+
+
+def swap_fee_rate(pool, received):
+    fee = [log for log in pool.get_logs() if hasattr(log, "tokens_bought")][-1].fee
+    return fee * Q // (received + fee)
+
+
+def corrective_price(pool, coin_in):
+    """1.5% beyond the spot on the side a swap of coin_in corrects toward."""
+    return pool.last_prices() * (1015 if coin_in == 0 else 985) // 1000 // 10**10 * 10**10
+
+
+def quote_sizes(pool, coin_in):
+    """Small, medium, and one large enough to cross a report 1.5% away."""
+    balance = pool.balances(coin_in)
+    return [balance // 10_000, balance // 300, balance // 3]
+
+
+@pytest.mark.parametrize("coin_in", [0, 1])
+@pytest.mark.parametrize("age_s", [0, 3, 12, 150, FEES[3] - 1, FEES[3]])
+def test_get_dy_with_report_age_is_what_the_swap_pays(market, user, coin_in, age_s):
+    """
+    get_dy_with_report_age(price, age at the block the swap lands in) is exactly
+    what exchange pays once that report is stored: discounted, aged, past
+    relax_time, and crossing the report alike.
+    """
+    pool, policy, coins = market.pool, market.policy, market.coins
+    coin_out = 1 - coin_in
+    boa.env.time_travel(seconds=600)
+    price = corrective_price(pool, coin_in)
+    rates = []
+    for dx in quote_sizes(pool, coin_in):
+        quote = policy.get_dy_with_report_age(coin_in, coin_out, dx, price, age_s * 10**6)
+        with boa.env.anchor():
+            store_report(policy, price, age_s)
+            assert pool.get_dy(coin_in, coin_out, dx) == quote
+            boa.deal(coins[coin_in], user, dx)
+            with boa.env.prank(user):
+                assert pool.exchange(coin_in, coin_out, dx, 0) == quote
+            rates.append(swap_fee_rate(pool, quote))
+    if age_s < FEES[3]:
+        assert rates[0] < FEES[2] - 1  # Discounted ...
+    assert FEES[2] - 1 <= rates[-1] <= FEES[2]  # ... and the largest crosses the report.
+
+
+@pytest.mark.parametrize("coin_in", [0, 1])
+@pytest.mark.parametrize("lead_s, age_s", [(0, 0), (0, 12), (12, 0)])
+def test_get_dy_with_report_is_what_the_swap_pays(market, user, coin_in, lead_s, age_s):
+    """
+    A trader with signed report bytes quotes for the block it aims at (lead_s ahead)
+    and receives exactly that once the report is delivered there and the swap runs.
+    """
+    pool, policy, coins = market.pool, market.policy, market.coins
+    coin_out = 1 - coin_in
+    boa.env.time_travel(seconds=600)
+    now = boa.env.evm.patch.timestamp
+    price = corrective_price(pool, coin_in)
+    signed = report(price, (now - age_s) * 10**6)
+    for dx in quote_sizes(pool, coin_in):
+        quote = policy.get_dy_with_report(coin_in, coin_out, dx, signed, now + lead_s)
+        age_us = (lead_s + age_s) * 10**6
+        assert quote == policy.get_dy_with_report_age(coin_in, coin_out, dx, price, age_us)
+        with boa.env.anchor():
+            boa.env.time_travel(seconds=lead_s)
+            policy.deliver_oracle_report(signed, value=1)
+            boa.deal(coins[coin_in], user, dx)
+            with boa.env.prank(user):
+                assert pool.exchange(coin_in, coin_out, dx, 0) == quote
+
+
+def test_get_dy_with_report_only_decodes(market):
+    """The signature is not verified and the report not admitted: it is only decoded and aged."""
+    pool, policy = market.pool, market.policy
+    boa.env.time_travel(seconds=600)
+    now = boa.env.evm.patch.timestamp
+    price = corrective_price(pool, 0)
+    dx = 100 * WAD
+    good = report(price, now * 10**6)
+    unsigned = good[:4] + b"\xff" + good[5:]
+    assert policy.get_dy_with_report(0, 1, dx, unsigned, now) == policy.get_dy_with_report(
+        0, 1, dx, good, now
+    )
+    with boa.reverts("verification failed"):  # Delivery does check it.
+        policy.deliver_oracle_report(unsigned, value=1)
+    # Too old to deliver, and past relax_time: quoted at fallback_fee, without reverting.
+    old = report(price, (now - FEES[3]) * 10**6)
+    with boa.reverts("report too old"):
+        policy.deliver_oracle_report(old, value=1)
+    assert policy.get_dy_with_report(0, 1, dx, old, now) == pool.get_dy(0, 1, dx)
+    # A report observed after the given time has age zero.
+    future = report(price, (now + 5) * 10**6)
+    assert policy.get_dy_with_report(0, 1, dx, future, now) == policy.get_dy_with_report_age(
+        0, 1, dx, price, 0
+    )
+    with boa.reverts("channel"):  # The payload format is still checked.
+        policy.get_dy_with_report(0, 1, dx, report(price, now * 10**6, channel=1), now)
+
+
+def test_get_dy_with_report_age_off_the_discount(market):
+    pool, policy = market.pool, market.policy
+    dx = 100 * WAD
+    price = corrective_price(pool, 0)
+    # No report, or one on the wrong side: the stored-report quote at fallback_fee.
+    plain = pool.get_dy(0, 1, dx)
+    assert policy.get_dy_with_report_age(0, 1, dx, 0, 0) == plain
+    assert policy.get_dy_with_report_age(0, 1, dx, corrective_price(pool, 1), 0) == plain
+    assert policy.get_dy_with_report_age(0, 1, dx, price, 0) > plain
+    # Killed: the pool's native fee, as get_dy.
+    policy.set_killed(True, sender=EMERGENCY)
+    native = pool.get_dy(0, 1, dx)
+    assert native != plain
+    assert policy.get_dy_with_report_age(0, 1, dx, price, 0) == native
+    for i, j, amount, reason in (
+        (0, 0, dx, "coin index out of range"),
+        (2, 1, dx, "coin index out of range"),
+    ):
+        with boa.reverts(reason):
+            policy.get_dy_with_report_age(i, j, amount, price, 0)
+
+
+def test_get_dy_with_report_needs_the_policy_attached(market, factory_admin):
+    pool, policy = market.pool, market.policy
+    price = corrective_price(pool, 0)
+    assert policy.get_dy_with_report_age(0, 1, 100 * WAD, price, 0) > 0
+    pool.set_policy_contract("0x0000000000000000000000000000000000000000", sender=factory_admin)
+    with boa.reverts("not attached"):
+        policy.get_dy_with_report_age(0, 1, 100 * WAD, price, 0)
+
+
+@pytest.mark.parametrize("flat_fee", [False, True])
+def test_get_dy_with_report_age_during_a_ramp(market, user, factory_admin, flat_fee):
+    """
+    During an A ramp the quote is pool.get_dy's, which can keep a discount the swap
+    loses. With the ramp runbook's base_fee = fallback_fee, quote and swap agree.
+    """
+    pool, policy, coins = market.pool, market.policy, market.coins
+    boa.deal(coins[1], user, 300 * WAD)
+    with boa.env.prank(user):
+        pool.exchange(1, 0, 300 * WAD, 0)
+    if flat_fee:
+        policy.set_policy_config(config(fees=(FEES[2], *FEES[1:])))
+    end = boa.env.evm.patch.timestamp + 86_400
+    pool.ramp_A_gamma(pool.A() * 2, pool.gamma(), end, sender=factory_admin)
+    boa.env.time_travel(seconds=3_600)
+    assert pool.future_A_gamma_time() > pool.last_timestamp()
+    price = pool.last_prices() * 1003 // 1000 // 10**10 * 10**10
+    for dx in (100 * WAD, 1_000 * WAD):
+        quote = policy.get_dy_with_report_age(0, 1, dx, price, 0)
+        with boa.env.anchor():
+            store_report(policy, price, 0)
+            assert pool.get_dy(0, 1, dx) == quote
+            boa.deal(coins[0], user, dx)
+            with boa.env.prank(user):
+                received = pool.exchange(0, 1, dx, 0)
+            assert received == quote if flat_fee else received < quote
 
 
 # -------------------------------- Deployment ---------------------------------
