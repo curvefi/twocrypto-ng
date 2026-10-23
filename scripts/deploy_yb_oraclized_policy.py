@@ -5,9 +5,8 @@ The signer deploys the policy, every parameter is read back, ownership moves to
 the YieldBasis DAO, and the source is verified on Etherscan. Set CONFIG.policy to
 an address an interrupted run printed to resume without redeploying.
 
-Attaching the policy (pool.set_policy_contract) is a pool admin action: a Curve
-DAO vote through the factory admin. It is not taken here; the script prints the
-calldata, together with the backtest's companion pool and LevAMM settings.
+Attaching the policy (pool.set_policy_contract) is a pool admin action, taken
+separately by the factory admin.
 
 Operating the attached policy (the contract source stays as deployed and verified):
 - LT deposits must pass the debt that keeps the LevAMM book's ratio, solved from
@@ -35,8 +34,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import boa
-from eth_abi import encode
-from eth_utils import keccak
 
 WAD = 10**18
 
@@ -77,14 +74,6 @@ CONFIG = SimpleNamespace(
         ),
         WAD // 10_000,  # ratio_tolerance: LT deposit band, 1 bp
     ),
-    # The replay's market settings outside the policy, printed as calldata. It assumes
-    # YieldBasis donations of 1.17% a year (pool.donation_apy, a backtest assumption, not
-    # a setting) and a keeper that delivers a report with a dust swap once the stored
-    # report or the last pool touch is an hour old, or Pyth has moved the fallback fee
-    # from the stored report.
-    reserved_profit_fraction=4_220_472_400,  # pool, 1e10: 42.204724%, the replay's. Curve DAO.
-    amm_fee=15 * 10**15,  # LevAMM fee via LT.set_amm_fee, 1e18: 1.5%. LT admin.
-    lt="0x2B9c9f3BdcEb5d8E36a4704f08a78Fca53343cEa",  # LT of YieldBasis market 10
     policy=None,  # Resume: the address of an earlier deployment.
 )
 
@@ -190,46 +179,6 @@ def main():
         print(f"Policy verified: https://etherscan.io/address/{policy.address}#code")
     except Exception as exc:  # The onchain steps are done; only verification needs a retry.
         print(f"Verification failed: {exc}. Rerun with CONFIG.policy set.")
-
-    for target, call, caller in companion_calls(policy.address, cfg, pool_admin_fee(cfg)):
-        print(f"{caller}: call {target} with 0x{call.hex()}")
-
-
-ADMIN_FEE_ABI = '[{"type":"function","name":"admin_fee","stateMutability":"view","inputs":[],"outputs":[{"name":"","type":"uint256"}]}]'
-
-
-def pool_admin_fee(cfg):
-    """The pool's live admin_fee: set_fee_parameters sets it together with the RPF."""
-    return boa.loads_abi(ADMIN_FEE_ABI, name="Pool").at(cfg.pool).admin_fee()
-
-
-def companion_calls(policy, cfg, admin_fee):
-    """(target, calldata, who calls it): attach the policy plus the backtest's market settings."""
-
-    def calldata(signature, types, args):
-        return keccak(text=signature)[:4] + encode(types, args)
-
-    return [
-        (
-            cfg.pool,
-            calldata("set_policy_contract(address)", ["address"], [policy]),
-            "Curve DAO (pool admin): set_policy_contract",
-        ),
-        (
-            cfg.pool,
-            calldata(
-                "set_fee_parameters(uint256,uint256)",
-                ["uint256", "uint256"],
-                [cfg.reserved_profit_fraction, admin_fee],
-            ),
-            f"Curve DAO (pool admin): set_fee_parameters, admin_fee kept at {admin_fee}",
-        ),
-        (
-            cfg.lt,
-            calldata("set_amm_fee(uint256)", ["uint256"], [cfg.amm_fee]),
-            "YieldBasis (LT admin): set_amm_fee",
-        ),
-    ]
 
 
 if __name__ == "__main__":

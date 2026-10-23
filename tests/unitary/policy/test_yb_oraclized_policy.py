@@ -17,7 +17,6 @@ import pytest
 from eth_utils import keccak
 
 from scripts.deploy_yb_oraclized_policy import CONFIG as PRODUCTION
-from scripts.deploy_yb_oraclized_policy import companion_calls
 from scripts.deploy_yb_oraclized_policy import constructor_args
 from scripts.deploy_yb_oraclized_policy import deploy as deploy_script
 from tests.conftest import _deploy_pool
@@ -2193,6 +2192,7 @@ def totalSupply() -> uint256:
 FORK_BLOCK = 26_206_129
 VPOOL_ADDRESS = "0x772cfF0BE38A6ED31aeAe479cbcb26D54B8404CF"
 OWNER_PROXY = "0x97aA696e37659Fb4f0B53824246d802Df40E980A"  # Pool admin (Curve DAO).
+LT_ADDRESS = "0x2B9c9f3BdcEb5d8E36a4704f08a78Fca53343cEa"  # LT of YieldBasis market 10
 
 
 @pytest.mark.skipif(os.getenv("ORACLIZED_YB_FORK") != "1", reason="opt-in RPC test")
@@ -2208,22 +2208,14 @@ def test_production_market_fork():
 
         pool = POOL_DEPLOYER.at(PRODUCTION.pool)
         amm = boa.loads_partial(AMM_STUB).at(PRODUCTION.amm)
-        lt = boa.loads_partial(LT_STUB).at(PRODUCTION.lt)
+        lt = boa.loads_partial(LT_STUB).at(LT_ADDRESS)
         vpool = boa.loads_partial(VPOOL_STUB).at(VPOOL_ADDRESS)
         weth = boa.loads_partial(ERC20_STUB).at(pool.coins(1))
         crvusd = boa.loads_partial(ERC20_STUB + TOTAL_SUPPLY_STUB).at(pool.coins(0))
         assert pool.POLICY() == "0x0000000000000000000000000000000000000000"
-        # The printed calls: the Curve vote (attach, RPF) and YieldBasis' LevAMM fee.
-        # LT accepts its admin, the YieldBasis factory, or that factory's admin.
-        lt_admin = boa.loads_partial(LT_STUB).at(lt.admin()).admin()
-        for target, data, _ in companion_calls(policy.address, PRODUCTION, pool.admin_fee()):
-            boa.env.raw_call(
-                target, sender=OWNER_PROXY if target == pool.address else lt_admin, data=data
-            )
-        assert pool.POLICY() == policy.address
-        assert pool.reserved_profit_fraction() == PRODUCTION.reserved_profit_fraction
         assert pool.admin_fee() == 0
-        assert amm.fee() == PRODUCTION.amm_fee
+        pool.set_policy_contract(policy, sender=OWNER_PROXY)
+        assert pool.POLICY() == policy.address
         m = SimpleNamespace(pool=pool, market=amm, policy=policy)
         assert_caches_follow_ledgers(m)
         assert policy.amm_surplus() == 0
