@@ -1,25 +1,26 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v4.1.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
-      - id: check-toml
       - id: check-yaml
-      - id: check-ast
-      - id: detect-private-key
-
-  - repo: https://github.com/kynan/nbstripout
-    rev: 0.7.1
+  - repo: https://github.com/psf/black
+    rev: 22.3.0
     hooks:
-      - id: nbstripout
-
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.6.9
+      - id: black
+        args: [--line-length=79]
+  - repo: https://github.com/pycqa/flake8
+    rev: 4.0.1
     hooks:
-      - id: ruff
-        args: [--fix, --exit-non-zero-on-fix]
-      - id: ruff-format
+      - id: flake8
+  - repo: https://github.com/pycqa/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+        args: ["--profile", "black", --line-length=79]
 
 default_language_version:
-  python: python3.12
+  python: python3.10.4
