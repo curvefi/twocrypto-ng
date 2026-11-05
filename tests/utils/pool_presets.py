@@ -17,5 +17,6 @@ numeric_columns = [
 ]
 
 all_presets = [
-    {k: int(v) if k in numeric_columns else v for k, v in d.items()} for d in all_presets
+    {k: int(v) if k in numeric_columns else v for k, v in d.items()}
+    for d in all_presets
 ]

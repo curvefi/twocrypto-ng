@@ -1,54 +1,51 @@
-name: unit-tests-boa
+name: tests
 
-on: [push]
-
-env:
-  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  RPC_ETHEREUM: ${{ secrets.RPC_ETHEREUM }}
+on: [push, pull_request]
 
 jobs:
   tests:
-    name: ${{ matrix.folder }} (${{ matrix.venom.name }})
+    name: ${{ matrix.suite.name }}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        folder:
-          - "tests/unitary"
-          - "tests/stateful"
-          - "tests/fuzzing"
-        venom:
-          - { name: "standard mode", value: false }
-          - { name: "venom mode", value: true }
-    continue-on-error: ${{ matrix.venom.value }}
+        suite:
+          - name: unit
+            args: tests/unitary --ignore=tests/unitary/pool/stateful --ignore=tests/unitary/math
+          - name: stateful
+            args: tests/unitary/pool/stateful --ignore=tests/unitary/pool/stateful/legacy
+          - name: math
+            args: tests/unitary/math
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v6
         with:
-          version: "0.4.18"
-          enable-cache: true  # Enables built-in caching for uv
+          enable-cache: true
 
-      - name: Cache Compiler Installations
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.vvm
-          key: compiler-cache-${{ hashFiles('**/uv.lock') }}
-
-      - name: Set up Python 3.12.6
-        run: uv python install 3.12.6
-
-      - name: Install Requirements
-        run: uv sync --extra=dev
-
-      - name: Install Nightly Vyper if Venom is enabled
-        if: ${{ matrix.venom.value }}
-        run: |
-          uv pip install --force-reinstall 'git+https://github.com/vyperlang/vyper.git@master#egg=vyper'
+      - name: Install Python and dependencies
+        run: uv sync --locked
 
       - name: Run tests
-        run: |
-          export VENOM=${{ matrix.venom.value }}
-          uv run pytest ${{ matrix.folder }} -n auto
+        run: uv run pytest ${{ matrix.suite.args }} -n auto
+
+  integration:
+    # Needs the RPC_ETHEREUM secret, which pull requests from forks do not get.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    env:
+      RPC_ETHEREUM: ${{ secrets.RPC_ETHEREUM }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install Python and dependencies
+        run: uv sync --locked
+
+      - name: Run integration tests
+        run: uv run pytest tests/integration/test_create2_deployment.py

@@ -9,7 +9,12 @@ from boa.test import strategy
 from hypothesis import assume, note
 from hypothesis.strategies import composite, integers, just, sampled_from
 
-from tests.unitary.factory.test_deploy_pool import ZERO_ADDRESS
+# compiling contracts
+from contracts.main import CurveCryptoMathOptimized2 as math_deployer
+from contracts.main import CurveCryptoViews2Optimized as view_deployer
+from contracts.main import CurveTwocryptoFactory as factory_deployer
+from contracts.main import CurveTwocryptoOptimized as amm_deployer
+from contracts.main import LiquidityGauge as gauge_deployer
 from tests.utils.constants import (
     MAX_A,
     MAX_FEE,
@@ -17,20 +22,15 @@ from tests.utils.constants import (
     MIN_A,
     MIN_FEE,
     MIN_GAMMA,
-    POOL_DEPLOYER,
-    ERC20_DEPLOYER,
-    FACTORY_DEPLOYER,
-    MATH_DEPLOYER,
-    GAUGE_DEPLOYER,
-    VIEW_DEPLOYER,
 )
 from tests.utils.pool_presets import all_presets
 
 # ---------------- hypothesis test profiles ----------------
 
-# just a more hypothesis-like way to get an address
+# just a more hyptohesis-like way to get an address
 # from boa's search strategy
-address = strategy("address").filter(lambda x: x != ZERO_ADDRESS)
+address = strategy("address")
+
 # ---------------- addresses ----------------
 deployer = address
 fee_receiver = address
@@ -49,17 +49,17 @@ def factory(
     assume(_fee_receiver != _owner != _deployer)
 
     with boa.env.prank(_deployer):
-        pool_implementation = POOL_DEPLOYER.deploy_as_blueprint()
-        gauge_implementation = GAUGE_DEPLOYER.deploy_as_blueprint()
+        amm_implementation = amm_deployer.deploy_as_blueprint()
+        gauge_implementation = gauge_deployer.deploy_as_blueprint()
 
-        view_contract = VIEW_DEPLOYER.deploy()
-        math_contract = MATH_DEPLOYER.deploy()
+        view_contract = view_deployer.deploy()
+        math_contract = math_deployer.deploy()
 
-        _factory = FACTORY_DEPLOYER.deploy()
+        _factory = factory_deployer.deploy()
         _factory.initialise_ownership(_fee_receiver, _owner)
 
     with boa.env.prank(_owner):
-        _factory.set_pool_implementation(pool_implementation, 0)
+        _factory.set_pool_implementation(amm_implementation, 0)
         _factory.set_gauge_implementation(gauge_implementation)
         _factory.set_views_implementation(view_contract)
         _factory.set_math_implementation(math_contract)
@@ -101,8 +101,9 @@ price = integers(min_value=int(1e10), max_value=int(1e26))
 # towards 18 in case of failure (instead of 2)
 token = sampled_from([18, 6, 2]).map(
     # token = just(18).map(
-    lambda x: ERC20_DEPLOYER.deploy("USD", "USD", x)
+    lambda x: boa.load("contracts/mocks/ERC20Mock.vy", "USD", "USD", x)
 )
+weth = just(boa.load("contracts/mocks/WETH.vy"))
 
 
 # ---------------- pool ----------------
@@ -146,7 +147,7 @@ def pool(
             draw(price),
         )
 
-    _pool = POOL_DEPLOYER.at(_pool)
+    _pool = amm_deployer.at(_pool)
 
     note(
         "deployed pool with "
@@ -166,7 +167,9 @@ def pool(
 def pool_from_preset(draw, preset=sampled_from(all_presets)):
     params = draw(preset)
 
-    note("[POOL PRESET: {}] \n {}".format(params["name"], params["description"]))
+    note(
+        "[POOL PRESET: {}] \n {}".format(params["name"], params["description"])
+    )
 
     return draw(
         pool(
