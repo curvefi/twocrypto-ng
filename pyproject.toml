@@ -3,7 +3,7 @@ name = "twocrypto-ng"
 version = "2.1.0"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "vyper==0.3.10",
+    "vyper==0.4.3rc1",
     "titanoboa",
 ]
 
