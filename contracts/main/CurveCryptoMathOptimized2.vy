@@ -200,6 +200,8 @@ def _newton_y(ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: 
             diff = y_prev - y
 
         if diff < max(convergence_limit, y // 10**14):
+            frac: uint256 = y * 10**18 // D
+            assert (frac >= unsafe_div(10**36 // N_COINS, lim_mul)) and (frac <= unsafe_div(lim_mul, N_COINS))  # dev: unsafe value for y
             return y
 
     raise "Did not converge"
@@ -217,11 +219,7 @@ def newton_y(ANN: uint256, gamma: uint256, x: uint256[N_COINS], D: uint256, i: u
     if gamma > MAX_GAMMA_SMALL:
         lim_mul = unsafe_div(unsafe_mul(lim_mul, MAX_GAMMA_SMALL), gamma)  # smaller than 100.0
 
-    y: uint256 = self._newton_y(ANN, gamma, x, D, i, lim_mul)
-    frac: uint256 = y * 10**18 // D
-    assert (frac >= unsafe_div(10**36 // N_COINS, lim_mul)) and (frac <= unsafe_div(lim_mul, N_COINS))  # dev: unsafe value for y
-
-    return y
+    return self._newton_y(ANN, gamma, x, D, i, lim_mul)
 
 
 @external
@@ -329,7 +327,10 @@ def get_y(
     delta1 = 3 * delta0 + b - unsafe_div(unsafe_mul(unsafe_div(unsafe_mul(27, a**2), b), d), b)
 
     # sqrt_arg: int256 = delta1**2 + 4*delta0**2/b*delta0
-    sqrt_arg: int256 = delta1**2 + (4 * delta0**2 // b) * delta0
+    sqrt_arg: int256 = 0
+    term: int256 = 4 * delta0**2 // b
+    if abs(term) <= max_value(int256) // max(abs(delta0), 1):
+        sqrt_arg = delta1**2 + term * delta0
     sqrt_val: int256 = 0
     if sqrt_arg > 0:
         sqrt_val = convert(isqrt(convert(sqrt_arg, uint256)), int256)

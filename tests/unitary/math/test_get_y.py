@@ -129,7 +129,6 @@ def test_get_y(math_unoptimized, math_optimized, A, D, xD, yD, gamma, j, _tmp):
 
     if K0 == 0:
         event("fallback to newton_y")
-        return
 
     assert abs(result_original - result_get_y) <= max(
         10**4, result_original / 1e8

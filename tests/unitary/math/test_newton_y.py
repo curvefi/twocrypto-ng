@@ -22,6 +22,7 @@ We don't test the correctness of y because newton_y should always
 converge to the correct value (or not converge at all otherwise).
 """
 
+import boa
 import pytest
 from hypothesis import event, given, settings
 from hypothesis import strategies as st
@@ -190,6 +191,13 @@ def test_new_bounds(
     y_exposed, iterations = math_exposed.internal._newton_y(
         A, gamma, X, D, j, int(lim_mul)
     )
+
+    # _newton_y rejects a y outside the range set by lim_mul.
+    low, high = 10**36 // N_COINS // int(lim_mul), int(lim_mul) // N_COINS
+    if not low <= y_exposed * 10**18 // D <= high:
+        with boa.reverts(dev="unsafe value for y"):
+            math_optimized.internal._newton_y(A, gamma, X, D, j, int(lim_mul))
+        return
 
     # this should not revert (didn't converge or hit bounds)
     y = math_optimized.internal._newton_y(A, gamma, X, D, j, int(lim_mul))
