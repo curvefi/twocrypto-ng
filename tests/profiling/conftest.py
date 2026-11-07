@@ -2,19 +2,20 @@ import boa
 import pytest
 from hypothesis import assume
 
-from contracts.experimental.initial_guess import (
-    CurveCryptoMathOptimized2 as math_deployer_initial_guess,
-)
-from contracts.experimental.initial_guess import (
-    CurveTwocryptoOptimized as amm_deployer_initial_guess,
-)
-
 # compiling contracts
 from contracts.main import CurveCryptoMathOptimized2 as math_deployer
 from contracts.main import CurveCryptoViews2Optimized as view_deployer
-from contracts.main import CurveTwocryptoFactory as factory_deployer
 from contracts.main import CurveTwocryptoOptimized as amm_deployer
+from tests.utils.legacy import LEGACY_FACTORY, load_legacy_partial
 from tests.utils.tokens import mint_for_testing
+
+factory_deployer = load_legacy_partial(LEGACY_FACTORY)
+math_deployer_initial_guess = load_legacy_partial(
+    "contracts/experimental/initial_guess/CurveCryptoMathOptimized2.vy"
+)
+amm_deployer_initial_guess = load_legacy_partial(
+    "contracts/experimental/initial_guess/CurveTwocryptoOptimized.vy"
+)
 
 # ---------------- addresses ----------------
 address = boa.test.strategy("address")

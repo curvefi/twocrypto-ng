@@ -2,15 +2,14 @@ import boa
 import pytest
 
 from tests.unitary.pool.token.test_permit import ZERO_ADDRESS
+from tests.utils.legacy import LEGACY_FACTORY, load_legacy_partial
 
 
 @pytest.fixture(scope="module")
 def empty_factory(deployer, fee_receiver, owner):
 
     with boa.env.prank(deployer):
-        factory = boa.load(
-            "contracts/main/CurveTwocryptoFactory.vy",
-        )
+        factory = load_legacy_partial(LEGACY_FACTORY).deploy()
 
     assert factory.admin() == ZERO_ADDRESS
     assert factory.fee_receiver() == ZERO_ADDRESS
@@ -33,9 +32,7 @@ def test_deployer_cannot_set_ownership_twice(empty_factory, deployer):
 
 def test_nondeployer_cannot_set_ownership(deployer):
     with boa.env.prank(deployer):
-        factory = boa.load(
-            "contracts/main/CurveTwocryptoFactory.vy",
-        )
+        factory = load_legacy_partial(LEGACY_FACTORY).deploy()
 
     with boa.env.prank(boa.env.generate_address()), boa.reverts():
         factory.initialise_ownership(

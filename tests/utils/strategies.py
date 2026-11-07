@@ -12,9 +12,7 @@ from hypothesis.strategies import composite, integers, just, sampled_from
 # compiling contracts
 from contracts.main import CurveCryptoMathOptimized2 as math_deployer
 from contracts.main import CurveCryptoViews2Optimized as view_deployer
-from contracts.main import CurveTwocryptoFactory as factory_deployer
 from contracts.main import CurveTwocryptoOptimized as amm_deployer
-from contracts.main import LiquidityGauge as gauge_deployer
 from tests.utils.constants import (
     MAX_A,
     MAX_FEE,
@@ -23,7 +21,15 @@ from tests.utils.constants import (
     MIN_FEE,
     MIN_GAMMA,
 )
+from tests.utils.legacy import (
+    LEGACY_FACTORY,
+    LEGACY_GAUGE,
+    load_legacy_partial,
+)
 from tests.utils.pool_presets import all_presets
+
+factory_deployer = load_legacy_partial(LEGACY_FACTORY)
+gauge_deployer = load_legacy_partial(LEGACY_GAUGE)
 
 # ---------------- hypothesis test profiles ----------------
 
