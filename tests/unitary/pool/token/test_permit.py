@@ -39,10 +39,10 @@ def test_permit_success(eth_acc, bob, swap, sign_permit):
     assert swap.allowance(eth_acc.address, bob) == value
     assert len(logs) == 1
     assert swap.nonces(eth_acc.address) == 1
-    assert logs[0].event_type.name == "Approval"
-    assert logs[0].topics[0].lower() == eth_acc.address.lower()
-    assert logs[0].topics[1].lower() == bob.lower()
-    assert logs[0].args[0] == value
+    assert type(logs[0]).__name__ == "Approval"
+    assert logs[0].owner.lower() == eth_acc.address.lower()
+    assert logs[0].spender.lower() == bob.lower()
+    assert logs[0].value == value
 
 
 def test_permit_reverts_owner_is_invalid(bob, swap):

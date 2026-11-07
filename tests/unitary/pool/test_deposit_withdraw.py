@@ -323,8 +323,8 @@ def test_immediate_withdraw_one(
 
             logs = swap_with_deposit.get_logs()
             for log in logs:
-                if log.event_type.name == "ClaimAdminFee":
-                    claimed_fees = log.args[0]
+                if type(log).__name__ == "ClaimAdminFee":
+                    claimed_fees = log.tokens
 
         except Exception:
 

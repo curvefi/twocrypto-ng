@@ -27,6 +27,11 @@ jobs:
       - name: Install Python and dependencies
         run: uv sync --locked
 
+      - name: Install Vyper 0.3.10 for the legacy factory and gauge
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: uv run python -c "import vvm; vvm.install_vyper('0.3.10')"
+
       - name: Run tests
         run: uv run pytest ${{ matrix.suite.args }} -n auto
 
@@ -46,6 +51,11 @@ jobs:
 
       - name: Install Python and dependencies
         run: uv sync --locked
+
+      - name: Install Vyper 0.3.10 for the legacy factory and gauge
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: uv run python -c "import vvm; vvm.install_vyper('0.3.10')"
 
       - name: Run integration tests
         run: uv run pytest tests/integration/test_create2_deployment.py
