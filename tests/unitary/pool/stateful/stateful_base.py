@@ -12,11 +12,13 @@ from hypothesis.stateful import (
 )
 from hypothesis.strategies import integers
 
-from contracts.main import CurveTwocryptoFactory as factory
 from contracts.mocks import ERC20Mock as ERC20
 from tests.utils.constants import UNIX_DAY
+from tests.utils.legacy import LEGACY_FACTORY, load_legacy_partial
 from tests.utils.strategies import address, pool_from_preset
 from tests.utils.tokens import mint_for_testing
+
+factory = load_legacy_partial(LEGACY_FACTORY)
 
 
 class StatefulBase(RuleBasedStateMachine):

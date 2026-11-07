@@ -2,12 +2,44 @@
 
 import sys
 from dataclasses import dataclass
+from functools import lru_cache
 
+import vvm
+from boa.contracts.vvm.vvm_contract import VVMDeployer
 from eth_typing import Address
 from eth_utils import keccak
 from rich.console import Console as RichConsole
 
 logger = RichConsole(file=sys.stdout)
+
+# The factory and gauge stay on their deployed Vyper 0.3.10 source.
+LEGACY_VYPER = "0.3.10"
+LEGACY_FACTORY = "contracts/main/CurveTwocryptoFactory.vy"
+LEGACY_GAUGE = "contracts/main/LiquidityGauge.vy"
+
+
+@lru_cache(maxsize=None)
+def load_legacy_partial(path: str) -> VVMDeployer:
+    """Compile a legacy contract with an explicit compiler version.
+
+    This uses the installed binary and never asks vvm to pick a version, which
+    queries the GitHub API. The runtime bytecode is kept for deployment checks.
+    """
+    vvm.install_vyper(
+        LEGACY_VYPER
+    )  # returns immediately when already installed
+    with open(path) as f:
+        compiled = vvm.compile_source(f.read(), vyper_version=LEGACY_VYPER)[
+            "<stdin>"
+        ]
+    deployer = VVMDeployer.from_compiler_output(
+        compiled, name=path, filename=path
+    )
+    deployer.bytecode_runtime = bytes.fromhex(
+        compiled["bytecode_runtime"].removeprefix("0x")
+    )
+    return deployer
+
 
 GAUGE_CONTROLLER = "0x2F50D538606Fa9EDD2B11E2446BEb18C9D5846bB"
 ADDRESS_PROVIDER = "0x0000000022d53366457f9d5e68ec105046fc4383"

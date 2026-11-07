@@ -1,6 +1,12 @@
 import boa
 import pytest
 
+from tests.utils.legacy import (
+    LEGACY_FACTORY,
+    LEGACY_GAUGE,
+    load_legacy_partial,
+)
+
 
 @pytest.fixture(scope="module")
 def math_contract(deployer):
@@ -10,7 +16,7 @@ def math_contract(deployer):
 
 @pytest.fixture(scope="module")
 def gauge_interface():
-    return boa.load_partial("contracts/main/LiquidityGauge.vy")
+    return load_legacy_partial(LEGACY_GAUGE)
 
 
 @pytest.fixture(scope="module")
@@ -47,7 +53,7 @@ def factory(
     views_contract,
 ):
     with boa.env.prank(deployer):
-        factory = boa.load("contracts/main/CurveTwocryptoFactory.vy")
+        factory = load_legacy_partial(LEGACY_FACTORY).deploy()
         factory.initialise_ownership(fee_receiver, owner)
 
     with boa.env.prank(owner):

@@ -14,4 +14,13 @@ def mint_for_testing(token_contract, addr, amount, mint_eth=False):
     else:
         token_contract.eval(f"self.totalSupply += {amount}")
         token_contract.eval(f"self.balanceOf[{addr}] += {amount}")
-        token_contract.eval(f"log Transfer(empty(address), {addr}, {amount})")
+        # Transfer field names differ between tokens (mock vs pool LP token).
+        sender, receiver, value = [
+            field["name"]
+            for event in token_contract.abi
+            if event.get("type") == "event" and event["name"] == "Transfer"
+            for field in event["inputs"]
+        ]
+        token_contract.eval(
+            f"log Transfer({sender}=empty(address), {receiver}={addr}, {value}={amount})"
+        )

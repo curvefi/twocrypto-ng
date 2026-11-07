@@ -1,14 +1,11 @@
 [project]
 name = "twocrypto-ng"
-version = "2.1.0"
+version = "2.2.0"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "vyper==0.3.10",
-    "titanoboa",
+    "vyper==0.4.3",
+    "titanoboa==0.2.8",
 ]
-
-[tool.uv.sources]
-titanoboa = { git = "https://github.com/vyperlang/titanoboa.git", rev = "40e85c602aa2c15baaf5060547c1224178d9efae" }
 
 [dependency-groups]
 dev = [
