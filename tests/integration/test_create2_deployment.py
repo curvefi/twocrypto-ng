@@ -1,8 +1,63 @@
+"""Mainnet-fork rehearsal of the v2.2.0 implementation upgrade.
+
+The legacy factory and gauge stay as deployed. The new math, pool blueprint
+and views are deployed through the CREATE2 deployer at their predicted
+addresses, the factory admin points the factory at them (as the governance
+vote will), and a pool deployed from the factory is exercised end to end.
+Impersonating the admin proves the setters, not the vote route.
+"""
+
 import os
 
 import boa
 import pytest
 from eth_utils import keccak
+
+from tests.utils.legacy import (
+    LEGACY_FACTORY,
+    LEGACY_GAUGE,
+    load_legacy_partial,
+)
+
+FORK_BLOCK = 26_359_143
+CREATE2_DEPLOYER = "0x13b0D85CcB8bf860b6b79AF3029fCA081AE9beF2"
+SALT = keccak(42069)
+BLUEPRINT_PREAMBLE = b"\xFE\x71\x00"
+
+FACTORY = "0x98EE851a00abeE0d95D08cF4CA2BdCE32aeaAF7F"
+NEW_MATH = "0x22804C5F876d5Bad80dc0E208674F8304935714C"
+NEW_AMM = "0x8a161Ad9ca4eA9fF5E477e4cf05ced616C025c07"
+NEW_VIEWS = "0x6cFe8D0e1d3356575d141ecCdEfe7e89F8364A03"
+
+CRVUSD = "0xf939E0A03FB07F59A73314E73794Be0E57ac1b4E"
+CRV = "0xD533a949740bb3306d119CC777fa900bA034cd52"
+
+POOL_PARAMS = {
+    "A": 400000,
+    "gamma": 72500000000000,
+    "mid_fee": 26000000,
+    "out_fee": 45000000,
+    "fee_gamma": 230000000000000,
+    "allowed_extra_profit": 2000000000000,
+    "adjustment_step": 146000000000000,
+    "ma_time": 866,
+    "initial_price": 634800240283136736,  # CRV priced in crvUSD
+}
+# Equal value of crvUSD and CRV at the initial price.
+DEPOSIT = [
+    10_000 * 10**18,
+    10_000 * 10**36 // POOL_PARAMS["initial_price"],
+]
+
+
+def blueprint_initcode(initcode):
+    body = BLUEPRINT_PREAMBLE + initcode
+    return (
+        b"\x61"
+        + len(body).to_bytes(2, "big")
+        + b"\x3d\x81\x60\x0a\x3d\x39\xf3"
+        + body
+    )
 
 
 @pytest.fixture(scope="module")
@@ -10,211 +65,157 @@ def forked_chain():
     rpc_url = os.getenv("RPC_ETHEREUM")
     assert (
         rpc_url is not None
-    ), "Provider url is not set, add RPC_ETHEREUM param to env"
+    ), "Set RPC_ETHEREUM to an Ethereum mainnet archive endpoint"
     env = boa.Env()
-    env.fork(rpc_url)
+    env.fork(url=rpc_url, block_identifier=FORK_BLOCK, deprecated=False)
     with boa.swap_env(env):
         yield
 
 
 @pytest.fixture(scope="module")
-def create2deployer():
-    return boa.load_abi("abi/create2deployer.json").at(
-        "0x13b0D85CcB8bf860b6b79AF3029fCA081AE9beF2"
-    )
-
-
-def get_create2_deployment_address(
-    create2deployer,
-    compiled_bytecode,
-    abi_encoded_ctor,
-    salt,
-    blueprint=False,
-    blueprint_preamble=b"\xFE\x71\x00",
-):
-    deployment_bytecode = compiled_bytecode + abi_encoded_ctor
-    if blueprint:
-        # Add blueprint preamble to disable calling the contract:
-        blueprint_bytecode = blueprint_preamble + deployment_bytecode
-        # Add code for blueprint deployment:
-        len_blueprint_bytecode = len(blueprint_bytecode).to_bytes(2, "big")
-        deployment_bytecode = (
-            b"\x61"
-            + len_blueprint_bytecode
-            + b"\x3d\x81\x60\x0a\x3d\x39\xf3"
-            + blueprint_bytecode
-        )
-
-    return (
-        create2deployer.computeAddress(salt, keccak(deployment_bytecode)),
-        deployment_bytecode,
-    )
-
-
-def deploy_via_create2_factory(create2deployer, deployment_bytecode, salt):
-    create2deployer.deploy(0, salt, deployment_bytecode)
-
-
-def deploy_contract(
-    contract_obj,
-    abi_encoded_args,
-    create2deployer,
-    calculated_address,
-    deployer=boa.env.generate_address(),
-    blueprint: bool = False,
-):
-
-    try:
-        salt = keccak(42069)
-        compiled_bytecode = contract_obj.compiler_data.bytecode
-        (
-            precomputed_address,
-            deployment_bytecode,
-        ) = get_create2_deployment_address(
-            create2deployer,
-            compiled_bytecode,
-            abi_encoded_args,
-            salt,
-            blueprint=blueprint,
-            blueprint_preamble=b"\xFE\x71\x00",
-        )
-        assert precomputed_address == calculated_address
-
-        with boa.env.prank(deployer):
-            deploy_via_create2_factory(
-                create2deployer, deployment_bytecode, salt
-            )
-    except Exception:
-        # we revert here if contract is already deployed!
-        # safe to catch exception since we perform other tests later on
-        return contract_obj.at(precomputed_address)
-
-    return contract_obj.at(precomputed_address)
+def create2deployer(forked_chain):
+    return boa.load_abi("abi/create2deployer.json").at(CREATE2_DEPLOYER)
 
 
 @pytest.fixture(scope="module")
-def math_contract(forked_chain, create2deployer):
-    return deploy_contract(
-        boa.load_partial("contracts/main/CurveCryptoMathOptimized2.vy"),
-        abi_encoded_args=b"",
-        create2deployer=create2deployer,
-        calculated_address="0x2005995a71243be9FB995DaB4742327dc76564Df",
-        blueprint=False,
-    )
-
-
-@pytest.fixture(scope="module")
-def gauge_implementation(forked_chain, create2deployer):
-    return deploy_contract(
-        boa.load_partial("contracts/main/LiquidityGauge.vy"),
-        abi_encoded_args=b"",
-        create2deployer=create2deployer,
-        calculated_address="0xF0B468653de6475c2d17c0b7b5405417CE6a6d67",
-        blueprint=True,
-    )
-
-
-@pytest.fixture(scope="module")
-def amm_implementation(forked_chain, create2deployer):
-    return deploy_contract(
-        boa.load_partial("contracts/main/CurveTwocryptoOptimized.vy"),
-        abi_encoded_args=b"",
-        create2deployer=create2deployer,
-        calculated_address="0x04Fd6beC7D45EFA99a27D29FB94b55c56dD07223",
-        blueprint=True,
-    )
-
-
-@pytest.fixture(scope="module")
-def views_contract(forked_chain, create2deployer):
-    return deploy_contract(
-        boa.load_partial("contracts/main/CurveCryptoViews2Optimized.vy"),
-        abi_encoded_args=b"",
-        create2deployer=create2deployer,
-        calculated_address="0x07CdEBF81977E111B08C126DEFA07818d0045b80",
-        blueprint=False,
-    )
-
-
-@pytest.fixture(scope="module")
-def factory(
-    deployer,
-    fee_receiver,
-    owner,
-    amm_implementation,
-    gauge_implementation,
-    views_contract,
-    math_contract,
-    forked_chain,
-    create2deployer,
-):
-
-    _factory = deploy_contract(
-        boa.load_partial("contracts/main/CurveTwocryptoFactory.vy"),
-        abi_encoded_args=b"",
-        create2deployer=create2deployer,
-        calculated_address="0x98EE851a00abeE0d95D08cF4CA2BdCE32aeaAF7F",
-        deployer=deployer,
-        blueprint=False,
-    )
-
-    if _factory.admin() == "0x0000000000000000000000000000000000000000":
-        with boa.env.prank(deployer):
-            _factory.initialise_ownership(fee_receiver, owner)
-
-        with boa.env.prank(owner):
-            _factory.set_pool_implementation(amm_implementation.address, 0)
-            _factory.set_gauge_implementation(gauge_implementation.address)
-            _factory.set_views_implementation(views_contract.address)
-            _factory.set_math_implementation(math_contract.address)
-
-    return _factory
-
-
-@pytest.fixture(scope="module")
-def coins():
-    erc20_mock = boa.load_partial("./contracts/mocks/ERC20Mock.vy")
-    return [
-        erc20_mock.at("0xf939E0A03FB07F59A73314E73794Be0E57ac1b4E"),
-        erc20_mock.at("0xD533a949740bb3306d119CC777fa900bA034cd52"),
-    ]
-
-
-@pytest.fixture(scope="module")
-def pool(coins, factory, amm_interface, deployer, forked_chain):
-    _params = {
-        "A": 400000,
-        "gamma": 72500000000000,
-        "mid_fee": 26000000,
-        "out_fee": 45000000,
-        "allowed_extra_profit": 2000000000000,
-        "fee_gamma": 230000000000000,
-        "adjustment_step": 146000000000000,
-        "ma_time": 866,
-        "initial_prices": 634800240283136736,
+def new_artifacts(create2deployer):
+    """Deploy math, views and the pool blueprint; return the expected code."""
+    math = boa.load_partial("contracts/main/CurveCryptoMathOptimized2.vy")
+    views = boa.load_partial("contracts/main/CurveCryptoViews2Optimized.vy")
+    amm = boa.load_partial("contracts/main/CurveTwocryptoOptimized.vy")
+    artifacts = {
+        NEW_MATH: (
+            math.compiler_data.bytecode,
+            math.compiler_data.bytecode_runtime,
+        ),
+        NEW_VIEWS: (
+            views.compiler_data.bytecode,
+            views.compiler_data.bytecode_runtime,
+        ),
+        NEW_AMM: (
+            blueprint_initcode(amm.compiler_data.bytecode),
+            BLUEPRINT_PREAMBLE + amm.compiler_data.bytecode,
+        ),
     }
-
-    with boa.env.prank(deployer):
-        swap = factory.deploy_pool(
-            "Curve.fi crvUSD<>CRV",  # _name: String[64]
-            "crvUSD<>CRV",  # _symbol: String[32]
-            [coin.address for coin in coins],  # _coins: address[N_COINS]
-            0,  # implementation_id: uint256
-            _params["A"],  # A: uint256
-            _params["gamma"],  # gamma: uint256
-            _params["mid_fee"],  # mid_fee: uint256
-            _params["out_fee"],  # out_fee: uint256
-            _params["fee_gamma"],  # fee_gamma: uint256
-            _params["allowed_extra_profit"],  # allowed_extra_profit: uint256
-            _params["adjustment_step"],  # adjustment_step: uint256
-            _params["ma_time"],  # ma_exp_time: uint256
-            _params["initial_prices"],  # initial_price: uint256
+    for expected_address, (initcode, _) in artifacts.items():
+        assert (
+            create2deployer.computeAddress(SALT, keccak(initcode))
+            == expected_address
         )
+        assert boa.env.get_code(expected_address) == b""
+        create2deployer.deploy(0, SALT, initcode)
+    return artifacts
 
-    return amm_interface.at(swap)
+
+@pytest.fixture(scope="module")
+def legacy_factory(forked_chain):
+    return load_legacy_partial(LEGACY_FACTORY).at(FACTORY)
 
 
-def test_A_gamma(pool, forked_chain):
+@pytest.fixture(scope="module")
+def upgraded_factory(legacy_factory, new_artifacts):
+    # Math before the blueprint: deploy_pool reads both pointers.
+    with boa.env.prank(legacy_factory.admin()):
+        legacy_factory.set_math_implementation(NEW_MATH)
+        legacy_factory.set_pool_implementation(NEW_AMM, 0)
+        legacy_factory.set_views_implementation(NEW_VIEWS)
+    return legacy_factory
 
-    assert pool.A() == 400000
-    assert pool.gamma() == 72500000000000
+
+@pytest.fixture(scope="module")
+def coins(forked_chain):
+    erc20 = boa.load_partial("contracts/mocks/ERC20Mock.vy")
+    return [erc20.at(CRVUSD), erc20.at(CRV)]
+
+
+@pytest.fixture(scope="module")
+def pool(upgraded_factory, coins, amm_interface):
+    p = POOL_PARAMS
+    with boa.env.prank(boa.env.generate_address()):
+        address = upgraded_factory.deploy_pool(
+            "Curve.fi crvUSD<>CRV",
+            "crvUSD<>CRV",
+            [coin.address for coin in coins],
+            0,
+            p["A"],
+            p["gamma"],
+            p["mid_fee"],
+            p["out_fee"],
+            p["fee_gamma"],
+            p["allowed_extra_profit"],
+            p["adjustment_step"],
+            p["ma_time"],
+            p["initial_price"],
+        )
+    return amm_interface.at(address)
+
+
+@pytest.fixture(scope="module")
+def user(pool, coins):
+    account = boa.env.generate_address()
+    for coin in coins:
+        boa.deal(coin, account, 10**24)
+        with boa.env.prank(account):
+            coin.approve(pool, 2**256 - 1)
+    return account
+
+
+def test_legacy_factory_source_matches_deployed(
+    legacy_factory, create2deployer
+):
+    factory = load_legacy_partial(LEGACY_FACTORY)
+    assert (
+        create2deployer.computeAddress(SALT, keccak(factory.bytecode))
+        == FACTORY
+    )
+    assert boa.env.get_code(FACTORY) == factory.bytecode_runtime
+
+
+def test_new_artifacts_deployed_with_expected_code(new_artifacts):
+    for address, (_, expected_code) in new_artifacts.items():
+        assert boa.env.get_code(address) == expected_code
+
+
+def test_factory_points_at_new_implementations(upgraded_factory):
+    assert upgraded_factory.math_implementation() == NEW_MATH
+    assert upgraded_factory.pool_implementations(0) == NEW_AMM
+    assert upgraded_factory.views_implementation() == NEW_VIEWS
+
+
+def test_new_pool_bindings(pool, upgraded_factory):
+    assert pool.MATH() == NEW_MATH
+    assert pool.factory() == upgraded_factory.address
+    assert pool.version() == "v2.2.0"
+    assert pool.A() == POOL_PARAMS["A"]
+    assert pool.gamma() == POOL_PARAMS["gamma"]
+
+
+def test_pool_operations(pool, coins, user):
+    with boa.env.prank(user):
+        lp = pool.add_liquidity(DEPOSIT, 0)
+        assert lp > 0
+
+        dx = 100 * 10**18
+        quoted = pool.get_dy(0, 1, dx)  # served by the new views contract
+        assert pool.exchange(0, 1, dx, 0) == quoted > 0
+
+        quoted = pool.calc_withdraw_one_coin(lp // 100, 1)
+        assert pool.remove_liquidity_one_coin(lp // 100, 1, 0) == quoted > 0
+
+        before = [coin.balanceOf(user) for coin in coins]
+        pool.remove_liquidity(lp // 10, [0, 0])
+        assert all(coin.balanceOf(user) > b for coin, b in zip(coins, before))
+
+
+def test_legacy_gauge_with_new_pool(pool, upgraded_factory, user):
+    gauge = load_legacy_partial(LEGACY_GAUGE).at(
+        upgraded_factory.deploy_gauge(pool)
+    )
+    assert gauge.lp_token() == pool.address
+    # Each test starts from the fixture state, so add liquidity here.
+    with boa.env.prank(user):
+        amount = pool.add_liquidity(DEPOSIT, 0) // 2
+        assert amount > 0
+        pool.approve(gauge, amount)
+        gauge.deposit(amount)
+    assert gauge.balanceOf(user) == amount

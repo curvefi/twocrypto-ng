@@ -329,7 +329,10 @@ def get_y(
     delta1 = 3 * delta0 + b - unsafe_div(unsafe_mul(unsafe_div(unsafe_mul(27, a**2), b), d), b)
 
     # sqrt_arg: int256 = delta1**2 + 4*delta0**2/b*delta0
-    sqrt_arg: int256 = delta1**2 + (4 * delta0**2 // b) * delta0
+    sqrt_arg: int256 = 0
+    term: int256 = 4 * delta0**2 // b
+    if abs(term) <= max_value(int256) // max(abs(delta0), 1):
+        sqrt_arg = delta1**2 + term * delta0
     sqrt_val: int256 = 0
     if sqrt_arg > 0:
         sqrt_val = convert(isqrt(convert(sqrt_arg, uint256)), int256)

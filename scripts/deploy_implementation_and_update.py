@@ -1,17 +1,24 @@
 # flake8: noqa E501
 
+import argparse
+import contextlib
 import os
 import sys
 
 import boa
-import deployment_utils as deploy_utils
 import yaml
-from boa.network import NetworkEnv
-from eth_account import Account
 from rich.console import Console as RichConsole
 
 sys.path.append("./")
-from scripts.deploy_infra import check_and_deploy
+from scripts.deploy_infra import (
+    AMM_ADDRESS,
+    MATH_ADDRESS,
+    VIEWS_ADDRESS,
+    check_and_deploy,
+    connect,
+    get_create2deployer,
+)
+from scripts.deployment_utils import LEGACY_FACTORY, load_legacy_partial
 
 logger = RichConsole(file=sys.stdout)
 
@@ -27,78 +34,125 @@ def deploy(network, url, account, fork=False):
     if not url:
         url = fetch_url(network.split(":")[0])
 
-    if fork:
-        boa.env.fork(url)
-        logger.log("Forkmode ...")
-        boa.env.eoa = deploy_utils.FIDDYDEPLOYER  # set eoa address here
-    else:
-        logger.log("Prodmode ...")
-        boa.set_env(NetworkEnv(url))
-        boa.env.add_account(Account.from_key(os.environ[account]))
-
-    CREATE2DEPLOYER = boa.load_abi("abi/create2deployer.json").at(
-        "0x13b0D85CcB8bf860b6b79AF3029fCA081AE9beF2"
-    )
+    connect(url, account, fork)
+    CREATE2DEPLOYER = get_create2deployer()
 
     with open("./deployments.yaml", "r") as file:
         deployments = yaml.safe_load(file)
 
-    factory = boa.load_partial("./contracts/main/CurveTwocryptoFactory.vy").at(
+    factory = load_legacy_partial(LEGACY_FACTORY).at(
         deployments[network]["factory"]
     )
 
-    math_contract_obj = boa.load_partial(
-        "./contracts/main/CurveCryptoMathOptimized2.vy"
-    )
-    amm_contract_obj = boa.load_partial(
-        "./contracts/main/CurveTwocryptoOptimized.vy"
-    )
-
     math_contract = check_and_deploy(
-        contract_obj=math_contract_obj,
+        contract_obj=boa.load_partial(
+            "./contracts/main/CurveCryptoMathOptimized2.vy"
+        ),
         contract_designation="math",
         network=network,
         create2deployer=CREATE2DEPLOYER,
-        calculated_address="0x1Fd8Af16DC4BEBd950521308D55d0543b6cDF4A1",
+        calculated_address=MATH_ADDRESS,
         upkeep_deploy_log=not fork,
     )
 
     amm_blueprint = check_and_deploy(
-        contract_obj=amm_contract_obj,
+        contract_obj=boa.load_partial(
+            "./contracts/main/CurveTwocryptoOptimized.vy"
+        ),
         contract_designation="amm",
         network=network,
         create2deployer=CREATE2DEPLOYER,
-        calculated_address="0x934791f7F391727db92BFF94cd789c4623d14c52",
+        calculated_address=AMM_ADDRESS,
         blueprint=True,
         upkeep_deploy_log=not fork,
     )
 
-    if boa.env.eoa == factory.admin():
+    views_contract = check_and_deploy(
+        contract_obj=boa.load_partial(
+            "./contracts/main/CurveCryptoViews2Optimized.vy"
+        ),
+        contract_designation="views",
+        network=network,
+        create2deployer=CREATE2DEPLOYER,
+        calculated_address=VIEWS_ADDRESS,
+        upkeep_deploy_log=not fork,
+    )
 
-        # update implementation here
-        if not factory.pool_implementations(0) == amm_blueprint.address:
-            logger.log("Setting AMM implementation ...")
-            factory.set_pool_implementation(amm_blueprint, 0)
+    # Math before the pool blueprint: deploy_pool reads both pointers.
+    updates = [
+        (
+            "set_math_implementation",
+            (math_contract.address,),
+            factory.math_implementation,
+        ),
+        (
+            "set_pool_implementation",
+            (amm_blueprint.address, 0),
+            lambda: factory.pool_implementations(0),
+        ),
+        (
+            "set_views_implementation",
+            (views_contract.address,),
+            factory.views_implementation,
+        ),
+    ]
 
-        if not factory.math_implementation() == math_contract.address:
-            logger.log("Setting Math implementation ...")
-            factory.set_math_implementation(math_contract)
+    def pending():
+        return [
+            (name, args)
+            for name, args, current in updates
+            if current() != args[0]
+        ]
 
-        logger.log("Done!")
+    admin = factory.admin()
+    if pending() and (fork or boa.env.eoa == admin):
+        # In fork mode this impersonates the admin to rehearse the governance execution.
+        sender = boa.env.prank(admin) if fork else contextlib.nullcontext()
+        with sender:
+            for name, args in pending():
+                logger.log(f"Calling {name}{args} ...")
+                getattr(factory, name)(*args)
 
-    else:
+    if pending():
+        logger.log(f"Factory admin {admin} must execute on {factory.address}:")
+        for name, args in pending():
+            calldata = getattr(factory, name).prepare_calldata(*args)
+            logger.log(f"  {name}{args}: 0x{calldata.hex()}")
+        return
 
-        logger.log(f"Could not update implementation for factory on {network}")
+    logger.log(
+        "Done! The factory points at the new math, pool blueprint and views."
+    )
 
 
 def main():
 
-    forkmode = False
+    parser = argparse.ArgumentParser(
+        description="Deploy new implementations and point an existing factory at them."
+    )
+    parser.add_argument(
+        "--network", required=True, help='e.g. "ethereum:mainnet"'
+    )
+    parser.add_argument(
+        "--url",
+        default="",
+        help="RPC endpoint (default: DRPC_URL with DRPC_KEY)",
+    )
+    parser.add_argument(
+        "--account",
+        default="FIDDYDEPLOYER",
+        help="environment variable holding the deployer private key",
+    )
+    parser.add_argument(
+        "--fork", action="store_true", help="run on a local fork"
+    )
+    args = parser.parse_args()
+
     deploy(
-        network="",
-        url="",
-        account="",
-        fork=forkmode,
+        network=args.network,
+        url=args.url,
+        account=args.account,
+        fork=args.fork,
     )
 
 
