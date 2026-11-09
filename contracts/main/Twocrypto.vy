@@ -1356,10 +1356,8 @@ def tweak_price(
 
             if (
                 new_virtual_price > 10**18 and
-                new_virtual_price >= lp_xcp_profit and
+                new_virtual_price >= lp_xcp_profit
                 # only rebalance when the LP-protected xcp threshold is preserved
-                self._in_domain(xp, new_D, A_gamma[1])
-                # and the rebalanced state stays inside the math's domain
             ):
                 self.D = new_D
                 self.virtual_price = new_virtual_price
@@ -1395,6 +1393,8 @@ def tweak_price(
                     self.donation_shares = new_total
                     self.totalSupply -= donation_shares_to_burn
                     self.last_donation_release_ts = block.timestamp - new_elapsed
+
+                assert self._in_domain(xp, new_D, A_gamma[1]), "!balance"
 
                 self._update_policy_state(
                     xp,

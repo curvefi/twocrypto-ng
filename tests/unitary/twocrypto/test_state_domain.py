@@ -2,9 +2,10 @@
 Committed states stay inside the math's domain.
 
 tweak_price refuses to commit a state whose D or balances lie outside the range
-TwocryptoMath.get_y accepts at the current gamma, and declines a rebalance whose
-new state would. Without this, a successful deposit or rebalance could leave a
-pool where every later swap and one-coin withdrawal reverts.
+TwocryptoMath.get_y accepts at the current gamma, including the state a
+rebalance would produce: the whole operation reverts. Without this, a
+successful deposit or rebalance could leave a pool where every later swap and
+one-coin withdrawal reverts.
 
 Each test also rebuilds the normalized balances from what is actually stored
 (balances and price scale) after every successful operation and checks the same
@@ -58,23 +59,47 @@ def test_one_sided_deposit_that_would_freeze_swaps(
     _assert_stored_state_in_domain(pool)
 
 
-def test_rebalance_near_lower_D_bound_is_declined(factory, coins, params, deployer):
+def test_rebalance_out_of_domain_reverts_until_deposit(factory, coins, params, deployer):
     # seeded just above the D floor; one-way swaps move the oracle until a
-    # rebalance would lower D below 1e17 (it did before the guard)
+    # rebalance would lower D below 1e17 (without the guard it stored such a D)
     pool = _new_pool(factory, coins, params, deployer)
     gm_pool = GodModePool(pool)
     gm_pool.add_liquidity([5 * 10**16 + 10**14, 5 * 10**16 + 10**14])
 
+    refused = False
     for _ in range(10):
         boa.env.time_travel(seconds=3600)
-        gm_pool.exchange(1, pool.balances(1) // 50)
+        try:
+            gm_pool.exchange(1, pool.balances(1) // 50)
+        except boa.BoaError:
+            refused = True
+            break
         assert pool.D() >= 10**17
         _assert_stored_state_in_domain(pool)
+    assert refused
 
-    # the next quote and swap still work
-    dx = 10**14
-    quote = pool.get_dy(0, 1, dx)
-    assert gm_pool.exchange(0, dx) == quote
+    # retrying the same swap hits the same out-of-domain rebalance: it reverts
+    # with the guard's reason and nothing is committed
+    D_before = pool.D()
+    with boa.reverts("!balance"):
+        gm_pool.exchange(1, pool.balances(1) // 50)
+    assert pool.D() == D_before
+    _assert_stored_state_in_domain(pool)
+
+    # a swap the other way changes the candidate and goes through: the pool is
+    # not frozen in both directions
+    assert gm_pool.exchange(0, pool.balances(0) // 1_000) > 0
+    _assert_stored_state_in_domain(pool)
+
+    # a balanced deposit that lifts D away from the floor lets the refused
+    # direction trade again
+    gm_pool.add_liquidity(gm_pool.compute_balanced_amounts(10**18))
+    _assert_stored_state_in_domain(pool)
+    boa.env.time_travel(seconds=600)
+    dx = pool.balances(1) // 50
+    quote = pool.get_dy(1, 0, dx)
+    assert gm_pool.exchange(1, dx) == quote
+    _assert_stored_state_in_domain(pool)
 
 
 @pytest.mark.parametrize("zero_fee_split", [False, True])
