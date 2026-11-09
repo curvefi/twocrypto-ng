@@ -3,7 +3,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 from pytest import fixture
 from tests.conftest import INITIAL_PRICES, _crypto_swap_with_deposit, _deploy_pool
-from tests.utils.constants import POOL_DEPLOYER
+from tests.utils.constants import MAX_A, POOL_DEPLOYER
 
 SETTINGS = {"max_examples": 100, "deadline": None}
 ADMIN_CLAIM_SETTINGS = {"max_examples": 25, "deadline": None}
@@ -30,7 +30,7 @@ def admin_fee_trader(coins, pool):
 @fixture(scope="module")
 def concentrated_pool_with_deposit(factory, coins, params, deployer, user):
     high_a_params = params.copy()
-    high_a_params["A"] = 10_000 * 10_000
+    high_a_params["A"] = MAX_A
     high_a_params["mid_fee"] = EXCHANGE_FEE
     high_a_params["out_fee"] = EXCHANGE_FEE
 

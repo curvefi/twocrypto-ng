@@ -162,10 +162,6 @@ event SetFeeParameters:
 event SetPolicyContract:
     policy: Policy
 
-event LPAllowlistChanged:
-    user: indexed(address)
-    allowed: bool
-
 # ----------------------- Storage/State Variables ----------------------------
 
 
@@ -252,10 +248,11 @@ MIN_ADMIN_FEE_CLAIM_INTERVAL: constant(uint256) = 86400
 
 A_MULTIPLIER: constant(uint256) = 10000
 # Note on pool internal logic:
-# A is scaled by N_COINS in context of StableswapMath.vy
-# So A := A_true * N_COINS
-MIN_A: constant(uint256) = N_COINS * A_MULTIPLIER # to avoid underflow in math (Ann - multiplier)
-MAX_A: constant(uint256) = 10_000 * A_MULTIPLIER # same as in stableswap
+# A is the cryptoswap amplification in the math contract's units:
+# A := A_true * N_COINS**N_COINS * A_MULTIPLIER. The bounds below equal
+# MIN_A and MAX_A in TwocryptoMath.vy.
+MIN_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER // 10
+MAX_A: constant(uint256) = N_COINS**N_COINS * A_MULTIPLIER * 1000
 MAX_PARAM_CHANGE: constant(uint256) = 10
 MIN_GAMMA: constant(uint256) = 10**10
 MAX_GAMMA: constant(uint256) = 199 * 10**15 # 1.99 * 10**17
@@ -271,12 +268,6 @@ balanceOf: public(HashMap[address, uint256])
 allowance: public(HashMap[address, HashMap[address, uint256]])
 totalSupply: public(uint256)
 
-
-# --------------------- Storage for LP whitelisting ---------------------
-lp_allowlist: public(HashMap[address, bool])  # lp_allowlist(empty(address)) is the enabled flag
-
-# Storage for pool initialization (requires magic_gamma at pool creation)
-deploy_eoa: address
 
 # ----------------------- Contract -------------------------------------------
 
@@ -316,11 +307,6 @@ def __init__(
     # --------------- Validate A and gamma parameters here and not in factory.
     gamma_A: uint256[2] = self._unpack_2(packed_gamma_A)  # gamma is at idx 0.
 
-    if gamma_A[0] == 11111111111:
-        # magic value that enables pool initialization by deployer (set whitelist, admin_fee, lpf)
-        # tx.origin is accepted here because pools are deployed only via the Curve factory.
-        self.deploy_eoa = tx.origin
-
     assert gamma_A[0] > MIN_GAMMA-1  # dev: "gamma below minimum"
     assert gamma_A[0] < MAX_GAMMA+1  # dev: "gamma above maximum"
 
@@ -331,6 +317,19 @@ def __init__(
     assert fee_params[0] > MIN_FEE - 1  # dev: "fee below minimum"
     assert fee_params[1] >= fee_params[0]  # dev: "mid fee above out fee"
     assert fee_params[1] < MAX_FEE + 1  # dev: "fee above maximum"
+    assert fee_params[2] > 0 and fee_params[2] < 10**18 + 1  # dev: "fee gamma out of bounds"
+
+    # The pool validates the rebalancing parameters itself, with the bounds of
+    # `apply_new_parameters`, because factories pack them without checking their
+    # order (legacy factories name the first two fields `allowed_extra_profit`
+    # and `adjustment_step`). A step min above the step max would silently
+    # disable rebalancing forever.
+    rebalancing_params: uint256[3] = self._unpack_3(packed_rebalancing_params)
+    assert rebalancing_params[0] <= rebalancing_params[1]  # dev: "min adjustment above max"
+    assert rebalancing_params[1] > 0 and rebalancing_params[1] < 10**18 + 1  # dev: "adjustment step max out of bounds"
+    assert rebalancing_params[2] > 86 and rebalancing_params[2] < 872542  # dev: "ma time out of bounds"
+
+    assert initial_price > 10**6 and initial_price < 10**30  # dev: "initial price out of bounds"
 
     self.initial_A_gamma = packed_gamma_A
     self.future_A_gamma = packed_gamma_A
@@ -586,9 +585,6 @@ def add_liquidity(
 
     assert amounts[0] + amounts[1] > 0, "!amounts"
 
-    if not donation and self.lp_allowlist[empty(address)]:
-        # self.lp_allowlist[empty(address)] is the flag for whether the allowlist is enabled.
-        assert self.lp_allowlist[msg.sender], "!wl"
     # --------------------- Get prices, balances -----------------------------
 
     old_balances: uint256[N_COINS] = self.balances
@@ -616,7 +612,6 @@ def add_liquidity(
     # -------------------- Empty pool case
     if self.D == 0:
         assert not donation  # dev: "donation not allowed on empty pool"
-        assert self.deploy_eoa == empty(address), "!init" # also check if pool needs to be initialized
 
     # -------------------- Calculate LP tokens to mint -----------------------
 
@@ -720,6 +715,14 @@ def add_liquidity(
 
         # instantiating an empty pool:
         assert d_token > MINIMUM_LIQUIDITY # dev: "initial liquidity too low"
+
+        # The first deposit skips get_y, get_p and tweak_price, so it checks
+        # here the D range get_y and get_p require ([10**17, 10**33]) and the
+        # 1,000:1 balance guard that every later state change checks. These
+        # checks do not guarantee that every later operation succeeds: the
+        # balances get_y accepts relative to D also depend on gamma.
+        assert D > 10**17 - 1 and D < 10**33 + 1  # dev: "initial D outside math domain"
+        self._assert_balance(xp)
 
         self.D = D
         self.virtual_price = 10**18
@@ -1550,8 +1553,11 @@ def _xp(
 @internal
 @pure
 def _assert_balance(xp: uint256[N_COINS]):
-    # Pool-level post-operation guard. This is intentionally tighter than the
-    # 10_000:1 Newton guard in math, which remains the hard numerical limit.
+    # Pool-level post-operation guard: the two scaled balances stay within
+    # 1,000:1 of each other. This is tighter than newton_D's input-ratio check
+    # (1:10_000) but does not replace the math's other limits, which stay in
+    # force: newton_D's output fractions x_i/D in [0.005, 50], and get_y's
+    # gamma-dependent bounds relative to D, which narrow above gamma 2e16.
     assert (
         xp[0] > 0 and
         xp[1] > 0 and
@@ -2435,76 +2441,6 @@ def _set_policy(policy: Policy):
     log SetPolicyContract(policy=policy)
 
 
-@internal
-def _set_allowlist(add: DynArray[address, 16], remove: DynArray[address, 16]):
-    # The allowlist enabled flag is stored at `lp_allowlist[empty(address)]`.
-    # `empty(address)` in `add` is ignored, while `empty(address)` in `remove`
-    # disables the allowlist. After processing both arrays, we always emit the
-    # final sentinel state once.
-    for account: address in remove:
-        if account == empty(address):
-            self.lp_allowlist[empty(address)] = False
-            continue
-
-        self.lp_allowlist[account] = False
-        log LPAllowlistChanged(user=account, allowed=False)
-
-    for account: address in add:
-        if account == empty(address):
-            continue
-
-        self.lp_allowlist[account] = True
-        log LPAllowlistChanged(user=account, allowed=True)
-        self.lp_allowlist[empty(address)] = True
-
-    log LPAllowlistChanged(user=empty(address), allowed=self.lp_allowlist[empty(address)])
-
-
-@external
-@nonreentrant
-def initialize(
-    reserved_profit_fraction: uint256,
-    admin_fee: uint256,
-    policy: Policy,
-    initial_price: uint256,
-    allowlist_add: DynArray[address, 16],
-):
-    """
-    @notice One-time post-deploy initialization for init-required pools.
-    @param reserved_profit_fraction Gross profit share reserved from rebalancing, with 10**10 precision.
-    @param admin_fee The DAO share of the reserved profit bucket, with 10**10 precision.
-    @param policy Optional policy contract to attach.
-    @param initial_price Price scale and oracle seed to use before first liquidity.
-    @param allowlist_add Initial LP allowlist entries. Any non-empty address
-            enables the whitelist; `empty(address)` entries are ignored.
-    """
-
-    # Access control: deployer or admin, only before liquidity is added.
-    deploy_eoa: address = self.deploy_eoa
-    assert deploy_eoa != empty(address)  # dev: "pool does not need initialization"
-    assert self.D == 0  # dev: "pool already has liquidity"
-
-    assert msg.sender == deploy_eoa or msg.sender == staticcall factory.admin()  # dev: "only deployer or admin"
-    assert initial_price > 10**6 and initial_price < 10**30 # dev: "initial price out of bounds"
-
-    # Set fee params
-    self._set_fee_parameters(reserved_profit_fraction, admin_fee)
-    # Set policy
-    self._set_policy(policy)
-    self.cached_price_scale = initial_price
-    self.cached_price_oracle = initial_price
-    self.last_prices = initial_price
-
-    # Start with the allowlist disabled; the helper enables it if at least one
-    # non-empty address is provided in `allowlist_add`.
-    self.lp_allowlist[empty(address)] = False
-    empty_remove: DynArray[address, 16] = empty(DynArray[address, 16])
-    self._set_allowlist(allowlist_add, empty_remove)
-
-    # Reset deployment variable to deny further initialization
-    self.deploy_eoa = empty(address)
-
-
 @external
 @nonreentrant
 def set_fee_parameters(reserved_profit_fraction: uint256, admin_fee: uint256):
@@ -2538,19 +2474,3 @@ def set_policy_contract(policy: Policy):
             self.D,
             True,
         )
-
-
-@external
-@nonreentrant
-def change_allowlist(add: DynArray[address, 16], remove: DynArray[address, 16]):
-    """
-    @notice Batch-update the LP allowlist.
-    @dev The whitelist enabled flag is stored at `lp_allowlist[empty(address)]`.
-         Entries in `remove` are cleared first, then entries in `add` are set.
-         Any non-empty address in `add` enables the whitelist automatically.
-         `empty(address)` in `add` is a no-op.
-         `empty(address)` in `remove` disables the whitelist.
-         The final enabled/disabled sentinel state is always logged once at the end.
-    """
-    self._check_admin()
-    self._set_allowlist(add, remove)

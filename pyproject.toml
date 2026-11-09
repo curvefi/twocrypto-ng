@@ -5,7 +5,6 @@ requires-python = ">=3.12"
 dependencies = [
     "vyper==0.4.3",
     "snekmate>=0.1.2",
-    "curve-std",
 ]
 
 [build-system]
@@ -40,9 +39,6 @@ dev = [
     "numpy",
     "matplotlib",
 ]
-
-[tool.uv.sources]
-curve-std = { git = "https://github.com/curvefi/curve-std", rev = "main" }
 
 [tool.ruff]
 line-length = 100

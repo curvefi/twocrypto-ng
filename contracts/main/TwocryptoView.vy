@@ -321,10 +321,21 @@ def _calc_dtoken_nofee(
         amountsp[1] * price_scale * precisions[1] // PRECISION
     ]
 
+    # The pool refuses a first deposit outside its 1,000:1 balance guard or
+    # with D outside the math's domain [10**17, 10**33] (Twocrypto.add_liquidity).
+    # Quote nothing for those instead of a mint that cannot happen. The balance
+    # check runs first so one-sided amounts quote 0 instead of reverting in
+    # newton_D.
+    if D0 == 0:
+        assert deposit
+        if not self._is_balanced(xp):
+            return 0, amountsp, xp
+
     D: uint256 = staticcall math.newton_D(A, gamma, xp, 0)
     d_token: uint256 = 0
     if D0 == 0:
-        assert deposit
+        if D < 10**17 or D > 10**33:
+            return 0, amountsp, xp
         d_token = self._xcp(D, price_scale)
     else:
         d_token = token_supply * D // D0
@@ -335,6 +346,15 @@ def _calc_dtoken_nofee(
             d_token = token_supply - d_token
 
     return d_token, amountsp, xp
+
+
+@internal
+@pure
+def _is_balanced(xp: uint256[N_COINS]) -> bool:
+    # Same condition as Twocrypto._assert_balance.
+    if xp[0] == 0 or xp[1] == 0:
+        return False
+    return unsafe_div(max(xp[0], xp[1]), min(xp[0], xp[1])) < 1_000
 
 
 @internal

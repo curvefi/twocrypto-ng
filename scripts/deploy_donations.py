@@ -55,7 +55,10 @@ print(
 )
 
 # load contracts
-math_path = "contracts/main/StableswapMath.vy"
+# NOTE: the hard-coded math/views/pool addresses below are the fxswap
+# (StableswapMath) deployments. The cryptoswap pool needs fresh TwocryptoMath
+# and TwocryptoView deployments per chain; do not reuse these addresses.
+math_path = "contracts/main/TwocryptoMath.vy"
 views_path = "contracts/main/TwocryptoView.vy"
 twocrypto_path = "contracts/main/Twocrypto.vy"
 

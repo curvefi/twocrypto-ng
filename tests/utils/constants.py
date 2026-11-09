@@ -12,7 +12,7 @@ import boa
 
 VENOM_FLAG = False
 MATH_DEPLOYER = boa.load_partial(
-    "contracts/main/StableswapMath.vy", compiler_args={"experimental_codegen": VENOM_FLAG}
+    "contracts/main/TwocryptoMath.vy", compiler_args={"experimental_codegen": VENOM_FLAG}
 )
 VIEW_DEPLOYER = boa.load_partial(
     "contracts/main/TwocryptoView.vy", compiler_args={"experimental_codegen": VENOM_FLAG}
@@ -48,19 +48,19 @@ assert (
 
 MINIMUM_LIQUIDITY = POOL_DEPLOYER._constants.MINIMUM_LIQUIDITY
 
-# assert (
-#     POOL_DEPLOYER._constants.MIN_GAMMA == MATH_DEPLOYER._constants.MIN_GAMMA
-# ), "MIN_GAMMA mismatch"
+assert (
+    POOL_DEPLOYER._constants.MIN_GAMMA == MATH_DEPLOYER._constants.MIN_GAMMA
+), "MIN_GAMMA mismatch"
 
 MIN_GAMMA = POOL_DEPLOYER._constants.MIN_GAMMA
 
-# assert (
-#     POOL_DEPLOYER._constants.MAX_GAMMA == MATH_DEPLOYER._constants.MAX_GAMMA
-# ), "MAX_GAMMA mismatch"
+assert (
+    POOL_DEPLOYER._constants.MAX_GAMMA == MATH_DEPLOYER._constants.MAX_GAMMA
+), "MAX_GAMMA mismatch"
 
 MAX_GAMMA = POOL_DEPLOYER._constants.MAX_GAMMA
 
-# MAX_GAMMA_SMALL = MATH_DEPLOYER._constants.MAX_GAMMA_SMALL
+MAX_GAMMA_SMALL = MATH_DEPLOYER._constants.MAX_GAMMA_SMALL
 
 assert (
     POOL_DEPLOYER._constants.A_MULTIPLIER
@@ -70,7 +70,11 @@ assert (
 
 A_MULTIPLIER = POOL_DEPLOYER._constants.A_MULTIPLIER
 
+assert POOL_DEPLOYER._constants.MIN_A == MATH_DEPLOYER._constants.MIN_A, "MIN_A mismatch"
+
 MIN_A = POOL_DEPLOYER._constants.MIN_A
+
+assert POOL_DEPLOYER._constants.MAX_A == MATH_DEPLOYER._constants.MAX_A, "MAX_A mismatch"
 
 MAX_A = POOL_DEPLOYER._constants.MAX_A
 
