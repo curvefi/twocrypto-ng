@@ -2,7 +2,13 @@
 # pragma optimize gas
 """
 @title TwocryptoPolicy
-@notice External policy that defines fee surface and rebalance goal for twocrypto pools.
+@notice Demo policy for the pool's policy hook (Twocrypto.set_policy_contract).
+        It implements the three calls the pool makes (get_fee, get_price_scale,
+        update_pool_state) by reproducing the pool's built-in fee formula and
+        oracle target, so a pool using it behaves like a pool without a policy;
+        tests/unitary/twocrypto/test_policy_parity.py checks that swaps and
+        rebalances leave identical state. Not deployed with the release; a
+        starting point for custom policies.
 @dev The pool passes the transient `xp`, while packed parameters are read back
      from the pool directly to reproduce the legacy balance-based fee formula.
 """
