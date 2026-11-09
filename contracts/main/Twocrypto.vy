@@ -716,13 +716,8 @@ def add_liquidity(
         # instantiating an empty pool:
         assert d_token > MINIMUM_LIQUIDITY # dev: "initial liquidity too low"
 
-        # The first deposit skips get_y, get_p and tweak_price, so it checks
-        # here the D range get_y and get_p require ([10**17, 10**33]) and the
-        # 1,000:1 balance guard that every later state change checks. These
-        # checks do not guarantee that every later operation succeeds: the
-        # balances get_y accepts relative to D also depend on gamma.
-        assert D > 10**17 - 1 and D < 10**33 + 1  # dev: "initial D outside math domain"
-        self._assert_balance(xp)
+        # The first deposit skips tweak_price, so check the committed state here.
+        assert self._in_domain(xp, D, A_gamma[1]), "!balance"
 
         self.D = D
         self.virtual_price = 10**18
@@ -1361,8 +1356,10 @@ def tweak_price(
 
             if (
                 new_virtual_price > 10**18 and
-                new_virtual_price >= lp_xcp_profit
+                new_virtual_price >= lp_xcp_profit and
                 # only rebalance when the LP-protected xcp threshold is preserved
+                self._in_domain(xp, new_D, A_gamma[1])
+                # and the rebalanced state stays inside the math's domain
             ):
                 self.D = new_D
                 self.virtual_price = new_virtual_price
@@ -1399,8 +1396,6 @@ def tweak_price(
                     self.totalSupply -= donation_shares_to_burn
                     self.last_donation_release_ts = block.timestamp - new_elapsed
 
-                self._assert_balance(xp)
-
                 self._update_policy_state(
                     xp,
                     p_new,
@@ -1418,7 +1413,7 @@ def tweak_price(
     # with the virtual price and D we calculated before attempting a rebalance.
     self.D = D
     self.virtual_price = virtual_price
-    self._assert_balance(_xp)
+    assert self._in_domain(_xp, D, A_gamma[1]), "!balance"
 
     self._update_policy_state(
         _xp,
@@ -1552,17 +1547,24 @@ def _xp(
 
 @internal
 @pure
-def _assert_balance(xp: uint256[N_COINS]):
-    # Pool-level post-operation guard: the two scaled balances stay within
-    # 1,000:1 of each other. This is tighter than newton_D's input-ratio check
-    # (1:10_000) but does not replace the math's other limits, which stay in
-    # force: newton_D's output fractions x_i/D in [0.005, 50], and get_y's
-    # gamma-dependent bounds relative to D, which narrow above gamma 2e16.
-    assert (
-        xp[0] > 0 and
-        xp[1] > 0 and
-        unsafe_div(max(xp[0], xp[1]), min(xp[0], xp[1])) < 1_000
-    ), "!balance"
+def _in_domain(xp: uint256[N_COINS], D: uint256, gamma: uint256) -> bool:
+    # Pool-level guard on the state an operation is about to commit (balanced
+    # remove_liquidity does not use it): the two scaled balances in `xp` stay
+    # within 1,000:1 of each other, D stays within [10**17, 10**33], and each
+    # balance relative to D stays inside the input range TwocryptoMath.get_y
+    # accepts at this gamma (same integer bounds).
+    if xp[0] == 0 or xp[1] == 0 or D < 10**17 or D > 10**33:
+        return False
+    if unsafe_div(max(xp[0], xp[1]), min(xp[0], xp[1])) >= 1_000:
+        return False
+    lim_mul: uint256 = 100 * 10**18
+    if gamma > 2 * 10**16:
+        lim_mul = lim_mul * (2 * 10**16) // gamma
+    for x: uint256 in xp:
+        k0_i: uint256 = 2 * 10**18 * x // D
+        if k0_i < 10**36 // lim_mul or k0_i > lim_mul:
+            return False
+    return True
 
 
 @external

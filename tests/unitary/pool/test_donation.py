@@ -16,8 +16,7 @@ def test_cant_donate_on_empty_pool(gm_pool):
 
 
 def test_empty_pool_donation_quote_is_zero(gm_pool, views_contract):
-    # balanced: the pool refuses a first deposit beyond its 1,000:1 guard
-    amounts = gm_pool.compute_balanced_amounts(10**18)
+    amounts = [10**18, 2 * 10**18]
 
     assert gm_pool.D() == 0
     assert views_contract.calc_token_amount(amounts, True, gm_pool.address, True) == 0
