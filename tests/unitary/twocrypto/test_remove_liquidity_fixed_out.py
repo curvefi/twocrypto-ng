@@ -1,0 +1,157 @@
+import math
+from tests.utils.constants import FEE_PRECISION, N_COINS
+import pytest
+from pytest import fixture
+import boa
+
+
+@fixture(scope="module")
+def gm_pool(gm_pool, factory_admin):
+    gm_pool.set_fee_parameters(FEE_PRECISION // 2, 0, sender=factory_admin)
+
+    # Seed passive liquidity first so the tested LP is not the whole pool.
+    dead_lp = boa.env.generate_address()
+    dead_lp_amounts = gm_pool.compute_balanced_amounts(900 * 10**18)
+    gm_pool.premint_amounts(dead_lp_amounts, to=dead_lp)
+    gm_pool.instance.add_liquidity(dead_lp_amounts, 0, sender=dead_lp)
+
+    gm_pool.add_liquidity_balanced(100 * 10**18)
+    return gm_pool
+
+
+@pytest.mark.parametrize("i", range(N_COINS))
+@pytest.mark.parametrize("amount_i_percent", [0.25, 0.5, 0.75])
+@pytest.mark.parametrize("lp_token_percent", [0.5, 0.75])
+def test_withdraw_fixed_out(i, amount_i_percent, lp_token_percent, gm_pool):
+    j = 1 - i
+
+    lp_tokens = gm_pool.balanceOf(boa.env.eoa)
+
+    # 75% of the lp tokens because 100% would leave the pool with 0 liquidity
+    amount_to_withdraw = int(lp_tokens * lp_token_percent)
+
+    t0 = gm_pool.balances_snapshot()
+
+    # Calculate how much of coin i we want to withdraw from the tested LP's
+    # pro-rata pool slice. The pool also contains passive pre-LP liquidity.
+    amount_i = int(t0["pool_coins"][i] * amount_to_withdraw // t0["lp_supply"] * amount_i_percent)
+
+    expected_dy = gm_pool.calc_withdraw_fixed_out(amount_to_withdraw, i, amount_i)
+
+    # Execute the withdrawal
+    actual_dy = gm_pool.remove_liquidity_fixed_out(amount_to_withdraw, i, amount_i, 0)
+
+    t1 = gm_pool.balances_snapshot()
+
+    # Check LP token balances
+    assert (
+        t1["lp_supply"] == t0["lp_supply"] - amount_to_withdraw
+    ), "pool lp balance did not decrease after removing liquidity"
+    assert (
+        t1["user_lp"] == t0["user_lp"] - amount_to_withdraw
+    ), "user lp balance did not decrease after removing liquidity"
+
+    # Check coin balances for user
+    assert (
+        t1["user_coins"][i] == t0["user_coins"][i] + amount_i
+    ), "user i coin balance did not increase by the specified amount"
+    assert (
+        t1["user_coins"][j] == t0["user_coins"][j] + expected_dy
+    ), "user j coin balance did not increase by the expected amount"
+
+    # Check coin balances for pool
+    assert (
+        t1["pool_coins"][i] == t0["pool_coins"][i] - amount_i
+    ), "pool i coin balance did not decrease by the specified amount"
+    assert (
+        t1["pool_coins"][j] == t0["pool_coins"][j] - expected_dy
+    ), "pool j coin balance did not decrease by the expected amount"
+
+    # Check that the calculated and actual amounts match
+    assert actual_dy == expected_dy, "actual and expected amounts of coin j do not match"
+
+
+@pytest.mark.parametrize("i", range(N_COINS))
+@pytest.mark.parametrize("amount_i_percent", [0.25, 0.5, 0.75])
+@pytest.mark.parametrize("lp_token_percent", [0.5, 0.75])
+def test_slippage_protection(i, amount_i_percent, lp_token_percent, gm_pool):
+    lp_tokens = gm_pool.balanceOf(boa.env.eoa)
+    amount_to_withdraw = int(lp_tokens * lp_token_percent)
+
+    t0 = gm_pool.balances_snapshot()
+    amount_i = int(t0["pool_coins"][i] * amount_to_withdraw // t0["lp_supply"] * amount_i_percent)
+
+    with boa.env.anchor():
+        expected_dy = gm_pool.calc_withdraw_fixed_out(amount_to_withdraw, i, amount_i)
+
+        # Should revert when min_amount_j is higher than what will be received
+        with boa.reverts("slippage"):
+            gm_pool.remove_liquidity_fixed_out(amount_to_withdraw, i, amount_i, expected_dy + 1)
+            # This should not revert
+            gm_pool.remove_liquidity_fixed_out(amount_to_withdraw, i, amount_i, expected_dy)
+
+        # Should succeed when min_amount_j is exactly what will be received
+        gm_pool.remove_liquidity_fixed_out(amount_to_withdraw, i, amount_i, expected_dy)
+
+
+@pytest.mark.parametrize("i", range(N_COINS))
+@pytest.mark.parametrize("lp_token_percent", [0.5, 0.75])
+def test_zero_amount_i(i, lp_token_percent, gm_pool):
+    """Test that setting amount_i to 0 is equivalent to remove_liquidity_one_coin for the other token"""
+    j = 1 - i
+
+    lp_tokens = gm_pool.balanceOf(boa.env.eoa)
+    amount_to_withdraw = int(lp_tokens * lp_token_percent)
+
+    with boa.env.anchor():
+        # Using remove_liquidity_fixed_out with amount_i = 0
+        expected_dy_fixed = gm_pool.calc_withdraw_fixed_out(amount_to_withdraw, i, 0)
+        actual_dy_fixed = gm_pool.remove_liquidity_fixed_out(amount_to_withdraw, i, 0, 0)
+
+    with boa.env.anchor():
+        # Using remove_liquidity_one_coin for token j
+        expected_dy_one = gm_pool.calc_withdraw_one_coin(amount_to_withdraw, j)
+        actual_dy_one = gm_pool.remove_liquidity_one_coin(amount_to_withdraw, j, 0)
+
+    # Both methods should return the same amount
+    assert (
+        expected_dy_fixed == expected_dy_one
+    ), "calc_withdraw_fixed_out with amount_i=0 should equal calc_withdraw_one_coin"
+    assert (
+        actual_dy_fixed == actual_dy_one
+    ), "remove_liquidity_fixed_out with amount_i=0 should equal remove_liquidity_one_coin"
+
+
+@pytest.mark.parametrize("i", range(N_COINS))
+@pytest.mark.parametrize(
+    "percentage", [0.05 + 0.15 * i for i in range(7)]
+)  # Creates values from 0.05 to 0.95
+@pytest.mark.parametrize("seeded_liquidity_i", [10 ** (18 + i) for i in range(0, 5)])
+def test_fixed_out_swap_equivalence(gm_pool, i, percentage, seeded_liquidity_i):
+    j = 1 - i
+
+    balanced_amounts = gm_pool.compute_balanced_amounts(int(seeded_liquidity_i * percentage))
+    AMOUNT_I = balanced_amounts[i]
+
+    dead_lp = boa.env.generate_address()
+    dead_lp_amounts = gm_pool.compute_balanced_amounts(seeded_liquidity_i)
+    gm_pool.premint_amounts(dead_lp_amounts, to=dead_lp)
+    gm_pool.instance.add_liquidity(dead_lp_amounts, 0, sender=dead_lp)
+
+    lp_shares = gm_pool.add_liquidity_balanced(seeded_liquidity_i)
+
+    # ====  withdraw fixed_out
+    with boa.env.anchor():
+        fixed_out_amount_j = gm_pool.remove_liquidity_fixed_out(lp_shares, i, AMOUNT_I, 0)
+
+    # ==== Swap + withdraw balanced
+    with boa.env.anchor():
+        balanced_amounts = gm_pool.remove_liquidity(lp_shares, [0] * N_COINS)
+
+        excess_i = balanced_amounts[i] - AMOUNT_I
+
+        swap_amount_j = gm_pool.exchange(i, excess_i)
+
+    assert math.isclose(
+        fixed_out_amount_j, swap_amount_j + balanced_amounts[j], rel_tol=0.01
+    ), "fixed_out and swap+balanced amounts should be equal"

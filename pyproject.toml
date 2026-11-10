@@ -1,24 +1,53 @@
 [project]
 name = "twocrypto-ng"
-version = "2.1.0"
-requires-python = ">=3.12,<3.13"
+version = "0.0.1"
+requires-python = ">=3.12"
 dependencies = [
-    "vyper==0.3.10",
-    "titanoboa",
+    "vyper==0.4.3",
+    "snekmate>=0.1.2",
 ]
 
-[tool.uv.sources]
-titanoboa = { git = "https://github.com/vyperlang/titanoboa.git", rev = "40e85c602aa2c15baaf5060547c1224178d9efae" }
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel.force-include]
+"contracts/main" = "twocrypto_ng"
 
 [dependency-groups]
 dev = [
-    "pytest",
-    "pytest-xdist",
-    "pytest-forked",
-    "pytest-repeat",
-    "hypothesis==6.74.0",
-    "eip712",
+    "titanoboa==0.2.8",
+    "keyring>=25.6.0",
+    "base58>=2.1.1",
+    "cryptography>=45.0.5",
+    "pyyaml>=6.0.2",
     "eth-account",
-    "pandas",
-    "cytoolz",
+    "eth-typing",
+    "eth-utils",
+    "rich",
+    "pytest-forked>=1.6.0",
+    "pytest-xdist==3.6.1",
+    "mamushi==0.0.4",
+    "pre-commit==3.8.0",
+    "ruff==0.6.9",
+    "pytest==8.2.2",
+    "plyvel-ci==1.5.1",
+    "jupyter==1.0.0",
+    "python-dotenv==1.0.1",
+    "hypothesis==6.124.2",
+    "pandas==2.2.3",
+    "numpy",
+    "matplotlib",
 ]
+
+[tool.ruff]
+line-length = 100
+
+[tool.basedpyright]
+executionEnvironments = [
+    { root = "tests", extraPaths = ["."], reportAttributeAccessIssue = "none", reportUnknownArgumentType = "none", reportUnknownParameterType = "none", reportUnknownVariableType = "none", reportUnknownMemberType = "none", reportMissingParameterType = "none", reportUnknownLambdaType = "none" },
+    { root = "scripts", extraPaths = ["."], reportAttributeAccessIssue = "none", reportUnknownArgumentType = "none", reportUnknownParameterType = "none", reportUnknownVariableType = "none", reportUnknownMemberType = "none", reportMissingParameterType = "none", reportUnknownLambdaType = "none" },
+]
+
+[tool.pytest.ini_options]
+addopts = "--dist=loadscope"

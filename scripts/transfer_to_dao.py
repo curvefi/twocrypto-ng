@@ -14,7 +14,6 @@ logger = RichConsole(file=sys.stdout)
 
 
 def transfer_ownership(network, url, account, fork=False):
-
     logger.log(f"Deploying on {network} ...")
 
     if fork:
@@ -27,13 +26,11 @@ def transfer_ownership(network, url, account, fork=False):
         boa.env.add_account(Account.from_key(os.environ[account]))
 
     for _network, data in deploy_utils.curve_dao_network_settings.items():
-
         if _network in network:
-
             curve_dao_ownership_agent = data.dao_ownership_contract
-            factory = boa.load_partial(
-                "contracts/main/CurveTwoCryptoFactory.vy"
-            ).at(deployments[network]["factory"])
+            factory = boa.load_partial("contracts/main/CurveTwoCryptoFactory.vy").at(
+                deployments[network]["factory"]
+            )
 
     current_factory_admin = factory.admin()
     assert boa.env.eoa == current_factory_admin
@@ -48,7 +45,6 @@ def transfer_ownership(network, url, account, fork=False):
     )
 
     if fork:
-
         with boa.reverts():
             factory.accept_transfer_ownership(sender=current_factory_admin)
 
@@ -60,7 +56,6 @@ def transfer_ownership(network, url, account, fork=False):
 
 
 def main():
-
     forkmode = False
 
     transfer_ownership(
