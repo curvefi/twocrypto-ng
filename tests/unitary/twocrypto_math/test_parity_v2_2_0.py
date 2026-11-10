@@ -227,6 +227,18 @@ def test_every_get_y_path_matches_reference(math_contract, reference_math):
     assert not any(needed.values()), needed
 
 
+@pytest.mark.parametrize("offset, solves", [(0, False), (1, False), (10**11, False), (10**13, True)])
+def test_get_y_reverts_near_b_zero_like_reference(math_contract, reference_math, offset, solves):
+    # Known and kept: near b == 0 (exactly at x_j == 110e18 here) the analytic
+    # get_y divides by zero or overflows and reverts, as in the reference.
+    A, gamma, D = 7_040_000, 10**17, 200 * 10**18
+    for sign in (1, -1):
+        x = [110 * 10**18 + sign * offset, 100 * 10**18]
+        expected = _outcome(reference_math.get_y, A, gamma, x, D, 1)
+        assert (expected != "revert") == solves
+        assert _outcome(math_contract.get_y, A, gamma, x, D, 1) == expected
+
+
 def test_wad_exp_matches_reference(math_contract, reference_math):
     rng = random.Random("twocrypto-math-parity-wad-exp")
     gap = (WAD_EXP_ZERO_CUTOFF_REFERENCE, WAD_EXP_ZERO_CUTOFF_SNEKMATE)

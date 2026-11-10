@@ -77,7 +77,7 @@ def test_deploys_v3_pool(
     legacy_pool, legacy_factory, params, coins, math_contract, views_contract, owner, fee_receiver
 ):
     pool = legacy_pool
-    assert pool.version() == "v3.0.0"
+    assert pool.version() == "v3.1.0"
     assert pool.factory() == legacy_factory.address
     assert pool.MATH() == math_contract.address
     assert pool.VIEW() == views_contract.address
