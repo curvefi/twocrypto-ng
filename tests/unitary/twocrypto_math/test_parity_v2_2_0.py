@@ -227,7 +227,9 @@ def test_every_get_y_path_matches_reference(math_contract, reference_math):
     assert not any(needed.values()), needed
 
 
-@pytest.mark.parametrize("offset, solves", [(0, False), (1, False), (10**11, False), (10**13, True)])
+@pytest.mark.parametrize(
+    "offset, solves", [(0, False), (1, False), (10**11, False), (10**13, True)]
+)
 def test_get_y_reverts_near_b_zero_like_reference(math_contract, reference_math, offset, solves):
     # Known and kept: near b == 0 (exactly at x_j == 110e18 here) the analytic
     # get_y divides by zero or overflows and reverts, as in the reference.
