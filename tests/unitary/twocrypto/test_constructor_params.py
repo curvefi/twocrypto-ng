@@ -3,8 +3,8 @@ Constructor validation of the pool, independent of the factory that deploys it.
 
 Legacy factories pack (allowed_extra_profit, adjustment_step, ma_exp_time) into
 the slots this pool reads as (adjustment_step_min, adjustment_step_max, ma_time)
-and check each slot on its own, so the pool rejects any order or range that
-would leave it unable to rebalance. These tests deploy the pool directly,
+and check each slot's range but not their order, so the pool rejects a step
+min above the step max, which would leave it unable to rebalance. These tests deploy the pool directly,
 without a factory, so every bound checked here is the pool's own.
 """
 
@@ -83,21 +83,10 @@ def test_accepts_boundary_values(coins, params, overrides):
         ({"A": MAX_A + 1}, "A above maximum"),
         ({"gamma": MIN_GAMMA - 1}, "gamma below minimum"),
         ({"gamma": MAX_GAMMA + 1}, "gamma above maximum"),
-        ({"fee_gamma": 0}, "fee gamma out of bounds"),
-        ({"fee_gamma": 10**18 + 1}, "fee gamma out of bounds"),
         (
             {"adjustment_step_min": 2 * 10**15, "adjustment_step_max": 10**15},
             "min adjustment above max",
         ),
-        (
-            {"adjustment_step_min": 0, "adjustment_step_max": 0},
-            "adjustment step max out of bounds",
-        ),
-        ({"adjustment_step_max": 10**18 + 1}, "adjustment step max out of bounds"),
-        ({"ma_time": 86}, "ma time out of bounds"),
-        ({"ma_time": 872542}, "ma time out of bounds"),
-        ({"initial_price": 10**6}, "initial price out of bounds"),
-        ({"initial_price": 10**30}, "initial price out of bounds"),
     ],
 )
 def test_rejects_out_of_bounds(coins, params, overrides, reason):

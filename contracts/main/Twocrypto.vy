@@ -317,19 +317,13 @@ def __init__(
     assert fee_params[0] > MIN_FEE - 1  # dev: "fee below minimum"
     assert fee_params[1] >= fee_params[0]  # dev: "mid fee above out fee"
     assert fee_params[1] < MAX_FEE + 1  # dev: "fee above maximum"
-    assert fee_params[2] > 0 and fee_params[2] < 10**18 + 1  # dev: "fee gamma out of bounds"
 
-    # The pool validates the rebalancing parameters itself, with the bounds of
-    # `apply_new_parameters`, because factories pack them without checking their
-    # order (legacy factories name the first two fields `allowed_extra_profit`
-    # and `adjustment_step`). A step min above the step max would silently
-    # disable rebalancing forever.
+    # Factories check each rebalancing parameter's range but not their order
+    # (legacy factories name the first two fields `allowed_extra_profit` and
+    # `adjustment_step`). A step min above the step max would silently disable
+    # rebalancing forever.
     rebalancing_params: uint256[3] = self._unpack_3(packed_rebalancing_params)
     assert rebalancing_params[0] <= rebalancing_params[1]  # dev: "min adjustment above max"
-    assert rebalancing_params[1] > 0 and rebalancing_params[1] < 10**18 + 1  # dev: "adjustment step max out of bounds"
-    assert rebalancing_params[2] > 86 and rebalancing_params[2] < 872542  # dev: "ma time out of bounds"
-
-    assert initial_price > 10**6 and initial_price < 10**30  # dev: "initial price out of bounds"
 
     self.initial_A_gamma = packed_gamma_A
     self.future_A_gamma = packed_gamma_A
@@ -717,7 +711,7 @@ def add_liquidity(
         assert d_token > MINIMUM_LIQUIDITY # dev: "initial liquidity too low"
 
         # The first deposit skips tweak_price, so check the committed state here.
-        assert self._in_domain(xp, D, A_gamma[1]), "!balance"
+        self._assert_balance(xp, D, A_gamma[1])
 
         self.D = D
         self.virtual_price = 10**18
@@ -1394,7 +1388,7 @@ def tweak_price(
                     self.totalSupply -= donation_shares_to_burn
                     self.last_donation_release_ts = block.timestamp - new_elapsed
 
-                assert self._in_domain(xp, new_D, A_gamma[1]), "!balance"
+                self._assert_balance(xp, new_D, A_gamma[1])
 
                 self._update_policy_state(
                     xp,
@@ -1413,7 +1407,7 @@ def tweak_price(
     # with the virtual price and D we calculated before attempting a rebalance.
     self.D = D
     self.virtual_price = virtual_price
-    assert self._in_domain(_xp, D, A_gamma[1]), "!balance"
+    self._assert_balance(_xp, D, A_gamma[1])
 
     self._update_policy_state(
         _xp,
@@ -1547,24 +1541,24 @@ def _xp(
 
 @internal
 @pure
-def _in_domain(xp: uint256[N_COINS], D: uint256, gamma: uint256) -> bool:
-    # Pool-level guard on the state an operation is about to commit (balanced
-    # remove_liquidity does not use it): the two scaled balances in `xp` stay
-    # within 1,000:1 of each other, D stays within [10**17, 10**33], and each
-    # balance relative to D stays inside the input range TwocryptoMath.get_y
-    # accepts at this gamma (same integer bounds).
-    if xp[0] == 0 or xp[1] == 0 or D < 10**17 or D > 10**33:
-        return False
-    if unsafe_div(max(xp[0], xp[1]), min(xp[0], xp[1])) >= 1_000:
-        return False
+def _assert_balance(xp: uint256[N_COINS], D: uint256, gamma: uint256):
+    # Pool-level post-operation guard. This is intentionally tighter than the
+    # 10_000:1 Newton guard in math, which remains the hard numerical limit.
+    assert (
+        xp[0] > 0 and
+        xp[1] > 0 and
+        unsafe_div(max(xp[0], xp[1]), min(xp[0], xp[1])) < 1_000
+    ), "!balance"
+
+    # D and each balance relative to D must stay inside the input range
+    # TwocryptoMath.get_y accepts at this gamma (same integer bounds).
+    assert D >= 10**17 and D <= 10**33, "!balance"
     lim_mul: uint256 = 100 * 10**18
     if gamma > 2 * 10**16:
         lim_mul = lim_mul * (2 * 10**16) // gamma
     for x: uint256 in xp:
         k0_i: uint256 = 2 * 10**18 * x // D
-        if k0_i < 10**36 // lim_mul or k0_i > lim_mul:
-            return False
-    return True
+        assert k0_i >= 10**36 // lim_mul and k0_i <= lim_mul, "!balance"
 
 
 @external

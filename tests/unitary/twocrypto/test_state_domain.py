@@ -30,7 +30,7 @@ def _new_pool(factory, coins, params, deployer, **overrides):
 def _assert_stored_state_in_domain(pool):
     balances = [pool.balances(0), pool.balances(1)]
     xp = pool.internal._xp(balances, pool.price_scale())
-    assert pool.internal._in_domain(xp, pool.D(), pool.gamma()), (balances, pool.D())
+    pool.internal._assert_balance(xp, pool.D(), pool.gamma())
 
 
 @pytest.mark.parametrize("gamma, admitted", [(145 * 10**12, True), (MAX_GAMMA, False)])
