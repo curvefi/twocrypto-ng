@@ -2,23 +2,36 @@
 # pragma optimize gas
 """
 @title YBOraclizedPolicy
-@notice Twocrypto policy for a YieldBasis market: swap fees priced off signed
-        Pyth Lazer reports, a trend-gated dual-EMA price_scale target, and an
-        LT deposit ratio check.
+@notice Twocrypto policy for a YieldBasis market: swap fees priced off Pyth
+        Lazer reports from a PythReportBank at the market's crvUSD rate, a
+        trend-gated dual-EMA price_scale target, and an LT deposit ratio check.
 @dev Port of the backtested `report_lean` policy (curve-fx-sim twocrypto-cpp,
      policies/report_lean.hpp) plus yb-core's LTAdmissionPolicy gate.
 
      CALLERS
          pool              get_fee, get_price_scale, update_pool_state
-         anyone            deliver_oracle_report, sync, views
-         owner (YB DAO)    set_policy_config, set_oracle_config, set_killed, ownership
+         anyone            sync, views; reports are delivered to BANK
+         owner (YB DAO)    set_policy_config, set_price_bounds, set_killed, ownership
          emergency admin   set_killed
 
      UNITS
      Fees in FEE_PRECISION (1e10 = 100%). Prices and EMAs have 18 decimals: a
-     report prices coin1 in USD (1e18 = $1) and coin0 (crvUSD) counts as one
-     USD. Relative values are WADs (1e18 = 100%). Pyth times are microseconds.
-     A hook that returns 0 hands the pool its native fee or price_scale target.
+     report prices coin1 in USD (1e18 = $1). Fees value it in coin0 at the
+     crvUSD rate; the price_scale driver counts coin0 as one USD. Relative
+     values are WADs (1e18 = 100%). Pyth times are microseconds. A hook that
+     returns 0 hands the pool its native fee or price_scale target.
+
+     REPORTS
+     The bank's newest report of FEED_ID on CHANNEL, read when used. It counts
+     as absent when observed at or before report_cutoff_us (raised on revival
+     and on a price bounds change) or outside the price bounds. A killed
+     policy never reads the bank.
+
+     CRVUSD RATE
+     The stablecoin aggregator that the market's LT reads, through the LevAMM's
+     price oracle, read when a fee is priced: its stored last_price() while at
+     most RATE_MAX_AGE old, else price(), the rate its price_w() would store. A
+     rate outside [MIN_RATE, MAX_RATE] prices no discount.
 
      A RAMPS
      A is cached at deployment and by sync(). During a ramp, quotes and swaps
@@ -63,13 +76,26 @@ interface Math:
 interface LevAMM:
     def COLLATERAL() -> address: view
     def STABLECOIN() -> address: view
+    def PRICE_ORACLE_CONTRACT() -> address: view
     def collateral_amount() -> uint256: view
     def get_debt() -> uint256: view
 
 
-interface PythLazer:
-    def verification_fee() -> uint256: view
-    def verifyUpdate(update: Bytes[112]) -> (Bytes[41], address): payable
+interface LPOracle:
+    def AGG() -> address: view
+
+
+interface StableAggregator:
+    def price() -> uint256: view
+    def last_price() -> uint256: view
+    def last_timestamp() -> uint256: view
+
+
+interface ReportBank:
+    def latest(feed_id: uint32, channel: uint8) -> (uint256, uint256): view
+    def decode(
+        update: Bytes[MAX_UPDATE_BYTES], feed_id: uint32, channel: uint8
+    ) -> (uint256, uint256): view
 
 
 N_COINS: constant(uint256) = 2
@@ -81,26 +107,27 @@ LN2: constant(uint256) = 693_147_180_559_945_309
 # The pool steps price_scale one fifth of the way to the target (tweak_price).
 TWEAK_PRICE_MULTIPLIER: constant(uint256) = 5
 
-PYTH_PAYLOAD_MAGIC: constant(uint256) = 2479346549  # 0x93c7d375: Pyth Lazer payload format.
-# Hard limits for report admission (OracleConfig).
+MAX_UPDATE_BYTES: constant(uint256) = 517  # PythReportBank's largest signed update (16 feeds)
+# Hard limits for the price bounds.
 MIN_REPORT_PRICE: constant(uint256) = 10**6  # $1e-12
 MAX_REPORT_PRICE: constant(uint256) = 10**30  # $1e12
-MAX_PAST_WINDOW_US: constant(uint256) = 12_000_000
-MAX_FUTURE_WINDOW_US: constant(uint256) = 6_000_000
+# The crvUSD rate: the aggregator's stored price while at most this old, and its bounds.
+RATE_MAX_AGE: constant(uint256) = 14_400  # 4 hours
+MIN_RATE: constant(uint256) = PRECISION // 2  # $0.50
+MAX_RATE: constant(uint256) = 2 * PRECISION  # $2
 
 POOL: public(immutable(address))
 AMM: public(immutable(address))
+BANK: public(immutable(address))  # PythReportBank; its verifier decides which prices are authentic.
 FEED_ID: public(immutable(uint32))  # Pyth Lazer feed of coin1/USD; numeric ids are stable.
+CHANNEL: public(immutable(uint8))  # 1 real_time, 2 fixed_rate@50ms, 3 @200ms, 4 @1000ms
 EMERGENCY_ADMIN: public(immutable(address))
+AGGREGATOR: public(immutable(address))  # crvUSD in USD: the stablecoin aggregator LT reads
 
 
-# Report admission; only deliver_oracle_report reads it.
-struct OracleConfig:
-    verifier: address  # Pyth Lazer verifier: it decides which signed prices are authentic.
-    channel: uint8  # 1 real_time, 2 fixed_rate@50ms, 3 fixed_rate@200ms, 4 fixed_rate@1000ms
-    past_window_us: uint256  # oldest admissible observation, before block.timestamp
-    future_window_us: uint256  # newest admissible message, after block.timestamp
-    min_price: uint256  # sanity bounds on the coin1 price, 1e18 = $1
+# Sanity bounds on the bank's coin1 price, 1e18 = $1; a price outside is absent.
+struct PriceBounds:
+    min_price: uint256
     max_price: uint256
 
 
@@ -128,8 +155,8 @@ struct PolicyConfig:
 
 
 struct Report:
-    asset_price: uint256  # coin1 in USD, 1e18 = $1. 0 before any report and after a kill.
-    observation_us: uint256  # Pyth feed update time; kept on a kill as the replay watermark.
+    asset_price: uint256  # coin1 in USD, 1e18 = $1; 0 when absent
+    observation_us: uint256  # Pyth feed update time
 
 
 # Pool geometry as of the last callback or sync(), EMAs and spot as of the last
@@ -145,9 +172,10 @@ struct State:
 
 
 config: public(PolicyConfig)
-oracle: public(OracleConfig)
+price_bounds: public(PriceBounds)
 is_killed: public(bool)
-report: public(Report)
+# Bank reports observed at or before this time (us) are absent: those of a kill or old bounds.
+report_cutoff_us: public(uint256)
 state: public(State)
 cached_A: public(uint256)  # the pool's A as of deployment or the last sync()
 # LT gate baselines, besides state.xp[0]:
@@ -155,18 +183,12 @@ cached_supply: public(uint256)  # pool.user_supply() as of the last callback; 0 
 amm_surplus: public(uint256)  # LP gifted to the LevAMM, as of the last add or sync()
 
 
-event ReportAccepted:
-    asset_price: uint256
-    observation_us: uint256
-    message_us: uint256
-
-
 event SetPolicyConfig:
     config: PolicyConfig
 
 
-event SetOracleConfig:
-    oracle: OracleConfig
+event SetPriceBounds:
+    bounds: PriceBounds
 
 
 event SetKilled:
@@ -177,21 +199,28 @@ event SetKilled:
 def __init__(
     pool: address,
     amm: address,
+    bank: address,
     feed_id: uint32,
+    channel: uint8,
     emergency_admin: address,
-    oracle: OracleConfig,
+    bounds: PriceBounds,
     config: PolicyConfig,
 ):
     """
     @param pool Twocrypto pool; coin0 is the LevAMM's stablecoin
     @param amm LevAMM that holds the pool's LP as collateral
+    @param bank PythReportBank that stores the reports
     @param feed_id Pyth Lazer feed of coin1/USD
+    @param channel Pyth Lazer channel of the reports this policy reads
     @param emergency_admin May kill and unkill the policy, as may the owner
-    @param oracle Initial report admission; the deployer becomes the owner
+    @param bounds Initial price bounds; the deployer becomes the owner
     @param config Initial policy config
     """
     assert pool != empty(address), "pool=0"
+    assert bank.is_contract, "bank"
     assert feed_id > 0, "feed id"
+    # The four channels Pyth Lazer defines (PythLazerStructs.Channel).
+    assert channel >= 1 and channel <= 4, "channel"
     assert emergency_admin != empty(address), "emergency admin=0"
 
     # One market: the LevAMM's collateral is this pool's LP, and its stablecoin
@@ -202,14 +231,21 @@ def __init__(
     # The LT gate measures deposited debt exactly only without a pool admin fee.
     assert staticcall Pool(pool).admin_fee() == 0, "admin fee"
 
+    # The market's rate source, as LT.set_amm reads it; immutable in the LevAMM and its oracle.
+    aggregator: address = staticcall LPOracle(staticcall LevAMM(amm).PRICE_ORACLE_CONTRACT()).AGG()
+    assert aggregator.is_contract, "aggregator"
+
     POOL = pool
     AMM = amm
+    BANK = bank
     FEED_ID = feed_id
+    CHANNEL = channel
     EMERGENCY_ADMIN = emergency_admin
+    AGGREGATOR = aggregator
     self.cached_A = staticcall Pool(pool).A()
 
     ownable.__init__()
-    self._set_oracle_config(oracle)
+    self._set_price_bounds(bounds)
     self._set_policy_config(config)
 
 
@@ -220,7 +256,8 @@ def __init__(
 @view
 def get_fee(xp: uint256[N_COINS]) -> uint256:
     """
-    @notice Fee of the pool operation in progress, against the stored report.
+    @notice Fee of the pool operation in progress, against the bank's report
+            in coin0 at the crvUSD rate.
     @dev A swap whose marginal price moves toward the report without passing it
          pays base_fee plus `capture` of its whole-trade edge above base_fee, at
          most fallback_fee. The discount fades into fallback_fee with the square
@@ -230,9 +267,14 @@ def get_fee(xp: uint256[N_COINS]) -> uint256:
            by price_scale
     @return FEE_PRECISION fee, or 0 for the pool's native fee while killed
     """
-    stored_report: Report = self.report
+    if self.is_killed:
+        return 0
+    stored_report: Report = self._stored_report()
     return self._get_fee(
-        xp, stored_report.asset_price, self._report_age_us(stored_report.observation_us)
+        xp,
+        stored_report.asset_price,
+        self._report_age_us(stored_report.observation_us),
+        block.timestamp,
     )
 
 
@@ -242,17 +284,21 @@ def get_fee_with_report(
     xp: uint256[N_COINS], report_price: uint256, report_age_us: uint256
 ) -> uint256:
     """
-    @notice Preview get_fee with an unverified report price and observation age;
-            pass age 0 for an observation after block.timestamp.
+    @notice Preview get_fee with an unverified report price (USD) and observation
+            age; pass age 0 for an observation after block.timestamp.
     """
-    return self._get_fee(xp, report_price, report_age_us)
+    return self._get_fee(xp, report_price, report_age_us, block.timestamp)
 
 
 @internal
 @view
 def _get_fee(
-    xp: uint256[N_COINS], report_price: uint256, report_age_us: uint256
+    xp: uint256[N_COINS], asset_price: uint256, report_age_us: uint256, timestamp: uint256
 ) -> uint256:
+    """
+    @param asset_price The report's coin1 price in USD, 0 for none
+    @param timestamp When the crvUSD rate is read (see _coin0_price)
+    """
     if self.is_killed:
         return 0
 
@@ -265,13 +311,16 @@ def _get_fee(
         return params.fallback_fee
     if xp[0] <= old_xp[0] and xp[1] <= old_xp[1]:
         return params.fallback_fee
-    if report_price == 0 or report_age_us >= params.relax_time * 1_000_000:
+    if asset_price == 0 or report_age_us >= params.relax_time * 1_000_000:
         return params.fallback_fee
     # The snapshot must match the pool's stored D. It does not before attachment,
     # after a failed best-effort removal callback, and usually in a swap during an
     # A ramp, which stores a re-solved D first (a get_dy quote solves it locally).
     D: uint256 = snapshot.D
     if D == 0 or staticcall Pool(POOL).D() != D:
+        return params.fallback_fee
+    report_price: uint256 = self._coin0_price(asset_price, timestamp)
+    if report_price == 0:
         return params.fallback_fee
 
     coin_in: uint256 = 0 if xp[0] > old_xp[0] else 1
@@ -397,7 +446,7 @@ def get_price_scale() -> uint256:
     """
     @notice Twocrypto's price_scale target, or 0 for the native target before
             attachment or while killed.
-    @dev The EMAs observe the stored report while younger than report_lifetime,
+    @dev The EMAs observe the bank's report while younger than report_lifetime,
          else the pool's spot after the previous touch. The target is
          fast + w * (observed - fast) with w = min(1, |fast / slow - 1| / trend_gate),
          or fast when trend_gate is 0. Each touch requests half the gap to it, at
@@ -472,10 +521,12 @@ def _observation(snapshot: State) -> uint256:
 @view
 def _observed_report() -> uint256:
     """
-    @dev The stored report price while its age is below report_lifetime (separate
-         from the fee's relax_time), else 0. A dropped report has price 0.
+    @dev The bank's report price while its age is below report_lifetime (separate
+         from the fee's relax_time), else 0; 0 while killed.
     """
-    stored_report: Report = self.report
+    if self.is_killed:
+        return 0
+    stored_report: Report = self._stored_report()
     if (
         stored_report.asset_price != 0
         and self._report_age_us(stored_report.observation_us)
@@ -525,7 +576,8 @@ def update_pool_state(
             spot the next touch observes.
     @dev A balanced removal calls back best-effort with 300k gas: if this fails,
          the pool carries on with a stale snapshot when it had at least 500k gas
-         before the call, and reverts otherwise. That path reads one pool value.
+         before the call, and reverts otherwise. That path reads one pool value
+         and the bank's report.
     """
     assert msg.sender == POOL, "auth!"
 
@@ -654,107 +706,42 @@ def _update_lt_gate(stable: uint256, old_stable: uint256):
         self.amm_surplus = surplus
 
 
-# -------------------------------- Pyth reports ---------------------------------
+# ---------------------------------- Reports ------------------------------------
 
 
-@external
-@payable
-@nonreentrant
-def deliver_oracle_report(report_data: Bytes[112]):
+@internal
+@view
+def _stored_report() -> Report:
     """
-    @notice Verify and store a Pyth Lazer report; send verification_fee() as value.
-    @dev Permissionless. Fees use the stored report while younger than relax_time,
-         the EMAs while younger than report_lifetime.
+    @dev The bank's newest report of FEED_ID on CHANNEL, with price 0 when
+         observed at or before report_cutoff_us or outside the price bounds.
+         Callers check is_killed first.
     """
-    assert not self.is_killed, "killed"
-    # Establish the operation boundary before calling the external verifier.
-    assert staticcall Pool(POOL).price_scale() > 0, "pool uninitialized"
-    oracle: OracleConfig = self.oracle
-    report_price: uint256 = 0
+    asset_price: uint256 = 0
     observation_us: uint256 = 0
-    message_us: uint256 = 0
-    report_price, observation_us, message_us = self._verify_report(report_data, msg.value, oracle)
-
-    # Observation age decides admission: a fresh message can carry an old price.
-    block_time_us: uint256 = block.timestamp * 1_000_000
-    assert (
-        0 < observation_us
-        and observation_us <= message_us
-        and message_us <= block_time_us + oracle.future_window_us
-    ), "report time"
-    assert observation_us + oracle.past_window_us >= block_time_us, "report too old"
-    # Strictly newer: no replay, including of a report dropped by set_killed.
-    assert observation_us > self.report.observation_us, "observation not newer"
-    assert oracle.min_price <= report_price and report_price <= oracle.max_price, "price bounds"
-
-    self.report = Report(asset_price=report_price, observation_us=observation_us)
-    log ReportAccepted(
-        asset_price=report_price,
-        observation_us=observation_us,
-        message_us=message_us,
-    )
-
-
-@external
-@view
-def verification_fee() -> uint256:
-    return staticcall PythLazer(self.oracle.verifier).verification_fee()
-
-
-@internal
-def _verify_report(
-    report_data: Bytes[112], fee_paid: uint256, oracle: OracleConfig
-) -> (uint256, uint256, uint256):
-    """
-    @dev Authenticate the report with Pyth and decode its payload.
-    @return (coin1 price in USD 1e18, observation time us, message time us)
-    """
-    assert len(report_data) == 112, "report length"
-    payload: Bytes[41] = b""
-    signer: address = empty(address)
-    payload, signer = extcall PythLazer(oracle.verifier).verifyUpdate(report_data, value=fee_paid)
-    assert signer != empty(address), "signer"
-    assert len(payload) == 41, "payload length"
-    return self._decode_payload(payload, oracle)
+    asset_price, observation_us = staticcall ReportBank(BANK).latest(FEED_ID, CHANNEL)
+    return self._eligible(Report(asset_price=asset_price, observation_us=observation_us))
 
 
 @internal
 @view
-def _decode_payload(payload: Bytes[41], oracle: OracleConfig) -> (uint256, uint256, uint256):
-    """
-    @dev The payload must be one feed with exactly these properties. Big-endian
-         byte ranges:
-             [0:4]    magic                PYTH_PAYLOAD_MAGIC
-             [4:12]   message time, us
-             [12]     channel              oracle.channel
-             [13]     feed count           1
-             [14:18]  feed id              FEED_ID
-             [18]     property count       3
-             [19]     property id          0 (price)
-             [20:28]  price mantissa       int64
-             [28]     property id          4 (exponent)
-             [29:31]  price exponent       int16
-             [31]     property id          12 (feed update time)
-             [32]     value present        1
-             [33:41]  observation time, us
-    @return (coin1 price in USD 1e18, observation time us, message time us)
-    """
-    assert convert(slice(payload, 0, 4), uint256) == PYTH_PAYLOAD_MAGIC, "payload magic"
-    assert convert(slice(payload, 12, 1), uint8) == oracle.channel, "channel"
-    assert slice(payload, 13, 1) == b"\x01", "one feed"
-    assert convert(slice(payload, 14, 4), uint32) == FEED_ID, "feed"
-    assert slice(payload, 18, 2) == b"\x03\x00", "price property"
-    assert slice(payload, 28, 1) == b"\x04", "exponent property"
-    assert slice(payload, 31, 2) == b"\x0c\x01", "observation property"
+def _eligible(report: Report) -> Report:
+    """@dev The report, with price 0 when at or before the cutoff or outside the bounds."""
+    bounds: PriceBounds = self.price_bounds
+    if (
+        report.observation_us <= self.report_cutoff_us
+        or report.asset_price < bounds.min_price
+        or report.asset_price > bounds.max_price
+    ):
+        report.asset_price = 0
+    return report
 
-    mantissa: int64 = convert(convert(slice(payload, 20, 8), bytes8), int64)
-    exponent: int16 = convert(convert(slice(payload, 29, 2), bytes2), int16)
-    assert mantissa > 0 and -18 <= exponent and exponent <= 0, "price/exponent"
-    report_price: uint256 = convert(mantissa, uint256) * 10**convert(18 + exponent, uint256)
 
-    message_us: uint256 = convert(slice(payload, 4, 8), uint256)
-    observation_us: uint256 = convert(slice(payload, 33, 8), uint256)
-    return report_price, observation_us, message_us
+@internal
+def _drop_report():
+    """@dev Make the bank's current report absent; later ones still count."""
+    observation_us: uint256 = (staticcall ReportBank(BANK).latest(FEED_ID, CHANNEL))[1]
+    self.report_cutoff_us = max(self.report_cutoff_us, observation_us)
 
 
 @internal
@@ -763,6 +750,29 @@ def _report_age_us(observation_us: uint256) -> uint256:
     """A report observed after block.timestamp has age zero."""
     block_time_us: uint256 = block.timestamp * 1_000_000
     return block_time_us - min(block_time_us, observation_us)
+
+
+# --------------------------------- crvUSD rate ---------------------------------
+
+
+@internal
+@view
+def _coin0_price(asset_price: uint256, timestamp: uint256) -> uint256:
+    """
+    @dev coin1 in coin0, 1e18: the USD price at the crvUSD rate for `timestamp`,
+         or 0 when that rate is outside [MIN_RATE, MAX_RATE]. The rate is the
+         aggregator's stored one while at most RATE_MAX_AGE old at `timestamp`,
+         else price(), which stands for the rate price_w() would store. Both
+         come from this block's aggregator state.
+    """
+    rate: uint256 = 0
+    if timestamp <= staticcall StableAggregator(AGGREGATOR).last_timestamp() + RATE_MAX_AGE:
+        rate = staticcall StableAggregator(AGGREGATOR).last_price()
+    else:
+        rate = staticcall StableAggregator(AGGREGATOR).price()
+    if rate < MIN_RATE or rate > MAX_RATE:
+        return 0
+    return asset_price * PRECISION // rate
 
 
 # --------------------------------- Governance ----------------------------------
@@ -774,24 +784,22 @@ def set_policy_config(config: PolicyConfig):
     @notice Replace the whole policy config. Owner only.
     @dev No EMA checkpoint: new half-lives apply to the whole interval since the
          last touch, and raising relax_time or report_lifetime can revive a
-         stored report.
+         bank report.
     """
     ownable._check_owner()
     self._set_policy_config(config)
 
 
 @external
-def set_oracle_config(oracle: OracleConfig):
+def set_price_bounds(bounds: PriceBounds):
     """
-    @notice Set report admission: verifier, channel, age windows and price
-            bounds. Owner only.
-    @dev The verifier decides which prices are authentic, so the owner holds
-         that trust. Every call drops the stored report price; its observation
-         time stays as the replay watermark, and the kill state is unchanged.
+    @notice Set the sanity bounds on the bank's coin1 price. Owner only.
+    @dev Every call makes the bank's current report absent; later reports
+         count within the new bounds. The kill state is unchanged.
     """
     ownable._check_owner()
-    self._set_oracle_config(oracle)
-    self.report.asset_price = 0
+    self._set_price_bounds(bounds)
+    self._drop_report()
 
 
 @external
@@ -799,15 +807,16 @@ def set_killed(is_killed: bool):
     """
     @notice Kill (True) or revive the policy. Owner or emergency admin.
     @dev While killed, get_fee and get_price_scale return 0 (the pool's native
-         fee and target), reports are refused and the LT gate is off, external
-         reads included. Callbacks still settle the EMAs. Killing drops the
-         stored report price and keeps its watermark; reviving calls sync().
+         fee and target), the bank is not read and the LT gate is off, external
+         reads included. Callbacks still settle the EMAs, on the pool's spot.
+         Killing calls nothing, so it works whatever the bank does. Reviving
+         calls sync() and makes the bank's current report absent, so no report
+         from before the revival is used.
     """
     assert msg.sender == EMERGENCY_ADMIN or msg.sender == ownable.owner, "access"
-    if is_killed:
-        self.report.asset_price = 0
-    else:
+    if not is_killed:
         self._sync()
+        self._drop_report()
     self.is_killed = is_killed
     log SetKilled(is_killed=is_killed)
 
@@ -838,19 +847,14 @@ def _set_policy_config(config: PolicyConfig):
 
 
 @internal
-def _set_oracle_config(oracle: OracleConfig):
-    assert oracle.verifier.is_contract, "verifier"
-    # The four channels Pyth Lazer defines (PythLazerStructs.Channel).
-    assert oracle.channel >= 1 and oracle.channel <= 4, "channel"
-    assert oracle.past_window_us <= MAX_PAST_WINDOW_US, "past window"
-    assert oracle.future_window_us <= MAX_FUTURE_WINDOW_US, "future window"
+def _set_price_bounds(bounds: PriceBounds):
     assert (
-        MIN_REPORT_PRICE <= oracle.min_price
-        and oracle.min_price <= oracle.max_price
-        and oracle.max_price <= MAX_REPORT_PRICE
+        MIN_REPORT_PRICE <= bounds.min_price
+        and bounds.min_price <= bounds.max_price
+        and bounds.max_price <= MAX_REPORT_PRICE
     ), "price bounds"
-    self.oracle = oracle
-    log SetOracleConfig(oracle=oracle)
+    self.price_bounds = bounds
+    log SetPriceBounds(bounds=bounds)
 
 
 # ----------------------------------- Quotes ------------------------------------
@@ -859,22 +863,39 @@ def _set_oracle_config(oracle: OracleConfig):
 @external
 @view
 def get_dy_with_report(
-    i: uint256, j: uint256, dx: uint256, report_data: Bytes[112], block_timestamp: uint256
+    i: uint256,
+    j: uint256,
+    dx: uint256,
+    report_data: Bytes[MAX_UPDATE_BYTES],
+    block_timestamp: uint256,
 ) -> uint256:
     """
-    @notice pool.get_dy(i, j, dx) with this signed report stored, its age taken
-            at block_timestamp (say the next block's).
-    @dev A convenience view: the signature is not verified and the report is not
-         admitted, only decoded. The pool's state, A included, is this block's.
+    @notice pool.get_dy(i, j, dx) with this signed report as the bank's, its
+            age and the crvUSD rate taken at block_timestamp (say the next
+            block's).
+    @dev A convenience view: the bank decodes FEED_ID on CHANNEL from the
+         report without verifying its signature or admitting it; this policy's
+         bounds and cutoff apply. The pool's state, A included, is this
+         block's, and so is the aggregator's. A killed policy quotes the
+         pool's native fee without reading the bank.
     """
-    report_price: uint256 = 0
-    observation_us: uint256 = 0
-    message_us: uint256 = 0
-    report_price, observation_us, message_us = self._decode_payload(
-        slice(report_data, 71, 41), self.oracle
-    )
+    quoted: Report = empty(Report)
+    if not self.is_killed:
+        asset_price: uint256 = 0
+        observation_us: uint256 = 0
+        asset_price, observation_us = staticcall ReportBank(BANK).decode(
+            report_data, FEED_ID, CHANNEL
+        )
+        quoted = self._eligible(Report(asset_price=asset_price, observation_us=observation_us))
     now_us: uint256 = block_timestamp * 1_000_000
-    return self._quote(i, j, dx, report_price, now_us - min(now_us, observation_us))
+    return self._quote(
+        i,
+        j,
+        dx,
+        quoted.asset_price,
+        now_us - min(now_us, quoted.observation_us),
+        block_timestamp,
+    )
 
 
 @external
@@ -883,11 +904,11 @@ def get_dy_with_report_age(
     i: uint256, j: uint256, dx: uint256, report_price: uint256, report_age_us: uint256
 ) -> uint256:
     """
-    @notice pool.get_dy(i, j, dx) with a stored report of this price (1e18 = $1)
-            observed report_age_us before the block; pass age 0 for an
-            observation after block.timestamp.
+    @notice pool.get_dy(i, j, dx) with a bank report of this price (1e18 = $1)
+            observed report_age_us before the block, at this block's crvUSD
+            rate; pass age 0 for an observation after block.timestamp.
     """
-    return self._quote(i, j, dx, report_price, report_age_us)
+    return self._quote(i, j, dx, report_price, report_age_us, block.timestamp)
 
 
 # TwocryptoView.get_dy with the pool's state read directly. Like it, during an A
@@ -895,7 +916,12 @@ def get_dy_with_report_age(
 @internal
 @view
 def _quote(
-    i: uint256, j: uint256, dx: uint256, report_price: uint256, report_age_us: uint256
+    i: uint256,
+    j: uint256,
+    dx: uint256,
+    asset_price: uint256,
+    report_age_us: uint256,
+    timestamp: uint256,
 ) -> uint256:
     assert i != j and i < N_COINS and j < N_COINS, "coin index out of range"
     # A detached policy no longer prices the pool's swaps.
@@ -926,7 +952,7 @@ def _quote(
         dy = dy * PRECISION // price_scale
     dy //= precisions[j]
 
-    fee: uint256 = self._get_fee(xp, report_price, report_age_us)
+    fee: uint256 = self._get_fee(xp, asset_price, report_age_us, timestamp)
     if fee == 0:  # Killed: the pool's native fee.
         fee = staticcall Pool(POOL).fee_calc(xp)
     # The pool clamps fees to [MIN_FEE, FEE_PRECISION]; config bounds keep this one inside.

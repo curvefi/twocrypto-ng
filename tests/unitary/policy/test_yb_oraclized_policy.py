@@ -1,8 +1,10 @@
 """YBOraclizedPolicy: fee, driver, LT deposit gate, governance and deployment.
 
 Mock-pool tests pin the arithmetic. Real-pool tests run the policy on Twocrypto
-with a LevAMM/LT stand-in that keeps LT.deposit's order of calls. Two opt-in
-fork tests check the Pyth verifier and the production YieldBasis WETH market.
+with a LevAMM/LT stand-in that keeps LT.deposit's order of calls. Reports reach
+the policy through a PythReportBank from the lib/pyth-report-bank submodule
+(git submodule update --init); without it this module is skipped. An opt-in fork
+test checks the production YieldBasis WETH market.
 """
 
 import math
@@ -14,7 +16,6 @@ from types import SimpleNamespace
 
 import boa
 import pytest
-from eth_utils import keccak
 
 from scripts.deploy_yb_oraclized_policy import CONFIG as PRODUCTION
 from scripts.deploy_yb_oraclized_policy import constructor_args
@@ -30,26 +31,15 @@ DRIVER = (3_600, 7_200, 4 * WAD // 1_000, 20 * WAD // 10_000, 900)
 TOLERANCE = 10**14  # 1 bp
 EMERGENCY = boa.env.generate_address("emergency")
 POLICY = boa.load_partial("contracts/main/YBOraclizedPolicy.vy")
-# A signed Pyth Pro ETH/USD report (channel 3) and the mainnet state it was checked
-# against, for the opt-in fork test.
-SIGNED_REPORT = bytes.fromhex(
-    "2a22999a959316e6c58af7f283d86e4d5c011f8c4bfd526cd9a11cb34de3a15047bc19ea18a4"
-    "e964f9ba9efdc80ec0c684d5466243f40962f9bf6e8ccfe2ae6ea1834f1300002993c7d37500"
-    "065b1d1ae41b8003010000000203000000003989b1aead04fff80c0100065b1d1ae41b80"
-)
-SIGNED_PRICE = 247123259053 * 10**10  # mantissa at exponent -8, in 1e18
-SIGNED_OBSERVATION_US = 1789030423600000
-PYTH_PIN = SimpleNamespace(
-    chain_id=1,
-    block=25945920,
-    block_timestamp=1789030427,
-    verifier="0xACeA761c27A909d4D3895128EBe6370FDE2dF481",
-    implementation="0xd8f4a467abec64bc944eee1325b9007879b6555b",
-    implementation_codehash="0xe034873bb8d9b1e210a9d0a54b7bb51a9a549cc244d2046e6c55d2d390851511",
-    verification_fee_wei=1,
-)
+BANK_SOURCE = "lib/pyth-report-bank/contracts/PythReportBank.vy"
+if not os.path.isfile(BANK_SOURCE):
+    pytest.skip("lib/pyth-report-bank submodule not checked out", allow_module_level=True)
+BANK = boa.load_partial(BANK_SOURCE)
+PYTH_VERIFIER = "0xACeA761c27A909d4D3895128EBe6370FDE2dF481"  # mainnet Pyth Lazer verifier
+FEED, CHANNEL = 2, 3  # the reports these tests sign: ETH/USD on fixed_rate@200ms
 
-# ABI stub only: signature authentication is checked separately against Pyth on a fork.
+# ABI stub only: pyth-report-bank's own tests check signatures with a port of
+# Pyth's verifier. It returns the payload of any update.
 VERIFIER = """
 @external
 @view
@@ -58,9 +48,9 @@ def verification_fee() -> uint256:
 
 @external
 @payable
-def verifyUpdate(report: Bytes[112]) -> (Bytes[41], address):
+def verifyUpdate(report: Bytes[517]) -> (Bytes[517], address):
     assert msg.value == 1 and slice(report, 4, 1) == b"\\x00", "verification failed"
-    return slice(report, 71, 41), self
+    return slice(report, 71, convert(slice(report, 69, 2), uint256)), self
 """
 
 POOL_MOCK = """
@@ -100,18 +90,49 @@ def precisions() -> uint256[2]:
     return [self.precision0, 1]
 """
 
-# The LevAMM book for mock-pool tests.
+# The LevAMM book for mock-pool tests. Each LevAMM mock is its own price oracle,
+# whose AGG() is the crvUSD aggregator (link_aggregator).
 AMM_MOCK = """
 COLLATERAL: public(address)
 STABLECOIN: public(address)
 collateral_amount: public(uint256)
 get_debt: public(uint256)
+AGG: public(address)
 
 @deploy
 def __init__(collateral: address, stablecoin: address):
     self.COLLATERAL = collateral
     self.STABLECOIN = stablecoin
+
+@external
+@view
+def PRICE_ORACLE_CONTRACT() -> address:
+    return self
 """
+
+# The crvUSD aggregator: price() is the rate price_w() would store; writes counts stores.
+AGG_MOCK = """
+price: public(uint256)
+last_price: public(uint256)
+last_timestamp: public(uint256)
+writes: public(uint256)
+
+@deploy
+def __init__():
+    self.price = 10**18
+    self.last_price = 10**18
+    self.last_timestamp = block.timestamp
+
+@external
+def price_w() -> uint256:
+    if self.last_timestamp != block.timestamp:
+        self.last_timestamp = block.timestamp
+        self.last_price = self.price
+        self.writes += 1
+    return self.last_price
+"""
+AGGREGATOR = boa.loads_partial(AGG_MOCK)
+ZERO = "0x0000000000000000000000000000000000000000"
 
 # LevAMM and LT in one contract. deposit() keeps LT.deposit's order: liquidity is
 # added with the LevAMM as LP receiver, the pool calls the policy back, and only
@@ -131,6 +152,7 @@ COLLATERAL: public(address)
 STABLECOIN: public(address)
 collateral_amount: public(uint256)
 get_debt: public(uint256)
+AGG: public(address)
 
 @deploy
 def __init__(pool: address):
@@ -138,6 +160,11 @@ def __init__(pool: address):
     self.STABLECOIN = staticcall Pool(pool).coins(0)
     for i: uint256 in range(2):
         extcall ERC20(staticcall Pool(pool).coins(i)).approve(pool, max_value(uint256))
+
+@external
+@view
+def PRICE_ORACLE_CONTRACT() -> address:
+    return self
 
 @external
 def deposit(assets: uint256, debt: uint256) -> uint256:
@@ -192,23 +219,64 @@ def config(fees=FEES, driver=DRIVER, tolerance=TOLERANCE):
     return (fees, driver, tolerance)
 
 
-def oracle(verifier, channel=3, past=12_000_000, future=6_000_000, low=10**6, high=10**30):
-    """OracleConfig: the backtested windows, and price bounds that admit every test price."""
-    return (verifier, channel, past, future, low, high)
+def bounds(low=10**6, high=10**30):
+    """PriceBounds that admit every test price by default."""
+    return (low, high)
 
 
-def deploy(pool, amm=None, fees=FEES, driver=DRIVER, tolerance=TOLERANCE, verifier=None):
+def bank_of(policy):
+    return BANK.at(policy.BANK())
+
+
+def deliver(policy, payload, value=1, sender=None):
+    """Deliver a signed report to the policy's bank."""
+    bank_of(policy).deliver_single_report(payload, value=value, sender=sender or boa.env.eoa)
+
+
+def latest(policy):
+    """The bank's newest (price, observation_us) on the policy's stream."""
+    return tuple(bank_of(policy).latest(FEED, CHANNEL))
+
+
+def write_report(policy, price, observation_us):
+    """Store a report in the policy's bank directly, admissible or not."""
+    bank_of(policy).eval(
+        f"self.packed_reports[{FEED}][{CHANNEL}] = ({price} << 64) | {observation_us}"
+    )
+
+
+def link_aggregator(amm):
+    """Give a LevAMM mock a crvUSD aggregator at $1, stored in this block."""
+    agg = boa.loads(AGG_MOCK)
+    amm.eval(f"self.AGG = {agg.address}")
+    return agg
+
+
+def set_rate(policy, last_price, age_s=0, price=None):
+    """The aggregator's stored rate, age_s old; price() (default: the same) is what price_w() stores."""
+    agg = AGGREGATOR.at(policy.AGGREGATOR())
+    agg.eval(f"self.last_price = {last_price}")
+    agg.eval(f"self.last_timestamp = {boa.env.evm.patch.timestamp - age_s}")
+    agg.eval(f"self.price = {last_price if price is None else price}")
+    return agg
+
+
+def deploy(pool, amm=None, fees=FEES, driver=DRIVER, tolerance=TOLERANCE, bank=None):
     if amm is None:
         amm = boa.loads(AMM_MOCK, pool.address, pool.coins(0))
-    if verifier is None:
-        verifier = boa.loads(VERIFIER)
+    if amm.AGG() == ZERO:
+        link_aggregator(amm)
+    if bank is None:
+        bank = BANK.deploy(boa.loads(VERIFIER).address)
     boa.env.set_balance(boa.env.eoa, WAD)
     return POLICY.deploy(
         pool.address,
         amm.address,
-        2,
+        bank.address,
+        FEED,
+        CHANNEL,
         EMERGENCY,
-        oracle(verifier.address),
+        bounds(),
         config(fees, driver, tolerance),
     )
 
@@ -320,7 +388,7 @@ def test_fee_classification(setup):
     assert policy.get_fee(toward) == fallback  # No report yet.
 
     observed = boa.env.evm.patch.timestamp * 1_000_000 - 1_000_000
-    policy.deliver_oracle_report(report(101 * WAD, observed), value=1)
+    deliver(policy, report(101 * WAD, observed), value=1)
     edge = Q - 99 * WAD * Q // (100 * WAD * 101 // 100)
     assert policy.get_fee(toward) == expected_fee(edge, 1_000_000) < fallback
 
@@ -354,7 +422,7 @@ def test_future_report_has_zero_age(setup):
     _, policy = setup
     candidate = [10**24 + 99 * WAD, 10**24 - 100 * WAD]
     now = boa.env.evm.patch.timestamp * 1_000_000
-    policy.deliver_oracle_report(report(101 * WAD, now + 6_000_000), value=1)
+    deliver(policy, report(101 * WAD, now + 6_000_000), value=1)
     fresh = policy.get_fee_with_report(candidate, 101 * WAD, 0)
     assert policy.get_fee(candidate) == fresh < FEES[2]
     boa.env.time_travel(seconds=12)
@@ -376,10 +444,7 @@ def test_hypothetical_report_matches_stored_report(setup, report_price, age_us):
     ]
     previews = [policy.get_fee_with_report(xp, report_price, age_us) for xp in candidates]
     with boa.env.anchor():
-        observation_us = boa.env.evm.patch.timestamp * 1_000_000 - age_us
-        policy.eval(
-            f"self.report = Report(asset_price={report_price}, observation_us={observation_us})"
-        )
+        write_report(policy, report_price, boa.env.evm.patch.timestamp * 1_000_000 - age_us)
         assert previews == [policy.get_fee(xp) for xp in candidates]
 
 
@@ -392,7 +457,7 @@ def test_report_behind_the_spot_pays_fallback(setup, coin_in, dx):
     xp[coin_in] += dx
     xp[1 - coin_in] = math_contract.get_y(pool.A(), 0, xp, pool.D(), 1 - coin_in)[0]
     # The report is on the wrong side of the starting marginal price.
-    policy.deliver_oracle_report(report(99 * WAD if coin_in == 0 else 101 * WAD), value=1)
+    deliver(policy, report(99 * WAD if coin_in == 0 else 101 * WAD), value=1)
     assert policy.get_fee(xp) == FEES[2]
 
 
@@ -406,7 +471,7 @@ def test_zero_edge_pays_fallback_with_corrective_marginal_prices(setup):
     p_after = get_p(candidate, pool.D(), pool.A()) * 100
     assert p_before < p_after <= report_price
     assert 101 * WAD >= 100 * WAD * report_price // (100 * WAD)  # No reported edge.
-    policy.deliver_oracle_report(report(report_price), value=1)
+    deliver(policy, report(report_price), value=1)
     assert policy.get_fee(candidate) == FEES[2]
 
 
@@ -420,7 +485,7 @@ def test_corrective_check_uses_synced_amplification(setup):
     p_high = get_p(candidate, D, 400_000) * 100
     assert 100 * WAD < p_high < p_low
     report_price = (p_low + p_high) // 2
-    policy.deliver_oracle_report(report(report_price), value=1)
+    deliver(policy, report(report_price), value=1)
     assert policy.cached_A() == 100_000
     assert policy.get_fee(candidate) == FEES[2]  # Passes the report at A = 100_000.
     pool.eval("self.A = 400_000")
@@ -430,67 +495,104 @@ def test_corrective_check_uses_synced_amplification(setup):
     assert policy.get_fee(candidate) < FEES[2]  # Stops short of the report at A = 400_000.
 
 
+@pytest.mark.parametrize(
+    "last_price, age_s, price, rate, accepted",
+    [
+        (WAD, 0, WAD, WAD, True),
+        (101 * WAD // 100, 0, 2 * WAD, 101 * WAD // 100, True),  # Fresh: the stored rate ...
+        (WAD, 14_400, 101 * WAD // 100, WAD, True),  # ... while at most 4 hours old,
+        (WAD, 14_401, 101 * WAD // 100, 101 * WAD // 100, True),  # else what price_w() stores.
+        (WAD // 2, 0, WAD // 2, WAD // 2, True),
+        (2 * WAD, 0, 2 * WAD, 2 * WAD, True),
+        (WAD // 2 - 1, 0, WAD, WAD // 2 - 1, False),  # Outside [$0.50, $2]: no discount,
+        (2 * WAD + 1, 0, WAD, 2 * WAD + 1, False),  # and no revert.
+        (WAD, 14_401, 2 * WAD + 1, 2 * WAD + 1, False),
+    ],
+)
+def test_fee_prices_the_report_at_the_live_crvusd_rate(
+    setup, last_price, age_s, price, rate, accepted
+):
+    _, policy = setup
+    toward = [10**24 + 99 * WAD, 10**24 - 100 * WAD]  # coin0 in at 0.99 per 1/100 coin1
+    # A USD report worth about 102 coin0 at the rate: discounted whenever the rate is used.
+    usd = 102 * rate // 10**10 * 10**10
+    deliver(policy, report(usd))
+    agg = set_rate(policy, last_price, age_s, price)
+    expected = FEES[2]
+    if accepted:
+        expected = expected_fee(Q - 99 * WAD * Q // (usd * WAD // rate), 0)
+        assert expected < FEES[2]
+    assert policy.get_fee(toward) == expected
+    assert policy.get_fee_with_report(toward, usd, 0) == expected
+    assert agg.writes() == 0  # The policy never stores a rate.
+
+
 # ---------------------------------- Reports ----------------------------------
 
 
-def test_report_admission(setup):
+def test_policy_reads_its_stream_from_the_bank(setup):
     pool, policy = setup
+    toward = [10**24 + 99 * WAD, 10**24 - 100 * WAD]
     now = boa.env.evm.patch.timestamp * 1_000_000
     state = policy.state()
-    policy.deliver_oracle_report(report(100 * WAD, now - 1_000_000), value=1)
-    assert tuple(policy.report()) == (100 * WAD, now - 1_000_000)
+    deliver(policy, report(101 * WAD, now - 1_000_000))
+    assert latest(policy) == (101 * WAD, now - 1_000_000)
     assert policy.state() == state  # Delivery checkpoints nothing.
-    saved = policy.report()
-    for observation in (now - 1_000_000, now - 1_000_001):
-        with boa.reverts("observation not newer"):
-            policy.deliver_oracle_report(report(100 * WAD, observation), value=1)
-    for payload, reason in (
-        (report(100 * WAD, now - 12_000_001), "report too old"),
-        (report(100 * WAD, now + 6_000_001), "report time"),
-        (report(100 * WAD, now, now + 6_000_001), "report time"),
-        (report(100 * WAD, now, now - 1), "report time"),
-        (report(100 * WAD, now, feed=1), "feed"),
-        (report(100 * WAD, now, channel=1), "channel"),
-        (report(100 * WAD, now)[:-1], "report length"),
-        (report(100 * WAD, now)[:4] + b"\xff" + report(100 * WAD, now)[5:], "verification failed"),
-    ):
-        with boa.reverts(reason):
-            policy.deliver_oracle_report(payload, value=1)
-    assert policy.report() == saved
-    # Twocrypto's price_scale() is nonreentrant: no delivery inside a pool operation.
-    pool.eval("self.locked = True")
-    with boa.reverts("locked"):
-        policy.deliver_oracle_report(report(100 * WAD, now), value=1)
+    assert policy.internal._observed_report() == 101 * WAD
+    assert policy.get_fee(toward) < FEES[2]
+    # Other feeds and channels live in their own streams: this policy never sees them.
+    with boa.env.anchor():
+        deliver(policy, report(150 * WAD, now, channel=1))
+        deliver(policy, report(150 * WAD, now, feed=1))
+        assert latest(policy) == (101 * WAD, now - 1_000_000)
+        assert policy.internal._observed_report() == 101 * WAD
+    # A delivery overtaken by a newer report changes nothing, and does not revert.
+    deliver(policy, report(102 * WAD, now))
+    deliver(policy, report(103 * WAD, now - 500_000))
+    assert latest(policy) == (102 * WAD, now)
+    assert policy.internal._observed_report() == 102 * WAD
 
 
-def test_report_admission_is_settable(setup):
+def test_price_bounds_are_settable(setup):
     _, policy = setup
+    toward = [10**24 + 99 * WAD, 10**24 - 100 * WAD]
     now = boa.env.evm.patch.timestamp * 1_000_000
-    # Tighter windows (no message ahead of the block) and ETH-like price bounds.
-    policy.set_oracle_config(
-        oracle(policy.oracle()[0], past=2_000_000, future=0, low=50 * WAD, high=200 * WAD)
-    )
-    for payload, reason in (
-        (report(100 * WAD, now - 2_000_001), "report too old"),
-        (report(100 * WAD, now, now + 1), "report time"),
-        (report(100 * WAD, now + 1), "report time"),
-        (report(50 * WAD - 10**10, now), "price bounds"),
-        (report(200 * WAD + 10**10, now), "price bounds"),
+    deliver(policy, report(101 * WAD, now - 2_000_000))
+    observed = latest(policy)[1]
+    assert policy.get_fee(toward) < FEES[2]
+    for sender in (boa.env.generate_address(), EMERGENCY):  # The emergency admin only kills.
+        with boa.reverts("ownable: caller is not the owner"):
+            policy.set_price_bounds(bounds(50 * WAD, 200 * WAD), sender=sender)
+    for bad in (
+        bounds(low=10**6 - 1),
+        bounds(high=10**30 + 1),
+        bounds(low=10**20, high=10**20 - 1),
     ):
-        with boa.reverts(reason):
-            policy.deliver_oracle_report(payload, value=1)
-    policy.deliver_oracle_report(report(200 * WAD, now - 2_000_000), value=1)
-    assert tuple(policy.report()) == (200 * WAD, now - 2_000_000)
-    policy.deliver_oracle_report(report(50 * WAD, now), value=1)
-    assert tuple(policy.report()) == (50 * WAD, now)
+        with boa.reverts("price bounds"):
+            policy.set_price_bounds(bad)
 
-
-def test_report_rejects_short_authenticated_payload(setup):
-    pool, _ = setup
-    verifier = boa.loads(VERIFIER.replace("slice(report, 71, 41)", "slice(report, 71, 40)"))
-    policy = deploy(pool, verifier=verifier)
-    with boa.reverts("payload length"):
-        policy.deliver_oracle_report(report(100 * WAD), value=1)
+    policy.set_price_bounds(bounds(50 * WAD, 200 * WAD))
+    assert policy.get_logs()[-1].bounds == bounds(50 * WAD, 200 * WAD)
+    assert policy.price_bounds() == bounds(50 * WAD, 200 * WAD)
+    # New bounds make the bank's current report absent; the bank keeps it.
+    assert policy.report_cutoff_us() == observed
+    assert latest(policy) == (101 * WAD, observed)
+    assert policy.get_fee(toward) == FEES[2]
+    assert policy.internal._observed_report() == 0
+    # Newer reports count while inside the bounds.
+    deliver(policy, report(101 * WAD, now - 1_000_000))
+    assert policy.get_fee(toward) < FEES[2]
+    assert policy.internal._observed_report() == 101 * WAD
+    for price in (50 * WAD - 10**10, 200 * WAD + 10**10):
+        with boa.env.anchor():
+            deliver(policy, report(price, now))
+            assert latest(policy)[0] == price
+            assert policy.get_fee(toward) == FEES[2]
+            assert policy.internal._observed_report() == 0
+    for price in (50 * WAD, 200 * WAD):
+        with boa.env.anchor():
+            deliver(policy, report(price, now))
+            assert policy.internal._observed_report() == price
 
 
 # ---------------------------------- Driver -----------------------------------
@@ -565,7 +667,7 @@ def test_driver_matches_report_lean_reference(seed, driver):
         for step in range(60):
             now = boa.env.evm.patch.timestamp
             push(policy, pool, scale, spot, oracle)
-            lean.update(now, tuple(policy.report()), spot, oracle, scale)
+            lean.update(now, latest(policy), spot, oracle, scale)
             fast, slow = policy.get_emas()
             assert math.isclose(fast / WAD, lean.fast, rel_tol=1e-12)
             assert math.isclose(slow / WAD, lean.slow, rel_tol=1e-12)
@@ -576,11 +678,11 @@ def test_driver_matches_report_lean_reference(seed, driver):
             pool.eval(f"self.last_prices = {spot}")
             if rng.random() < 0.4:
                 observed = boa.env.evm.patch.timestamp * 10**6 - rng.randrange(12_000_000)
-                if observed > policy.report().observation_us:
+                if observed > latest(policy)[1]:
                     price = spot * (10_000 + rng.randint(-50, 50)) // 10_000
-                    policy.deliver_oracle_report(report(price, observed), value=1)
+                    deliver(policy, report(price, observed), value=1)
             target = policy.get_price_scale()
-            expected = lean.target(boa.env.evm.patch.timestamp, tuple(policy.report()))
+            expected = lean.target(boa.env.evm.patch.timestamp, latest(policy))
             assert math.isclose(target / WAD, expected, rel_tol=1e-12, abs_tol=1e-15 * scale / WAD)
             # The pool steps one fifth of the requested gap.
             scale = scale + (target - scale) // 5
@@ -591,7 +693,7 @@ def test_observed_price_is_report_for_its_lifetime(setup):
     toward = [10**24 + 99 * WAD, 10**24 - 100 * WAD]  # coin0 in, toward the report
     push(policy, pool, spot=90 * WAD)
     boa.env.time_travel(seconds=1)
-    policy.deliver_oracle_report(report(101 * WAD), value=1)
+    deliver(policy, report(101 * WAD), value=1)
     assert policy.internal._observed_report() == 101 * WAD
     assert policy.get_fee(toward) < FEES[2]
     # relax_time ends the fee discount only: the EMAs keep observing the report.
@@ -611,9 +713,7 @@ def test_zero_report_lifetime_never_observes_a_report(setup):
     push(policy, pool, spot=90 * WAD)
     boa.env.time_travel(seconds=1)
     # Even a report observed after block.timestamp (age 0): fees still use it.
-    policy.deliver_oracle_report(
-        report(101 * WAD, boa.env.evm.patch.timestamp * 10**6 + 1), value=1
-    )
+    deliver(policy, report(101 * WAD, boa.env.evm.patch.timestamp * 10**6 + 1), value=1)
     assert policy.get_fee(toward) < FEES[2]
     assert policy.internal._observed_report() == 0
 
@@ -751,11 +851,9 @@ def test_settlement_bounds_with_the_previous_scale(source):
         lean.update(boa.env.evm.patch.timestamp, (0, 0), spot, 100 * WAD, 100 * WAD)
         boa.env.time_travel(seconds=600)
         if source == "report":
-            policy.deliver_oracle_report(report(far), value=1)
+            deliver(policy, report(far), value=1)
         push(policy, pool, scale=1005 * WAD // 10, spot=100 * WAD)
-        lean.update(
-            boa.env.evm.patch.timestamp, tuple(policy.report()), 100 * WAD, 0, 1005 * WAD // 10
-        )
+        lean.update(boa.env.evm.patch.timestamp, latest(policy), 100 * WAD, 0, 1005 * WAD // 10)
         state = policy.state()
         assert math.isclose(state.fast_ema / WAD, lean.fast, rel_tol=1e-12)
         assert math.isclose(state.slow_ema / WAD, lean.slow, rel_tol=1e-12)
@@ -1030,9 +1128,7 @@ def test_fee_matches_report_lean_vectors(vector):
             f"self.state = State(last_update_ts={now}, fast_ema={scale}, slow_ema={scale},"
             f" price_scale={scale}, xp={old}, D={D}, last_prices={scale})"
         )
-        policy.eval(
-            f"self.report = Report(asset_price={price}, observation_us={now * 10**6 - age_us})"
-        )
+        write_report(policy, price, now * 10**6 - age_us)  # The aggregator mock: crvUSD at $1.
         pool.eval(f"self.D = {live_D}")
         assert policy.get_fee(xp) == expected
 
@@ -1052,9 +1148,7 @@ def test_driver_matches_report_lean_vectors(vector):
             f" price_scale={scale}, xp=[10**24, 10**24], D=2 * 10**24, last_prices={last_prices})"
         )
         if touch_report:
-            policy.eval(
-                f"self.report = Report(asset_price={touch_report}, observation_us={now * 10**6})"
-            )
+            write_report(policy, touch_report, now * 10**6)
         assert policy.get_price_scale() == target
         push(policy, pool, scale=scale or oracle, spot=last_prices, oracle=oracle)
         assert (policy.state().fast_ema, policy.state().slow_ema) == (fast_after, slow_after)
@@ -1219,9 +1313,7 @@ def test_driver_matches_report_lean_lifetime_vectors(vector):
             f" price_scale={scale * WAD}, xp=[10**24, 10**24], D=2 * 10**24,"
             f" last_prices={last_prices * WAD})"
         )
-        policy.eval(
-            f"self.report = Report(asset_price={price * WAD}, observation_us={(now - age) * 10**6})"
-        )
+        write_report(policy, price * WAD, (now - age) * 10**6)
         assert math.isclose(policy.get_price_scale() / WAD, target, rel_tol=1e-12)
         push(policy, pool, scale=scale * WAD, spot=last_prices * WAD, oracle=oracle * WAD)
         assert math.isclose(policy.state().fast_ema / WAD, fast_after, rel_tol=1e-12)
@@ -1235,11 +1327,13 @@ def test_constructor_validation():
     with boa.env.anchor():
         pool = boa.loads(POOL_MOCK)
         amm = boa.loads(AMM_MOCK, pool.address, pool.address)
+        link_aggregator(amm)
         verifier = boa.loads(VERIFIER)
+        bank = BANK.deploy(verifier.address)
         base = dict(
             pool=pool.address,
             amm=amm.address,
-            pyth=verifier.address,
+            bank=bank.address,
             feed_id=2,
             channel=3,
             emergency_admin=EMERGENCY,
@@ -1250,6 +1344,7 @@ def test_constructor_validation():
             cap=DRIVER[3],
             lifetime=DRIVER[4],
             tolerance=TOLERANCE,
+            bounds=bounds(),
         )
 
         def attempt(**changes):
@@ -1258,20 +1353,24 @@ def test_constructor_validation():
             return POLICY.deploy(
                 a["pool"],
                 a["amm"],
+                a["bank"],
                 a["feed_id"],
+                a["channel"],
                 a["emergency_admin"],
-                oracle(a["pyth"], a["channel"]),
+                a["bounds"],
                 config(a["fees"], driver, a["tolerance"]),
             )
 
         zero = "0x0000000000000000000000000000000000000000"
         for changes, reason in (
-            (dict(pyth=zero), "verifier"),
-            (dict(pyth=boa.env.generate_address("no code")), "verifier"),
+            (dict(bank=zero), "bank"),
+            (dict(bank=boa.env.generate_address("no code")), "bank"),
             (dict(emergency_admin=zero), "emergency admin=0"),
             (dict(feed_id=0), "feed id"),
             (dict(channel=0), "channel"),
             (dict(channel=5), "channel"),
+            (dict(bounds=bounds(low=10**6 - 1)), "price bounds"),
+            (dict(bounds=bounds(high=10**30 + 1)), "price bounds"),
             (dict(fast=599), "fast half-life"),
             (dict(fast=7_201), "fast half-life"),
             (dict(slow=604_801), "slow half-life"),
@@ -1294,6 +1393,8 @@ def test_constructor_validation():
                 dict(amm=boa.loads(AMM_MOCK, pool.address, verifier.address).address),
                 "amm stablecoin",
             ),
+            # The LevAMM's price oracle names no aggregator.
+            (dict(amm=boa.loads(AMM_MOCK, pool.address, pool.address).address), "aggregator"),
         ):
             with boa.reverts(reason):
                 attempt(**changes)
@@ -1314,6 +1415,9 @@ def test_constructor_validation():
             tolerance=WAD // 1000,
         )
         assert policy.owner() == boa.env.eoa
+        assert policy.AGGREGATOR() == amm.AGG()
+        assert (policy.BANK(), policy.FEED_ID(), policy.CHANNEL()) == (bank.address, 2, 3)
+        assert policy.price_bounds() == bounds() and policy.report_cutoff_us() == 0
         assert attempt(lifetime=0).config()[1][4] == 0
 
 
@@ -1370,59 +1474,13 @@ def test_driver_config_applies_from_the_next_touch(setup):
     assert policy.get_price_scale() == 100 * WAD + 5 * (100 * WAD * driver[3] // WAD)
 
 
-def test_owner_sets_oracle_config(setup):
-    pool, policy = setup
-    candidate = [10**24 + 99 * WAD, 10**24 - 100 * WAD]
-    policy.deliver_oracle_report(report(101 * WAD), value=1)
-    observed = policy.report().observation_us
-    assert policy.get_fee(candidate) < FEES[2]
-    other = boa.loads(VERIFIER)
-    for sender in (boa.env.generate_address(), EMERGENCY):  # The emergency admin only kills.
-        with boa.reverts("ownable: caller is not the owner"):
-            policy.set_oracle_config(oracle(other.address, 1), sender=sender)
-    for bad, reason in (
-        (oracle(boa.env.generate_address("no code"), 1), "verifier"),
-        (oracle(other.address, 0), "channel"),
-        (oracle(other.address, 5), "channel"),
-        (oracle(other.address, 1, past=12_000_001), "past window"),
-        (oracle(other.address, 1, future=6_000_001), "future window"),
-        (oracle(other.address, 1, low=10**6 - 1), "price bounds"),
-        (oracle(other.address, 1, high=10**30 + 1), "price bounds"),
-        (oracle(other.address, 1, low=10**20, high=10**20 - 1), "price bounds"),
-    ):
-        with boa.reverts(reason):
-            policy.set_oracle_config(bad)
-
-    policy.set_oracle_config(oracle(other.address, 1))
-    assert policy.get_logs()[-1].oracle == oracle(other.address, 1)
-    assert policy.oracle() == oracle(other.address, 1)
-    # A new source drops the stored price and keeps the replay watermark.
-    assert tuple(policy.report()) == (0, observed)
-    assert policy.get_fee(candidate) == FEES[2]
-    assert policy.internal._observed_report() == 0
-    boa.env.time_travel(seconds=1)
-    with boa.reverts("channel"):
-        policy.deliver_oracle_report(report(101 * WAD, channel=3), value=1)
-    policy.deliver_oracle_report(report(101 * WAD, channel=1), value=1)
-    assert policy.get_fee(candidate) < FEES[2]
-    with boa.reverts("observation not newer"):
-        policy.deliver_oracle_report(report(101 * WAD, observed, channel=1), value=1)
-    # Reports now go through the new verifier: this one wants a fee of 2.
-    policy.set_oracle_config(
-        oracle(boa.loads(VERIFIER.replace("msg.value == 1", "msg.value == 2")).address, 1)
-    )
-    boa.env.time_travel(seconds=1)
-    with boa.reverts("verification failed"):
-        policy.deliver_oracle_report(report(101 * WAD, channel=1), value=1)
-
-
 def test_kill_switch(setup):
     pool, policy = setup
     candidate = [10**24 + 99 * WAD, 10**24 - 100 * WAD]
     boa.env.time_travel(seconds=600)
     faulty = report(101 * WAD)
-    policy.deliver_oracle_report(faulty, value=1)
-    observed = policy.report().observation_us
+    deliver(policy, faulty)
+    observed = latest(policy)[1]
     assert FEES[0] <= policy.get_fee(candidate) < FEES[2]
     assert policy.internal._observed_report() == 101 * WAD
 
@@ -1433,23 +1491,73 @@ def test_kill_switch(setup):
     # Zero hands the pool back its native fee and price_scale target.
     assert policy.get_fee(candidate) == policy.get_fee_with_report(candidate, 101 * WAD, 0) == 0
     assert policy.get_price_scale() == 0
-    with boa.reverts("killed"):
-        policy.deliver_oracle_report(report(101 * WAD), value=1)
-    # The price is dropped and its time kept: callbacks run on the pool's spot.
-    assert tuple(policy.report()) == (0, observed)
+    # Callbacks run on the pool's spot. The shared bank keeps the report.
     assert policy.internal._observed_report() == 0
     push(policy, pool, spot=120 * WAD)
     assert policy.state().last_update_ts == boa.env.evm.patch.timestamp
+    assert latest(policy) == (101 * WAD, observed)
+    # A report delivered while killed is dropped by the revival too.
+    boa.env.time_travel(seconds=1)
+    deliver(policy, report(101 * WAD))
+    during = latest(policy)[1]
 
     policy.set_killed(False)  # The owner may revive it, as may the emergency admin.
     assert not policy.is_killed()
+    assert policy.report_cutoff_us() == during > observed
     assert policy.get_fee(candidate) == FEES[2]  # No discount before a new report.
     assert policy.internal._observed_report() == 0
-    with boa.reverts("observation not newer"):
-        policy.deliver_oracle_report(faulty, value=1)  # The dropped report stays dropped.
     boa.env.time_travel(seconds=600)  # The EMAs follow the last touch's spot.
     assert policy.get_price_scale() > 100 * WAD
-    policy.deliver_oracle_report(report(101 * WAD), value=1)
+    deliver(policy, report(101 * WAD))
+    assert policy.get_fee(candidate) < FEES[2]
+    assert policy.internal._observed_report() == 101 * WAD
+
+
+def test_killed_policy_never_reads_the_bank(setup):
+    """A broken bank cannot stop a killed policy: kill, fees, targets and callbacks."""
+    pool, policy = setup
+    candidate = [10**24 + 99 * WAD, 10**24 - 100 * WAD]
+    deliver(policy, report(101 * WAD))
+    bank = policy.BANK()
+    working = boa.env.get_code(bank)
+    broken = boa.loads(
+        '@external\n@view\ndef latest(f: uint32, c: uint8) -> (uint256, uint256):\n    raise "bank down"'
+    )
+    boa.env.set_code(bank, boa.env.get_code(broken.address))
+    try:
+        with boa.reverts("bank down"):
+            policy.get_fee(candidate)
+        policy.set_killed(True, sender=EMERGENCY)
+        assert policy.get_fee(candidate) == 0
+        assert policy.get_price_scale() == 0
+        assert policy.get_emas() == [100 * WAD, 100 * WAD]
+        boa.env.time_travel(seconds=60)
+        push(policy, pool, spot=101 * WAD)
+        with boa.reverts("bank down"):  # Reviving needs a working bank.
+            policy.set_killed(False, sender=EMERGENCY)
+    finally:
+        boa.env.set_code(bank, working)
+    policy.set_killed(False, sender=EMERGENCY)
+    assert policy.get_fee(candidate) == FEES[2]
+
+
+def test_two_policies_share_one_report(setup):
+    """The bitcoin pools' case: one delivery prices every policy on the stream."""
+    pool, policy = setup
+    candidate = [10**24 + 99 * WAD, 10**24 - 100 * WAD]
+    other_pool = boa.loads(POOL_MOCK)
+    other = deploy(other_pool, bank=bank_of(policy))
+    push(other, other_pool)
+    deliver(policy, report(101 * WAD))
+    for p in (policy, other):
+        assert p.get_fee(candidate) < FEES[2]
+        assert p.internal._observed_report() == 101 * WAD
+    # Killing one leaves the other, and the bank, untouched.
+    other.set_killed(True, sender=EMERGENCY)
+    assert other.get_fee(candidate) == 0
+    assert policy.get_fee(candidate) < FEES[2]
+    other.set_killed(False, sender=EMERGENCY)
+    assert other.get_fee(candidate) == FEES[2]
     assert policy.get_fee(candidate) < FEES[2]
 
 
@@ -1784,18 +1892,21 @@ def test_balanced_removal_callback_fits_its_gas(market):
     amm.withdraw(WAD // 10)
     assert_caches_follow_ledgers(market)  # The real callback succeeded.
 
-    # Worst removal path: user supply changed, every slot cold.
+    # Worst removal path: user supply changed, a live bank report, every slot cold.
+    deliver(policy, report(pool.last_prices() // 10**10 * 10**10))
     policy.eval(f"self.cached_supply = {pool.user_supply() + 1}")
     xp = list(policy.state().xp)
     args = (xp, pool.price_scale(), pool.price_oracle(), pool.last_prices(), WAD, WAD, pool.D(), 0)
-    boa.env.time_travel(seconds=3_600)
+    boa.env.time_travel(seconds=600)
     policy.update_pool_state(*args, sender=pool.address, gas=300_000)
     used = policy._computation.get_gas_used()
+    assert policy.internal._observed_report() > 0
     # boa keeps slots warm and dirty across calls, so add what a fresh transaction
-    # pays on top: a cold read of every slot the callback touches (15 policy: state 8,
-    # is_killed, report 2, report_lifetime, 2 half-lives, cached_supply; 2 pool), and a
-    # full reset for the 9 slots it can write. A removal reads nothing from the LevAMM.
-    worst = used + 17 * 2_100 + 9 * 2_900
+    # pays on top: a cold read of every slot the callback touches (16 policy: state 8,
+    # is_killed, price_bounds 2, report_cutoff_us, report_lifetime, 2 half-lives,
+    # cached_supply; 1 bank; 2 pool), the bank's cold account, and a full reset for
+    # the 9 slots it can write. A removal reads nothing from the LevAMM or aggregator.
+    worst = used + 19 * 2_100 + 2_600 + 9 * 2_900
     assert worst < 150_000, (used, worst)
 
 
@@ -1806,7 +1917,7 @@ def test_balanced_removal_callback_fits_its_gas(market):
 def test_real_pool_quote_swap_and_withdrawal(market, user, coin_in, report_price):
     pool, policy, coins = market.pool, market.policy, market.coins
     fallback = FEES[2]
-    policy.deliver_oracle_report(report(report_price * WAD), value=1)
+    deliver(policy, report(report_price * WAD), value=1)
     boa.env.time_travel(blocks=1, block_delta=1)
     coin_out = 1 - coin_in
     dx = 100 * WAD if coin_in == 0 else WAD // 10
@@ -1848,7 +1959,7 @@ def test_amplification_ramp(market, user, factory_admin, flat_fee):
 
     def swap():
         # A report beyond the spot: buying coin1 with coin0 is corrective.
-        policy.deliver_oracle_report(report(pool.last_prices() * 1003 // 1000), value=1)
+        deliver(policy, report(pool.last_prices() * 1003 // 1000), value=1)
         boa.deal(coins[0], user, dx)
         quote = pool.get_dy(0, 1, dx)
         with boa.env.prank(user):
@@ -1885,12 +1996,12 @@ def test_amplification_ramp(market, user, factory_admin, flat_fee):
 
 
 def store_report(policy, price, age_s):
-    """Deliver the report when admissible (age within 12 s), else write it as stored."""
+    """Deliver the report when admissible (age within 12 s), else write it into the bank."""
     observation_us = (boa.env.evm.patch.timestamp - age_s) * 10**6
     if age_s <= 12:
-        policy.deliver_oracle_report(report(price, observation_us), value=1)
+        deliver(policy, report(price, observation_us))
     else:
-        policy.eval(f"self.report = Report(asset_price={price}, observation_us={observation_us})")
+        write_report(policy, price, observation_us)
 
 
 def swap_fee_rate(pool, received):
@@ -1955,7 +2066,7 @@ def test_get_dy_with_report_is_what_the_swap_pays(market, user, coin_in, lead_s,
         assert quote == policy.get_dy_with_report_age(coin_in, coin_out, dx, price, age_us)
         with boa.env.anchor():
             boa.env.time_travel(seconds=lead_s)
-            policy.deliver_oracle_report(signed, value=1)
+            deliver(policy, signed, value=1)
             boa.deal(coins[coin_in], user, dx)
             with boa.env.prank(user):
                 assert pool.exchange(coin_in, coin_out, dx, 0) == quote
@@ -1974,19 +2085,56 @@ def test_get_dy_with_report_only_decodes(market):
         0, 1, dx, good, now
     )
     with boa.reverts("verification failed"):  # Delivery does check it.
-        policy.deliver_oracle_report(unsigned, value=1)
-    # Too old to deliver, and past relax_time: quoted at fallback_fee, without reverting.
+        deliver(policy, unsigned)
+    # Too old to store, and past relax_time: quoted at fallback_fee, without reverting.
     old = report(price, (now - FEES[3]) * 10**6)
-    with boa.reverts("report too old"):
-        policy.deliver_oracle_report(old, value=1)
+    before = latest(policy)
+    deliver(policy, old)  # The bank skips it.
+    assert latest(policy) == before
     assert policy.get_dy_with_report(0, 1, dx, old, now) == pool.get_dy(0, 1, dx)
     # A report observed after the given time has age zero.
     future = report(price, (now + 5) * 10**6)
     assert policy.get_dy_with_report(0, 1, dx, future, now) == policy.get_dy_with_report_age(
         0, 1, dx, price, 0
     )
-    with boa.reverts("channel"):  # The payload format is still checked.
+    # This policy's bounds and cutoff apply, as they will to the stored report.
+    with boa.env.anchor():
+        policy.set_price_bounds(bounds(high=price - 10**10))
+        assert policy.get_dy_with_report(0, 1, dx, good, now) == pool.get_dy(0, 1, dx)
+    with boa.env.anchor():
+        deliver(policy, good)
+        policy.set_price_bounds(bounds())  # The cutoff is now good's observation.
+        assert policy.get_dy_with_report(0, 1, dx, good, now) == pool.get_dy(0, 1, dx)
+    # The payload must carry this policy's stream.
+    with boa.reverts("channel"):
         policy.get_dy_with_report(0, 1, dx, report(price, now * 10**6, channel=1), now)
+    with boa.reverts("feed"):
+        policy.get_dy_with_report(0, 1, dx, report(price, now * 10**6, feed=1), now)
+
+
+@pytest.mark.parametrize("coin_in", [0, 1])
+def test_quotes_and_swaps_share_an_off_peg_crvusd_rate(market, user, coin_in):
+    """Off peg, and across the 4-hour line where the rate becomes price()'s."""
+    pool, policy, coins = market.pool, market.policy, market.coins
+    coin_out = 1 - coin_in
+    boa.env.time_travel(seconds=600)
+    dx = quote_sizes(pool, coin_in)[0]
+    plain = pool.get_dy(coin_in, coin_out, dx)
+    # A stored rate of $1.004, 4 hours less 12 s old; price_w() would store $0.996.
+    set_rate(policy, 1_004 * WAD // 1_000, 14_388, 996 * WAD // 1_000)
+    for lead_s in (0, 24):  # This block's stored rate, then price() once it is stale.
+        now = boa.env.evm.patch.timestamp
+        rate = 1_004 * WAD // 1_000 if lead_s == 0 else 996 * WAD // 1_000
+        usd = corrective_price(pool, coin_in) * rate // WAD // 10**10 * 10**10
+        signed = report(usd, now * 10**6)
+        quote = policy.get_dy_with_report(coin_in, coin_out, dx, signed, now + lead_s)
+        assert quote != plain
+        with boa.env.anchor():
+            boa.env.time_travel(seconds=lead_s)
+            deliver(policy, signed) if lead_s == 0 else write_report(policy, usd, now * 10**6)
+            boa.deal(coins[coin_in], user, dx)
+            with boa.env.prank(user):
+                assert pool.exchange(coin_in, coin_out, dx, 0) == quote
 
 
 def test_get_dy_with_report_age_off_the_discount(market):
@@ -1998,11 +2146,14 @@ def test_get_dy_with_report_age_off_the_discount(market):
     assert policy.get_dy_with_report_age(0, 1, dx, 0, 0) == plain
     assert policy.get_dy_with_report_age(0, 1, dx, corrective_price(pool, 1), 0) == plain
     assert policy.get_dy_with_report_age(0, 1, dx, price, 0) > plain
-    # Killed: the pool's native fee, as get_dy.
+    # Killed: the pool's native fee, as get_dy, without reading the bank.
     policy.set_killed(True, sender=EMERGENCY)
     native = pool.get_dy(0, 1, dx)
     assert native != plain
     assert policy.get_dy_with_report_age(0, 1, dx, price, 0) == native
+    boa.env.set_code(policy.BANK(), b"\xfe")  # Any call to the bank would fail.
+    signed = report(price)
+    assert policy.get_dy_with_report(0, 1, dx, signed, boa.env.evm.patch.timestamp) == native
     for i, j, amount, reason in (
         (0, 0, dx, "coin index out of range"),
         (2, 1, dx, "coin index out of range"),
@@ -2053,13 +2204,16 @@ def test_get_dy_with_report_age_during_a_ramp(market, user, factory_admin, flat_
 
 def test_deployment_script(market):
     pool, amm = market.pool, market.market
-    verifier = boa.loads(VERIFIER)
+    bank = bank_of(market.policy)
     dao = boa.env.generate_address("yb dao")
     cfg = SimpleNamespace(
         pool=pool.address,
         amm=amm.address,
+        bank=bank.address,
+        aggregator=amm.AGG(),
         feed_id=2,
-        oracle=oracle(verifier.address),
+        channel=3,
+        bounds=bounds(),
         emergency_admin=EMERGENCY,
         owner=dao,
         config=config(),
@@ -2068,10 +2222,11 @@ def test_deployment_script(market):
     policy = deploy_script(POLICY, cfg)
     assert policy.owner() == dao
     assert policy.config() == config()
-    assert (policy.POOL(), policy.AMM(), policy.oracle()) == (
+    assert (policy.POOL(), policy.AMM(), policy.BANK(), policy.price_bounds()) == (
         pool.address,
         amm.address,
-        oracle(verifier.address),
+        bank.address,
+        bounds(),
     )
     assert policy.ctor_calldata
     # A resumed run reuses the deployment and checks it again.
@@ -2089,43 +2244,6 @@ def test_deployment_script(market):
 
 
 # --------------------------------- Fork tests --------------------------------
-
-
-@pytest.mark.skipif(os.getenv("ORACLIZED_PYTH_FORK") != "1", reason="opt-in RPC test")
-def test_signed_report_against_pinned_pyth_verifier():
-    pin = PYTH_PIN
-    with boa.swap_env(boa.Env()):
-        boa.fork(os.environ["ETH_RPC_URL"], block_identifier=pin.block, cache_dir=None)
-        assert boa.env.evm.patch.chain_id == pin.chain_id
-        assert boa.env.evm.patch.timestamp == pin.block_timestamp
-        code_hash = "0x" + keccak(boa.env.get_code(pin.implementation)).hex()
-        assert code_hash == pin.implementation_codehash
-        # Ingress-only pool stub. The real-pool tests above use the real pool and math.
-        pool = boa.loads(POOL_MOCK)
-        policy = POLICY.deploy(
-            pool.address,
-            boa.loads(AMM_MOCK, pool.address, pool.address).address,
-            2,
-            EMERGENCY,
-            oracle(pin.verifier),
-            config(),
-        )
-        boa.env.set_balance(boa.env.eoa, WAD)
-        signed = SIGNED_REPORT
-        fee = policy.verification_fee()
-        assert fee == pin.verification_fee_wei
-        # Pyth rejects underpayment; its excess refund cannot enter this policy.
-        for incorrect_fee in (fee - 1, fee + 1):
-            with boa.reverts():
-                policy.deliver_oracle_report(signed, value=incorrect_fee)
-        policy.deliver_oracle_report(signed, value=fee)
-        assert tuple(policy.report()) == (SIGNED_PRICE, SIGNED_OBSERVATION_US)
-        with boa.reverts("observation not newer"):
-            policy.deliver_oracle_report(signed, value=fee)
-        with boa.reverts():
-            policy.deliver_oracle_report(
-                signed[:20] + bytes([signed[20] ^ 1]) + signed[21:], value=fee
-            )
 
 
 # ABI-only stubs for the production YieldBasis market.
@@ -2202,7 +2320,9 @@ def test_production_market_fork():
         boa.fork(os.environ["ETH_RPC_URL"], block_identifier=FORK_BLOCK)
         deployer = boa.env.generate_address()
         boa.env.eoa = deployer
-        policy = deploy_script(POLICY, SimpleNamespace(**{**vars(PRODUCTION), "policy": None}))
+        bank = BANK.deploy(PYTH_VERIFIER)
+        cfg = SimpleNamespace(**{**vars(PRODUCTION), "bank": bank.address, "policy": None})
+        policy = deploy_script(POLICY, cfg)
         assert policy.owner() == PRODUCTION.owner
         assert boa.env.get_code(PRODUCTION.owner) and boa.env.get_code(PRODUCTION.emergency_admin)
 

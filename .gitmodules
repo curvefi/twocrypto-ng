@@ -1,0 +1,3 @@
+[submodule "lib/pyth-report-bank"]
+	path = lib/pyth-report-bank
+	url = https://github.com/curvefi/pyth-report-bank

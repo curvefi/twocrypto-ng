@@ -1,5 +1,8 @@
 """Deploy YBOraclizedPolicy for the YieldBasis crvUSD/WETH pool and hand it to the DAO.
 
+The policy reads Pyth reports from a PythReportBank (CONFIG.bank), deployed first
+from the lib/pyth-report-bank submodule (curvefi/pyth-report-bank).
+
 Run from the repository root: `uv run python scripts/deploy_yb_oraclized_policy.py`.
 The signer deploys the policy, every parameter is read back, ownership moves to
 the YieldBasis DAO, and the source is verified on Etherscan. Set CONFIG.policy to
@@ -23,9 +26,12 @@ Operating the attached policy (the contract source stays as deployed and verifie
 - The pool's admin fee must stay 0 for the LT check to measure deposited debt.
 - The pool's get_dx can under-quote an input whose swap crosses the report and
   pays fallback_fee; confirm with get_dy.
-- The keeper must deliver a report more often than report_lifetime (90 minutes).
-  Past it, the averages and the target follow the pool's spot after the previous
-  touch, as the pool's own EMA does.
+- The keeper must deliver a report to the bank more often than report_lifetime
+  (90 minutes). Past it, the averages and the target follow the pool's spot after
+  the previous touch, as the pool's own EMA does.
+- Fees read the crvUSD rate when they are priced: the aggregator's last_price()
+  while at most 4 hours old, else its price() view, which costs every swap more
+  until someone calls price_w() on the aggregator.
 """
 
 import os
@@ -42,13 +48,13 @@ CONFIG = SimpleNamespace(
     chain_id=1,
     pool="0x656341Ef90b622c6634e0573772FfB7f3669b9f3",  # YieldBasis crvUSD/WETH
     amm="0x5f8D24F33Cc5a1D5D1bf012261E6A2214C92233c",  # LevAMM of YieldBasis market 10
+    # crvUSD PriceAggregator, which the policy reads through the LevAMM's price oracle (checked).
+    aggregator="0x18672b1b0c623a30089A280Ed9256379fb0E4E62",
+    bank=None,  # PythReportBank (immutable); not deployed yet
     feed_id=2,  # Pyth Pro Crypto.ETH/USD (immutable)
-    # OracleConfig: report admission, owner-settable after deployment.
-    oracle=(
-        "0xACeA761c27A909d4D3895128EBe6370FDE2dF481",  # Pyth Lazer verifier (UUPS proxy)
-        4,  # channel: fixed_rate@1000ms, the whole-second reports the backtest replays
-        12_000_000,  # past_window_us: observation up to 12 s before the block
-        6_000_000,  # future_window_us: message up to 6 s after the block
+    channel=4,  # fixed_rate@1000ms, the whole-second reports the backtest replays (immutable)
+    # PriceBounds, owner-settable after deployment.
+    bounds=(
         100 * WAD,  # min_price: $100 per ETH
         100_000 * WAD,  # max_price: $100,000 per ETH
     ),
@@ -79,7 +85,16 @@ CONFIG = SimpleNamespace(
 
 
 def constructor_args(cfg):
-    return (cfg.pool, cfg.amm, cfg.feed_id, cfg.emergency_admin, cfg.oracle, cfg.config)
+    return (
+        cfg.pool,
+        cfg.amm,
+        cfg.bank,
+        cfg.feed_id,
+        cfg.channel,
+        cfg.emergency_admin,
+        cfg.bounds,
+        cfg.config,
+    )
 
 
 def check(policy, policy_source, cfg):
@@ -93,16 +108,18 @@ def check(policy, policy_source, cfg):
     expected = {
         "POOL": cfg.pool,
         "AMM": cfg.amm,
+        "BANK": cfg.bank,
+        "AGGREGATOR": cfg.aggregator,
         "FEED_ID": cfg.feed_id,
+        "CHANNEL": cfg.channel,
         "EMERGENCY_ADMIN": cfg.emergency_admin,
     }
     for name, value in expected.items():
         actual = getattr(policy, name)()
         if str(actual).lower() != str(value).lower():
             raise RuntimeError(f"{name} is {actual}, expected {value}")
-    oracle = tuple(policy.oracle())
-    if (str(oracle[0]).lower(), *oracle[1:]) != (cfg.oracle[0].lower(), *cfg.oracle[1:]):
-        raise RuntimeError(f"oracle is {policy.oracle()}, expected {cfg.oracle}")
+    if tuple(policy.price_bounds()) != cfg.bounds:
+        raise RuntimeError(f"price bounds are {policy.price_bounds()}, expected {cfg.bounds}")
     if policy.config() != cfg.config:
         raise RuntimeError(f"config is {policy.config()}, expected {cfg.config}")
     if policy.is_killed():
@@ -153,8 +170,8 @@ def main():
     boa.env.suppress_debug_tt()
     if boa.env.evm.patch.chain_id != cfg.chain_id:
         raise ValueError(f"Expected chain {cfg.chain_id}, got {boa.env.evm.patch.chain_id}")
-    if not boa.env.get_code(cfg.oracle[0]):
-        raise ValueError("Pyth verifier has no code on this chain")
+    if not cfg.bank or not boa.env.get_code(cfg.bank):
+        raise ValueError("Set CONFIG.bank to a PythReportBank on this chain")
 
     policy_source = boa.load_partial("contracts/main/YBOraclizedPolicy.vy")
     needs_signer = True
