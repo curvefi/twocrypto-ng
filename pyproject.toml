@@ -14,6 +14,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel.force-include]
 "contracts/main" = "twocrypto_ng"
+"contracts/policies" = "twocrypto_ng"
 
 [dependency-groups]
 dev = [
@@ -46,6 +47,8 @@ curve-std = { git = "https://github.com/curvefi/curve-std", rev = "main" }
 
 [tool.ruff]
 line-length = 100
+# scripts/yubi_deployers.py is a verbatim copy from the yubi-deployers project.
+extend-exclude = ["scripts/yubi_deployers.py"]
 
 [tool.basedpyright]
 executionEnvironments = [

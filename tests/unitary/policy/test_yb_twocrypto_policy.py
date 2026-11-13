@@ -5,7 +5,7 @@ import pytest
 PRECISION = 10**18
 TWEAK_PRICE_MULTIPLIER = 5
 CAP_RAMP_SECONDS = 3_600
-POLICY_DEPLOYER = boa.load_partial("contracts/main/YBTwocryptoPolicy.vy")
+POLICY_DEPLOYER = boa.load_partial("contracts/policies/YBTwocryptoPolicy.vy")
 POOL_DEPLOYER = boa.load_partial("tests/mocks/YBPolicyPoolMock.vy")
 
 
