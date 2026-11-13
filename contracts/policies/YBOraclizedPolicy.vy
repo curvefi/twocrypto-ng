@@ -23,7 +23,7 @@ Notable features are:
      modules in ./modules hold the rest:
          pyth_reports      coin1's USD report from a PythReportBank: feed,
                            Curve pool basis and price bounds
-         math              the pool math's get_p, the pool's swap for
+         policy_math       the pool math's get_p, the pool's swap for
                            get_dy_with_report, and the EMA
          yb_lt_gate        the LT deposit ratio check
 
@@ -76,7 +76,7 @@ Notable features are:
 ################################################################
 
 from snekmate.auth import ownable
-from .modules import math
+from .modules import policy_math as math  # snekmate also has a math module
 from .modules import pyth_reports
 from .modules import yb_lt_gate as lt_gate
 
