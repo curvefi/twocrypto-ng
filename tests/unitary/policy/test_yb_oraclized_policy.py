@@ -164,12 +164,12 @@ def basis_pool(pool, oracle, invert=False):
 
 WBTC_BASIS = 9_995 * WAD // 10_000  # 0x839d...: WBTC in cbBTC, used as is
 TBTC_BASIS = 10_006 * WAD // 10_000  # 0xae6e...: cbBTC in tBTC, inverted
-# The basis moves coin1's price at most 10%: price_oracle(0) in [0.9, 1.1], or
-# inverted in [1 / 1.1, 1 / 0.9] rounded inward.
-DIRECT_RANGE = (9 * WAD // 10, 11 * WAD // 10)
+# The basis moves coin1's price at most 1%: price_oracle(0) in [0.99, 1.01], or
+# inverted in [1 / 1.01, 1 / 0.99] rounded inward.
+DIRECT_RANGE = (99 * WAD // 100, 101 * WAD // 100)
 INVERTED_RANGE = (
-    (WAD * WAD + 11 * WAD // 10 - 1) // (11 * WAD // 10),
-    WAD * WAD // (9 * WAD // 10),
+    (WAD * WAD + DIRECT_RANGE[1] - 1) // DIRECT_RANGE[1],
+    WAD * WAD // DIRECT_RANGE[0],
 )
 ZERO = "0x0000000000000000000000000000000000000000"
 # The pool mock's math: the pool's own, whose get_p the policy calls.
@@ -739,7 +739,7 @@ def test_basis_prices_coin1_for_fees_and_driver(based):
 
 
 @pytest.mark.parametrize("edge, step", [(0, 0), (1, 0), (0, -1), (1, 1), (0, -WAD // 2), (1, WAD)])
-def test_basis_is_capped_at_ten_percent(based, edge, step):
+def test_basis_is_capped_at_one_percent(based, edge, step):
     """Past either end the basis is the end: inverted, the cap is on 1 / price_oracle(0)."""
     _, policy, basis = based
     invert = policy.INVERT_BASIS()
@@ -749,18 +749,18 @@ def test_basis_is_capped_at_ten_percent(based, edge, step):
     expected = with_basis(100 * WAD, limits[edge], invert)
     assert policy.get_report()[0] == expected
     assert observed_report(policy) == expected
-    assert 90 * WAD <= expected <= 110 * WAD  # coin1 within 10% of the feed's price
+    assert 99 * WAD <= expected <= 101 * WAD  # coin1 within 1% of the feed's price
 
 
 def test_inverted_cap_is_on_the_inverse(based):
-    """An oracle of 0.9 is a basis of 1.11 inverted, capped to 1.1 there."""
+    """An oracle of 0.98 is a basis of 0.98 capped to 0.99, or inverted 1.02 capped to 1.01."""
     _, policy, basis = based
     write_report(policy, 100 * WAD, (boa.env.evm.patch.timestamp - 20) * 1_000_000)
-    basis.eval(f"self.oracle = {9 * WAD // 10}")
+    basis.eval(f"self.oracle = {98 * WAD // 100}")
     if policy.INVERT_BASIS():
-        assert policy.get_report()[0] == 100 * WAD * WAD // INVERTED_RANGE[0]  # 110 less 1e-17
+        assert policy.get_report()[0] == 100 * WAD * WAD // INVERTED_RANGE[0]  # 101 less 1e-16
     else:
-        assert policy.get_report()[0] == 90 * WAD
+        assert policy.get_report()[0] == 99 * WAD
 
 
 def test_bounds_apply_to_the_price_with_its_basis(based):
@@ -2417,9 +2417,11 @@ def test_quotes_and_swaps_share_the_live_basis(market, user, factory_admin, inve
     # A price too large for any bounds quotes the fallback fee, without overflowing.
     for huge in ((2**256 - 1) // INVERTED_RANGE[1] + 1, 2**256 - 1):
         assert policy.get_dy_with_report(0, 1, dx, huge, 0) == plain
-    # A basis capped at 0.9 puts the report behind the spot: no discount.
+    # A basis far past the cap quotes as the cap itself does.
+    basis.eval(f"self.oracle = {INVERTED_RANGE[1] if invert else DIRECT_RANGE[0]}")
+    at_cap = policy.get_dy_with_report(0, 1, dx, feed_price, 0)
     basis.eval(f"self.oracle = {2 * WAD if invert else WAD // 2}")
-    assert policy.get_dy_with_report(0, 1, dx, feed_price, 0) == plain
+    assert policy.get_dy_with_report(0, 1, dx, feed_price, 0) == at_cap
     # Against a stale snapshot a quote's swap does not look like one: the preview
     # pays fallback_fee as the pool's own quote does, and reads no basis pool.
     basis.eval("self.broken = True")

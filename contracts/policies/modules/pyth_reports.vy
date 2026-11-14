@@ -11,7 +11,7 @@
      INVERT_BASIS: say WBTC/USD from BTC/USD and WBTC in cbBTC, cbBTC counting
      as BTC. The basis is read live, and only for a report the caller can use:
      present and younger than the caller's maximum age. The basis is capped to
-     move coin1's price at most 10% from the feed's. The report is absent when
+     move coin1's price at most 1% from the feed's. The report is absent when
      the price is outside the bounds, which apply at every use. Its time is the
      feed's observation.
 
@@ -32,9 +32,9 @@ PRECISION: constant(uint256) = 10**18
 # Hard limits for the price bounds
 MIN_REPORT_PRICE: constant(uint256) = 10**6  # $1e-12
 MAX_REPORT_PRICE: constant(uint256) = 10**30  # $1e12
-# coin1's price is the feed's times a basis capped to [MIN_BASIS, MAX_BASIS]: 10% at most
-MIN_BASIS: constant(uint256) = 9 * PRECISION // 10
-MAX_BASIS: constant(uint256) = 11 * PRECISION // 10
+# coin1's price is the feed's times a basis capped to [MIN_BASIS, MAX_BASIS]: 1% at most
+MIN_BASIS: constant(uint256) = 99 * PRECISION // 100
+MAX_BASIS: constant(uint256) = 101 * PRECISION // 100
 # Inverted, the basis is PRECISION**2 / price_oracle(0): the cap on price_oracle(0)
 # itself, rounded inward
 MIN_INVERTED_ORACLE: constant(uint256) = (PRECISION * PRECISION + MAX_BASIS - 1) // MAX_BASIS
