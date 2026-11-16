@@ -14,7 +14,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+lib/*
+!lib/pyth-report-bank
 lib64/
 parts/
 sdist/

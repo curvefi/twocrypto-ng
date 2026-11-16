@@ -78,7 +78,7 @@ def main():
         MIN_CAP,
         MAX_CAP,
     )
-    policy_deployer = boa.load_partial("contracts/main/YBTwocryptoPolicy.vy")
+    policy_deployer = boa.load_partial("contracts/policies/YBTwocryptoPolicy.vy")
 
     if POLICY_ADDRESS:
         # Boa requires a sender even for eth_call; no key or signer is loaded.
