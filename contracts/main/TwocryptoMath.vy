@@ -13,7 +13,8 @@
 @notice Curve AMM Math for 2 unpegged assets (e.g. ETH <> USD).
 @dev Cryptoswap invariant math taken from CurveCryptoMathOptimized2.vy v2.2.0
      (twocrypto-ng commit 7b4fd90). The solver arithmetic in `get_y`,
-     `_newton_y`, `newton_D` and `get_p` is unchanged. The cube root and the
+     `_newton_y`, `newton_D` and `get_p` is unchanged, except that `newton_D`
+     caps its `K0_prev` hint at 10**18. The cube root and the
      exponential come from snekmate's math module, whose `_wad_cbrt` and
      `_wad_exp` produce the same outputs as the helpers they replace.
 """
@@ -298,7 +299,8 @@ def newton_D(ANN: uint256, gamma: uint256, x_unsorted: uint256[N_COINS], K0_prev
         D = N_COINS * isqrt(unsafe_mul(x[0], x[1]))
     else:
         # D = isqrt(x[0] * x[1] * 4 / K0_prev * 10**18)
-        D = isqrt(unsafe_mul(unsafe_div(unsafe_mul(unsafe_mul(4, x[0]), x[1]), K0_prev), 10**18))
+        # K0 cannot exceed 1: a larger hint would start below the valid range of D.
+        D = isqrt(unsafe_mul(unsafe_div(unsafe_mul(unsafe_mul(4, x[0]), x[1]), min(K0_prev, 10**18)), 10**18))
         if S < D:
             D = S
 
