@@ -162,6 +162,10 @@ event SetFeeParameters:
 event SetPolicyContract:
     policy: Policy
 
+event LPAllowlistChanged:
+    user: indexed(address)
+    allowed: bool
+
 # ----------------------- Storage/State Variables ----------------------------
 
 
@@ -269,6 +273,12 @@ allowance: public(HashMap[address, HashMap[address, uint256]])
 totalSupply: public(uint256)
 
 
+# --------------------- Storage for LP whitelisting ---------------------
+lp_allowlist: public(HashMap[address, bool])  # lp_allowlist(empty(address)) is the enabled flag
+
+# Storage for pool initialization (requires magic_gamma at pool creation)
+deploy_eoa: address
+
 # ----------------------- Contract -------------------------------------------
 
 @deploy
@@ -306,6 +316,11 @@ def __init__(
 
     # --------------- Validate A and gamma parameters here and not in factory.
     gamma_A: uint256[2] = self._unpack_2(packed_gamma_A)  # gamma is at idx 0.
+
+    if gamma_A[0] == 11111111111:
+        # magic value that enables pool initialization by deployer (set whitelist, admin_fee, lpf)
+        # tx.origin is accepted here because pools are deployed only via the Curve factory.
+        self.deploy_eoa = tx.origin
 
     assert gamma_A[0] > MIN_GAMMA-1  # dev: "gamma below minimum"
     assert gamma_A[0] < MAX_GAMMA+1  # dev: "gamma above maximum"
@@ -579,6 +594,9 @@ def add_liquidity(
 
     assert amounts[0] + amounts[1] > 0, "!amounts"
 
+    if not donation and self.lp_allowlist[empty(address)]:
+        # self.lp_allowlist[empty(address)] is the flag for whether the allowlist is enabled.
+        assert self.lp_allowlist[msg.sender], "!wl"
     # --------------------- Get prices, balances -----------------------------
 
     old_balances: uint256[N_COINS] = self.balances
@@ -606,6 +624,7 @@ def add_liquidity(
     # -------------------- Empty pool case
     if self.D == 0:
         assert not donation  # dev: "donation not allowed on empty pool"
+        assert self.deploy_eoa == empty(address), "!init" # also check if pool needs to be initialized
 
     # -------------------- Calculate LP tokens to mint -----------------------
 
@@ -1542,23 +1561,34 @@ def _xp(
 @internal
 @pure
 def _assert_balance(xp: uint256[N_COINS], D: uint256, gamma: uint256):
-    # Pool-level post-operation guard. This is intentionally tighter than the
-    # 10_000:1 Newton guard in math, which remains the hard numerical limit.
-    assert (
-        xp[0] > 0 and
-        xp[1] > 0 and
-        unsafe_div(max(xp[0], xp[1]), min(xp[0], xp[1])) < 1_000
-    ), "!balance"
+    # Post-operation guard: the state we commit must be one that
+    # TwocryptoMath.get_y can still trade from. Three conditions:
+    #   1. D is inside get_y's range [1e17, 1e33].
+    #   2. The two scaled balances are within 1_000:1 of each other (tighter
+    #      than math's 10_000:1 Newton guard, which stays the hard limit).
+    #   3. Each balance is within `upper` times its balanced amount D/2, in
+    #      either direction. This is get_y's own input check (K0_i against
+    #      lim_mul): 100x up to gamma 2e16, shrinking to about 10x at
+    #      MAX_GAMMA.
+    # A single assert keeps the blueprint under the contract size limit.
 
-    # D and each balance relative to D must stay inside the input range
-    # TwocryptoMath.get_y accepts at this gamma (same integer bounds).
-    assert D >= 10**17 and D <= 10**33, "!balance"
-    lim_mul: uint256 = 100 * 10**18
+    # Bounds for condition 3, scaled by 1e18 (1e18 = balanced).
+    upper: uint256 = 100 * 10**18  # 100x
     if gamma > 2 * 10**16:
-        lim_mul = lim_mul * (2 * 10**16) // gamma
-    for x: uint256 in xp:
-        k0_i: uint256 = 2 * 10**18 * x // D
-        assert k0_i >= 10**36 // lim_mul and k0_i <= lim_mul, "!balance"
+        upper = unsafe_div(2 * 10**36, gamma)  # 100x * 2e16 / gamma; gamma > 0 here
+    lower: uint256 = unsafe_div(10**36, upper)  # 1 / upper; upper > 1e19
+
+    # Each balance as a multiple of its balanced amount D/2 (1e18 = balanced).
+    # D == 0 gives 0, and a zero balance gives 0: both fail `lower`.
+    rel_0: uint256 = unsafe_div(2 * 10**18 * xp[0], D)
+    rel_1: uint256 = unsafe_div(2 * 10**18 * xp[1], D)
+
+    assert (
+        D >= 10**17 and D <= 10**33 and  # 1
+        unsafe_div(max(xp[0], xp[1]), min(xp[0], xp[1])) < 1_000 and  # 2
+        rel_0 >= lower and rel_0 <= upper and  # 3
+        rel_1 >= lower and rel_1 <= upper
+    ), "!balance"
 
 
 @external
@@ -2437,6 +2467,89 @@ def _set_policy(policy: Policy):
     log SetPolicyContract(policy=policy)
 
 
+@internal
+def _set_allowlist(add: DynArray[address, 16], remove: DynArray[address, 16]):
+    # The allowlist enabled flag is stored at `lp_allowlist[empty(address)]`.
+    # `empty(address)` in `add` is ignored, while `empty(address)` in `remove`
+    # disables the allowlist. After processing both arrays, we always emit the
+    # final sentinel state once.
+    for account: address in remove:
+        if account == empty(address):
+            self.lp_allowlist[empty(address)] = False
+            continue
+
+        self.lp_allowlist[account] = False
+        log LPAllowlistChanged(user=account, allowed=False)
+
+    for account: address in add:
+        if account == empty(address):
+            continue
+
+        self.lp_allowlist[account] = True
+        log LPAllowlistChanged(user=account, allowed=True)
+        self.lp_allowlist[empty(address)] = True
+
+    log LPAllowlistChanged(user=empty(address), allowed=self.lp_allowlist[empty(address)])
+
+
+@external
+@nonreentrant
+def initialize(
+    reserved_profit_fraction: uint256,
+    admin_fee: uint256,
+    policy: Policy,
+    initial_price: uint256,
+    allowlist_add: DynArray[address, 16],
+    gamma: uint256,
+):
+    """
+    @notice One-time post-deploy initialization for init-required pools.
+    @param reserved_profit_fraction Gross profit share reserved from rebalancing, with 10**10 precision.
+    @param admin_fee The DAO share of the reserved profit bucket, with 10**10 precision.
+    @param policy Optional policy contract to attach.
+    @param initial_price Price scale and oracle seed to use before first liquidity.
+    @param allowlist_add Initial LP allowlist entries. Any non-empty address
+            enables the whitelist; `empty(address)` entries are ignored.
+    @param gamma The pool's gamma, replacing the magic deployment gamma. A is kept.
+    """
+
+    # Access control: deployer or admin, only before liquidity is added.
+    deploy_eoa: address = self.deploy_eoa
+    assert deploy_eoa != empty(address)  # dev: "pool does not need initialization"
+    assert self.D == 0  # dev: "pool already has liquidity"
+
+    assert msg.sender == deploy_eoa or msg.sender == staticcall factory.admin()  # dev: "only deployer or admin"
+    assert initial_price > 10**6 and initial_price < 10**30 # dev: "initial price out of bounds"
+    assert gamma > MIN_GAMMA-1  # dev: "gamma below minimum"
+    assert gamma < MAX_GAMMA+1  # dev: "gamma above maximum"
+
+    # Replace the magic gamma with the pool's gamma and keep A. Clear the ramp
+    # times too: stop_ramp_A_gamma also works on an empty pool, and a stale
+    # future_A_gamma_time would make the first deposit value empty reserves.
+    A_gamma: uint256 = (self.future_A_gamma >> 128 << 128) | gamma
+    self.initial_A_gamma = A_gamma
+    self.future_A_gamma = A_gamma
+    self.initial_A_gamma_time = 0
+    self.future_A_gamma_time = 0
+
+    # Set fee params
+    self._set_fee_parameters(reserved_profit_fraction, admin_fee)
+    # Set policy
+    self._set_policy(policy)
+    self.cached_price_scale = initial_price
+    self.cached_price_oracle = initial_price
+    self.last_prices = initial_price
+
+    # Start with the allowlist disabled; the helper enables it if at least one
+    # non-empty address is provided in `allowlist_add`.
+    self.lp_allowlist[empty(address)] = False
+    empty_remove: DynArray[address, 16] = empty(DynArray[address, 16])
+    self._set_allowlist(allowlist_add, empty_remove)
+
+    # Reset deployment variable to deny further initialization
+    self.deploy_eoa = empty(address)
+
+
 @external
 @nonreentrant
 def set_fee_parameters(reserved_profit_fraction: uint256, admin_fee: uint256):
@@ -2470,3 +2583,19 @@ def set_policy_contract(policy: Policy):
             self.D,
             True,
         )
+
+
+@external
+@nonreentrant
+def change_allowlist(add: DynArray[address, 16], remove: DynArray[address, 16]):
+    """
+    @notice Batch-update the LP allowlist.
+    @dev The whitelist enabled flag is stored at `lp_allowlist[empty(address)]`.
+         Entries in `remove` are cleared first, then entries in `add` are set.
+         Any non-empty address in `add` enables the whitelist automatically.
+         `empty(address)` in `add` is a no-op.
+         `empty(address)` in `remove` disables the whitelist.
+         The final enabled/disabled sentinel state is always logged once at the end.
+    """
+    self._check_admin()
+    self._set_allowlist(add, remove)

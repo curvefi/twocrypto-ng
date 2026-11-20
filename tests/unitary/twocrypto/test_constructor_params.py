@@ -16,7 +16,7 @@ from tests.utils.constants import MAX_A, MAX_GAMMA, MIN_A, MIN_GAMMA, POOL_DEPLO
 from tests.utils.god_mode import GodModePool
 
 ZERO_ADDRESS = "0x" + "00" * 20
-FORMER_MAGIC_GAMMA = 11111111111
+MAGIC_GAMMA = 11111111111
 
 
 def _pack_2(p1, p2):
@@ -51,7 +51,7 @@ def _deploy(coins, params, **overrides):
         {"A": MAX_A},
         {"gamma": MIN_GAMMA},
         {"gamma": MAX_GAMMA},
-        {"gamma": FORMER_MAGIC_GAMMA},
+        {"gamma": MAGIC_GAMMA},
         {"fee_gamma": 1},
         {"fee_gamma": 10**18},
         {"adjustment_step_min": 0, "adjustment_step_max": 1},
@@ -100,17 +100,12 @@ def test_fee_split_defaults(pool):
     assert pool.POLICY() == ZERO_ADDRESS
 
 
-def test_initializer_and_allowlist_removed(pool):
-    for name in ("initialize", "change_allowlist", "lp_allowlist"):
-        assert not hasattr(pool, name), name
-
-
-def test_former_magic_gamma_is_an_ordinary_gamma(factory, coins, params, deployer):
-    p = {**params, "gamma": FORMER_MAGIC_GAMMA}
+def test_magic_gamma_pool_waits_for_initialize(factory, coins, params, deployer):
+    p = {**params, "gamma": MAGIC_GAMMA}
     pool = POOL_DEPLOYER.at(_deploy_pool(factory, p, coins, deployer))
-    assert pool.gamma() == FORMER_MAGIC_GAMMA
+    assert pool.gamma() == MAGIC_GAMMA
 
-    # no initialization step: the first deposit goes straight through
+    # the magic gamma marks the pool as init-required: no deposit before initialize()
     gm_pool = GodModePool(pool)
-    assert gm_pool.add_liquidity_balanced(10**24) > 0
-    assert gm_pool.exchange(0, 10**21) > 0
+    with boa.reverts("!init"):
+        gm_pool.add_liquidity_balanced(10**24)
