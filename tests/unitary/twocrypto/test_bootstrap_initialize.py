@@ -292,19 +292,19 @@ def test_initialize_rejects_gamma_out_of_bounds(
         pool.initialize(0, 0, ZERO_ADDRESS, _initial_price(params), [], gamma, sender=deployer)
 
 
-def test_initialize_clears_ramp_stopped_on_empty_pool(
+def test_stop_ramp_cannot_mark_an_empty_pool_as_ramping(
     factory, factory_admin, coins, params, deployer, views_contract, math_contract, alice
 ):
     pool = _deploy_bootstrap_pool(
         factory, factory_admin, coins, params, deployer, views_contract, math_contract
     )
 
-    # stop_ramp_A_gamma works on an empty pool and sets future_A_gamma_time
-    # after last_timestamp, which would make the first deposit value empty
-    # reserves as if a ramp were pending.
+    # without a ramp, stop_ramp_A_gamma would set future_A_gamma_time after
+    # last_timestamp, and the first deposit would then value empty reserves
+    # as if a ramp were pending, and revert.
     boa.env.time_travel(seconds=600)
-    pool.stop_ramp_A_gamma(sender=factory_admin)
-    assert pool.future_A_gamma_time() > pool.last_timestamp()
+    with boa.reverts(dev='"no ramp"'):
+        pool.stop_ramp_A_gamma(sender=factory_admin)
 
     pool.initialize(
         0, 0, ZERO_ADDRESS, _initial_price(params), [], params["gamma"], sender=deployer

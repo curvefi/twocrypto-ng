@@ -2315,6 +2315,7 @@ def stop_ramp_A_gamma():
     @dev Only accessible by factory admin.
     """
     self._check_admin()
+    assert self._is_ramping()  # dev: "no ramp"
 
     A_gamma: uint256[2] = self._A_gamma()
     current_A_gamma: uint256 = A_gamma[0] << 128
@@ -2523,9 +2524,7 @@ def initialize(
     assert gamma > MIN_GAMMA-1  # dev: "gamma below minimum"
     assert gamma < MAX_GAMMA+1  # dev: "gamma above maximum"
 
-    # Replace the magic gamma with the pool's gamma and keep A. Clear the ramp
-    # times too: stop_ramp_A_gamma also works on an empty pool, and a stale
-    # future_A_gamma_time would make the first deposit value empty reserves.
+    # Keep A and set both ramp endpoints to the initial gamma.
     A_gamma: uint256 = (self.future_A_gamma >> 128 << 128) | gamma
     self.initial_A_gamma = A_gamma
     self.future_A_gamma = A_gamma

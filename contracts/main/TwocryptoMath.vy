@@ -14,7 +14,7 @@
 @dev Cryptoswap invariant math taken from CurveCryptoMathOptimized2.vy v2.2.0
      (twocrypto-ng commit 7b4fd90). The solver arithmetic in `get_y`,
      `_newton_y`, `newton_D` and `get_p` is unchanged, except that `newton_D`
-     caps its `K0_prev` hint at 10**18. The cube root and the
+     ignores `K0_prev` hints below 10**8 and caps them at 10**18. The cube root and the
      exponential come from snekmate's math module, whose `_wad_cbrt` and
      `_wad_exp` produce the same outputs as the helpers they replace.
 """
@@ -295,7 +295,8 @@ def newton_D(ANN: uint256, gamma: uint256, x_unsorted: uint256[N_COINS], K0_prev
     S: uint256 = unsafe_add(x[0], x[1])  # can unsafe add here because we checked x[0] bounds
 
     D: uint256 = 0
-    if K0_prev == 0:
+    if K0_prev < 10**8:
+        # Use the unhinted estimate to avoid overflow at large balances.
         D = N_COINS * isqrt(unsafe_mul(x[0], x[1]))
     else:
         # D = isqrt(x[0] * x[1] * 4 / K0_prev * 10**18)

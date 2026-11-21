@@ -4,8 +4,8 @@ TwocryptoMath against the v2.2.0 cryptoswap math it was copied from.
 tests/reference/CurveCryptoMathOptimized2.vy is a byte-identical copy of the
 v2.2.0 math (twocrypto-ng commit 7b4fd90). TwocryptoMath replaced its local
 log2, cube-root and exponential helpers with snekmate's and returns wad_exp as
-uint256; the solver code is unchanged except that newton_D caps its K0_prev hint
-at 10**18. These tests require identical outputs on random inputs, and a revert
+uint256; newton_D ignores K0_prev hints below 10**8 and caps them at 10**18.
+These tests require identical outputs on the selected inputs, and a revert
 in TwocryptoMath exactly where the reference reverts.
 """
 
@@ -113,8 +113,8 @@ def test_solvers_match_reference(math_contract, reference_math, chunk):
         expected_newton_y = _outcome(reference_math.newton_y, A, gamma, x, D, i)
         assert _outcome(math_contract.newton_y, A, gamma, x, D, i) == expected_newton_y, case
 
-        # TwocryptoMath caps the hint at 10**18 (test_newton_D_hint.py), which is
-        # its one intended difference from the reference, so compare at or below it.
+        # Compare zero and get_y hints within the cap. test_newton_D_hint.py
+        # covers the tiny-hint fallback and the upper cap separately.
         hints = [0]
         if expected != "revert" and expected[1] > 0:
             hints.append(min(expected[1], 10**18))
