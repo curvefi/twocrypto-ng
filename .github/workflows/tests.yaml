@@ -1,51 +1,43 @@
-name: tests
+name: tests-boa
 
-on: [push, pull_request]
+on: [push]
+
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  RPC_ETHEREUM: ${{ secrets.RPC_ETHEREUM }}
 
 jobs:
   tests:
-    name: ${{ matrix.suite.name }}
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false
       matrix:
-        suite:
-          - name: unit
-            args: tests/unitary --ignore=tests/unitary/pool/stateful --ignore=tests/unitary/math
-          - name: stateful
-            args: tests/unitary/pool/stateful --ignore=tests/unitary/pool/stateful/legacy
-          - name: math
-            args: tests/unitary/math
+        folder:
+          - "tests/unitary"
+          - "tests/fuzzing"
+          - "tests/stateful"
+          # - "tests/integration"
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v3
         with:
-          enable-cache: true
+          version: "0.8.3"
+          enable-cache: true  # Enables built-in caching for uv
 
-      - name: Install Python and dependencies
-        run: uv sync --locked
-
-      - name: Run tests
-        run: uv run pytest ${{ matrix.suite.args }} -n auto
-
-  integration:
-    # Needs the RPC_ETHEREUM secret, which pull requests from forks do not get.
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    env:
-      RPC_ETHEREUM: ${{ secrets.RPC_ETHEREUM }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v6
+      - name: Cache Compiler Installations
+        uses: actions/cache@v3
         with:
-          enable-cache: true
+          path: |
+            ~/.vvm
+          key: compiler-cache-${{ hashFiles('**/uv.lock') }}
 
-      - name: Install Python and dependencies
-        run: uv sync --locked
+      - name: Set up Python 3.12.6
+        run: uv python install 3.12.6
 
-      - name: Run integration tests
-        run: uv run pytest tests/integration/test_create2_deployment.py
+      - name: Install Requirements
+        run: uv sync --group dev --frozen
+
+      - name: Run tests in ${{ matrix.folder }}
+        run: uv run --group dev --frozen pytest ${{ matrix.folder }} -n auto

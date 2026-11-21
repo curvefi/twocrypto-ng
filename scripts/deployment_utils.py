@@ -137,7 +137,7 @@ def get_create2_deployment_address(
     salt,
     create2deployer,
     blueprint=False,
-    blueprint_preamble=b"\xFE\x71\x00",
+    blueprint_preamble=b"\xfe\x71\x00",
 ):
     deployment_bytecode = compiled_bytecode + abi_encoded_ctor
     if blueprint:
@@ -146,10 +146,7 @@ def get_create2_deployment_address(
         # Add code for blueprint deployment:
         len_blueprint_bytecode = len(blueprint_bytecode).to_bytes(2, "big")
         deployment_bytecode = (
-            b"\x61"
-            + len_blueprint_bytecode
-            + b"\x3d\x81\x60\x0a\x3d\x39\xf3"
-            + blueprint_bytecode
+            b"\x61" + len_blueprint_bytecode + b"\x3d\x81\x60\x0a\x3d\x39\xf3" + blueprint_bytecode
         )
 
     return (

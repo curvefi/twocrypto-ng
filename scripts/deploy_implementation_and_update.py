@@ -21,7 +21,6 @@ def fetch_url(network):
 
 
 def deploy(network, url, account, fork=False):
-
     logger.log(f"Deploying on {network} ...")
 
     if not url:
@@ -47,12 +46,8 @@ def deploy(network, url, account, fork=False):
         deployments[network]["factory"]
     )
 
-    math_contract_obj = boa.load_partial(
-        "./contracts/main/CurveCryptoMathOptimized2.vy"
-    )
-    amm_contract_obj = boa.load_partial(
-        "./contracts/main/CurveTwocryptoOptimized.vy"
-    )
+    math_contract_obj = boa.load_partial("./contracts/main/CurveCryptoMathOptimized2.vy")
+    amm_contract_obj = boa.load_partial("./contracts/main/CurveTwocryptoOptimized.vy")
 
     math_contract = check_and_deploy(
         contract_obj=math_contract_obj,
@@ -74,7 +69,6 @@ def deploy(network, url, account, fork=False):
     )
 
     if boa.env.eoa == factory.admin():
-
         # update implementation here
         if not factory.pool_implementations(0) == amm_blueprint.address:
             logger.log("Setting AMM implementation ...")
@@ -87,12 +81,10 @@ def deploy(network, url, account, fork=False):
         logger.log("Done!")
 
     else:
-
         logger.log(f"Could not update implementation for factory on {network}")
 
 
 def main():
-
     forkmode = False
     deploy(
         network="",

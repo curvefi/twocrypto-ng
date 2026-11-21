@@ -8,7 +8,6 @@ import boa_zksync
 import deployment_utils as deploy_utils
 import yaml
 from boa.network import NetworkEnv
-from eth.codecs.abi.exceptions import DecodeError
 from eth_account import Account
 from eth_utils import keccak
 from rich.console import Console as RichConsole
@@ -17,23 +16,18 @@ logger = RichConsole(file=sys.stdout)
 
 
 def check_contract_deployed(network, designation):
-
     with open("./deployments.yaml", "r") as file:
         deployments = yaml.safe_load(file)
 
-    if (
-        network in deployments.keys()
-        and designation in deployments[network].keys()
-    ):
+    if network in deployments.keys() and designation in deployments[network].keys():
         return deployments[network][designation]
 
 
 def store_deployed_contract(network, designation, deployment_address):
-
     with open("./deployments.yaml", "r") as file:
         deployments = yaml.safe_load(file)
 
-    if not network in deployments.keys():
+    if network not in deployments.keys():
         deployments[network] = {}
 
     deployments[network][designation] = deployment_address
@@ -52,10 +46,7 @@ def check_and_deploy(
     blueprint: bool = False,
     upkeep_deploy_log: bool = False,
 ):
-
-    deployed_contract_address = check_contract_deployed(
-        network, contract_designation
-    )
+    deployed_contract_address = check_contract_deployed(network, contract_designation)
     if deployed_contract_address:
         logger.log(f"Contract exists at {deployed_contract_address} ...")
         return contract_obj.at(deployed_contract_address)
@@ -73,7 +64,7 @@ def check_and_deploy(
             salt,
             create2deployer=create2deployer,
             blueprint=blueprint,
-            blueprint_preamble=b"\xFE\x71\x00",
+            blueprint_preamble=b"\xfe\x71\x00",
         )
         # assert precomputed_address == calculated_address
 
@@ -84,29 +75,21 @@ def check_and_deploy(
         )
         deployed_address = precomputed_address
 
-    except:
-
-        logger.log(
-            f"No create2deployer found for {network}. Deploying with CREATE."
-        )
+    except:  # noqa: E722
+        logger.log(f"No create2deployer found for {network}. Deploying with CREATE.")
         if blueprint:
-            if not "zksync" in network:
+            if "zksync" not in network:
                 c = contract_obj.deploy_as_blueprint()
             else:
                 # we need special deployment code for zksync
                 packed_precisions = 340282366920938463463374607431768211457
                 packed_gamma_A = 136112946768375385385349842972852284582400000
-                packed_fee_params = (
-                    8847341539944400050877843276543133320576000000
-                )
-                packed_rebalancing_params = (
-                    6125082604576892342340742933771827806226
-                )
+                packed_fee_params = 8847341539944400050877843276543133320576000000
+                packed_rebalancing_params = 6125082604576892342340742933771827806226
                 c = contract_obj.deploy_as_blueprint(
                     "Blueprint",  # _name
                     "_",  # _symbol
-                    ["0x0000000000000000000000000000000000000000"]
-                    * 2,  # _coins
+                    ["0x0000000000000000000000000000000000000000"] * 2,  # _coins
                     "0x0000000000000000000000000000000000000000",  # _math
                     b"\1" * 32,  # _salt
                     packed_precisions,
@@ -123,15 +106,12 @@ def check_and_deploy(
     logger.log(f"Deployed! At: {deployed_address}.")
 
     if upkeep_deploy_log:
-        store_deployed_contract(
-            network, contract_designation, str(deployed_address)
-        )
+        store_deployed_contract(network, contract_designation, str(deployed_address))
 
     return contract_obj.at(deployed_address)
 
 
 def deploy_infra(network, url, account, fork=False):
-
     logger.log(f"Deploying on {network} ...")
     contract_folder = "main"
 
@@ -147,7 +127,6 @@ def deploy_infra(network, url, account, fork=False):
         boa.env.set_eoa(Account.from_key(os.environ[account]))
 
     else:
-
         if fork:
             boa.env.fork(url)
             logger.log("Forkmode ...")
@@ -162,7 +141,6 @@ def deploy_infra(network, url, account, fork=False):
     )
 
     for _network, data in deploy_utils.curve_dao_network_settings.items():
-
         if _network in network:
             fee_receiver = data.fee_receiver_address
 
@@ -176,9 +154,7 @@ def deploy_infra(network, url, account, fork=False):
     views_contract_obj = boa.load_partial(
         f"./contracts/{contract_folder}/CurveCryptoViews2Optimized.vy"
     )
-    amm_contract_obj = boa.load_partial(
-        f"./contracts/{contract_folder}/CurveTwocryptoOptimized.vy"
-    )
+    amm_contract_obj = boa.load_partial(f"./contracts/{contract_folder}/CurveTwocryptoOptimized.vy")
     factory_contract_obj = boa.load_partial(
         f"./contracts/{contract_folder}/CurveTwocryptoFactory.vy"
     )
@@ -251,7 +227,6 @@ def deploy_infra(network, url, account, fork=False):
 
 
 def main():
-
     forkmode = False
     deployer = "FIDDYDEPLOYER"
     network = "zksync:mainnet"

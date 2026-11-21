@@ -139,10 +139,11 @@ reports/
 .idea
 **/.idea
 .vscode
+.zed
 
 # misc
 /data
-todo.txt
+/notes
 node_modules
 /audits
 
@@ -150,3 +151,5 @@ node_modules
 docs/
 scripts/experiments/get_p.py
 *.csv
+.claude
+.env

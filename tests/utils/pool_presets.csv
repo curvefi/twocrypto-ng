@@ -1,4 +1,4 @@
-A,gamma,mid_fee,out_fee,fee_gamma,allowed_extra_profit,adjustment_step,ma_exp_time,name,description
+A,gamma,mid_fee,out_fee,fee_gamma,adjustment_step_min,adjustment_step_max,ma_exp_time,name,description
 400000,145000000000000,26000000,45000000,230000000000000,2000000000000,146000000000000,866,crypto,frontend preset for volatile assets
 20000000,1000000000000000,5000000,45000000,5000000000000000,10000000000,5500000000000,866,forex,frontend preset for forex pools
 40000000,2000000000000000,3000000,45000000,300000000000000000,10000000000,5500000000000,866,LSD,frontend preset for Liquid Staking Derivatives
