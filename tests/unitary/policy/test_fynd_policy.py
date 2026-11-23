@@ -1,4 +1,4 @@
-"""FyndPolicy on a real Twocrypto pool: a default fee, and signed grants for Fynd.
+"""FyndPolicy on a real Twocrypto pool: native pool fees and signed grants for Fynd.
 
 The pool is the pilot's shape: a 6-decimal USD coin and WETH, A = 10, reserved
 profit fraction 25% and admin fee 50%. A router stand-in arms grants and swaps in
@@ -18,7 +18,7 @@ POLICY = boa.load_partial("contracts/policies/FyndPolicy.vy")
 
 WAD = 10**18
 FEE_PRECISION = 10**10
-DEFAULT_FEE = 100_000_000  # 1%
+POOL_FEE = 50_000_000  # 0.5%
 MIN_GRANT_FEE = 10**6  # 1 bp
 GRANT_FEE = 5 * 10**6  # 5 bp
 RPF = 2_500_000_000  # reserved profit fraction 25%
@@ -101,7 +101,6 @@ def deploy_policy(pool_contract, router_contract, **overrides):
         controller=CONTROLLER.address,
         router=router_contract.address,
         emergency_admin=EMERGENCY,
-        default_fee=DEFAULT_FEE,
         min_fee=MIN_GRANT_FEE,
     )
     args.update(overrides)
@@ -115,8 +114,8 @@ def world(factory, factory_admin, deployer):
     params = {
         "A": 100_000,  # A = 10
         "gamma": 145000000000000,  # unused by StableswapMath
-        "mid_fee": 50_000_000,
-        "out_fee": 50_000_000,
+        "mid_fee": POOL_FEE,
+        "out_fee": POOL_FEE,
         "fee_gamma": 230000000000000,
         "adjustment_step_min": 10**12,
         "adjustment_step_max": 5 * 10**15,
@@ -229,15 +228,19 @@ def granted_swap(env, i, j, dx, swaps=1, **grant_kwargs):
 
 def test_deployment(env):
     pool, policy, router, _ = env
+    created = policy.get_logs()[0]
+    assert type(created).__name__ == "FyndPolicyCreated"
+    assert created.pool == pool.address
+    assert created.version == policy.VERSION() == 1
     assert (policy.POOL(), policy.controller(), policy.router(), policy.EMERGENCY_ADMIN()) == (
         pool.address,
         CONTROLLER.address,
         router.address,
         EMERGENCY,
     )
-    assert (policy.default_fee(), policy.min_fee()) == (DEFAULT_FEE, MIN_GRANT_FEE)
+    assert policy.min_fee() == MIN_GRANT_FEE
     assert policy.owner() == boa.env.eoa and not policy.is_killed()
-    assert policy.IS_FYND_EXCLUSIVE() and policy.get_price_scale() == 0
+    assert policy.get_price_scale() == 0
     # EIP-5267 describes the signing domain.
     _, name, version, chain_id, verifying, _, _ = policy.eip712Domain()
     assert (name, version, chain_id, verifying) == (
@@ -257,26 +260,25 @@ def test_constructor_checks(env):
         (dict(controller=zero), "controller=0"),
         (dict(router=zero), "router=0"),
         (dict(min_fee=10**5 - 1), "min fee"),
-        (dict(min_fee=DEFAULT_FEE + 1), "min fee"),
-        (dict(default_fee=FEE_PRECISION // 10 + 1, min_fee=10**5), "default fee"),
+        (dict(min_fee=FEE_PRECISION // 10 + 1), "min fee"),
     ):
         with boa.reverts(reason):
             deploy_policy(pool, router, **overrides)
 
 
-# -------------------------------- Default fee ---------------------------------
+# -------------------------------- Native fee ---------------------------------
 
 
 @pytest.mark.parametrize("i", [0, 1])
-def test_public_swap_pays_default_fee(env, i):
+def test_public_swap_pays_native_fee(env, i):
     pool, _, _, taker = env
     dx = [5_000 * 10**6, 2 * WAD][i]
-    expected = charged(pool, DEFAULT_FEE, i, 1 - i, dx)
+    expected = charged(pool, POOL_FEE, i, 1 - i, dx)
     assert pool.get_dy(i, 1 - i, dx) == expected
     assert pool.exchange(i, 1 - i, dx, 0, sender=taker) == expected
 
 
-def test_liquidity_operations_pay_default_fee(env):
+def test_liquidity_operations_pay_native_fee(env):
     _, policy, router, taker = env
     amounts = [10_000 * 10**6, 0]
     with boa.env.anchor():
@@ -381,21 +383,23 @@ def test_deadline_window(env):
 
 
 def test_direction_and_amount(env):
-    _, policy, router, taker = env
+    pool, policy, router, taker = env
     dx = 5_000 * 10**6
-    for coin_in, lo, hi, reason in (
-        (1, dx - 1, dx, "direction"),
-        (0, dx + 1, dx + 2, "amount"),
-        (0, dx - 2, dx - 1, "amount"),
+    for coin_in, lo, hi in (
+        (1, dx - 1, dx),
+        (0, dx + 1, dx + 2),
+        (0, dx - 2, dx - 1),
     ):
         grant = make_grant(taker, coin_in, dx, lo=lo, hi=hi)
-        with boa.reverts(reason):
-            router.swap(grant, sign(policy, grant), 0, 1, dx, 1, sender=taker)
+        expected = charged(pool, POOL_FEE, 0, 1, dx)
+        assert router.swap(grant, sign(policy, grant), 0, 1, dx, 1, sender=taker) == expected
+        assert policy.is_nonce_used(grant[5])
     bad_coin = make_grant(taker, 2, dx)
     with boa.reverts("coin"):
         router.swap(bad_coin, sign(policy, bad_coin), 0, 1, dx, 1, sender=taker)
     # A coin0 input reads exactly; the bounds are inclusive.
-    granted_swap(env, 0, 1, dx, lo=dx, hi=dx)
+    expected = charged(pool, GRANT_FEE, 0, 1, dx)
+    assert granted_swap(env, 0, 1, dx, lo=dx, hi=dx) == expected
 
 
 def test_grants_work_during_an_a_ramp(env, factory_admin):
@@ -408,11 +412,9 @@ def test_grants_work_during_an_a_ramp(env, factory_admin):
     with boa.env.anchor():
         plain = router.plain_swap(1, 0, 2 * WAD, 1, sender=taker)
     granted = granted_swap(env, 1, 0, 2 * WAD)
-    # The same pre-fee output, at 5 bp instead of 1%.
-    guess = plain * FEE_PRECISION // (FEE_PRECISION - DEFAULT_FEE)
-    dy = next(
-        d for d in range(guess - 2, guess + 3) if d - DEFAULT_FEE * d // FEE_PRECISION == plain
-    )
+    # The same pre-fee output, at 5 bp instead of 0.5%.
+    guess = plain * FEE_PRECISION // (FEE_PRECISION - POOL_FEE)
+    dy = next(d for d in range(guess - 2, guess + 3) if d - POOL_FEE * d // FEE_PRECISION == plain)
     assert granted == dy - GRANT_FEE * dy // FEE_PRECISION
 
 
@@ -428,7 +430,7 @@ def test_kill_stops_grants(env):
     assert policy.is_killed()
     with boa.reverts("killed"):
         granted_swap(env, 1, 0, WAD)
-    expected = charged(pool, DEFAULT_FEE, 1, 0, WAD)
+    expected = charged(pool, POOL_FEE, 1, 0, WAD)
     assert router.plain_swap(1, 0, WAD, 1, sender=taker) == expected
     policy.set_killed(False, sender=EMERGENCY)
     policy.set_killed(True)  # the owner too
@@ -453,17 +455,18 @@ def test_owner_settings(env):
     for call in (
         lambda s: policy.set_controller(new, sender=s),
         lambda s: policy.set_router(new, sender=s),
-        lambda s: policy.set_fees(DEFAULT_FEE, MIN_GRANT_FEE, sender=s),
+        lambda s: policy.set_min_fee(MIN_GRANT_FEE, sender=s),
     ):
         with boa.reverts("ownable: caller is not the owner"):
             call(EMERGENCY)
-    policy.set_fees(2 * DEFAULT_FEE, 10**5)
-    assert policy.get_logs()[-1].default_fee == 2 * DEFAULT_FEE
-    assert (policy.default_fee(), policy.min_fee()) == (2 * DEFAULT_FEE, 10**5)
-    with boa.reverts("min fee"):
-        policy.set_fees(DEFAULT_FEE, DEFAULT_FEE + 1)
-    with boa.reverts("default fee"):
-        policy.set_fees(FEE_PRECISION // 10 + 1, 10**5)
+    for fee in (10**5, FEE_PRECISION // 10):
+        policy.set_min_fee(fee)
+        event = policy.get_logs()[-1]
+        assert type(event).__name__ == "SetMinFee"
+        assert event.min_fee == policy.min_fee() == fee
+    for fee in (10**5 - 1, FEE_PRECISION // 10 + 1):
+        with boa.reverts("min fee"):
+            policy.set_min_fee(fee)
     # A new key invalidates grants signed with the old one.
     policy.set_controller(new)
     assert policy.controller() == new

@@ -47,7 +47,6 @@ CONFIG = SimpleNamespace(
     controller=None,  # Fynd's signing key: from Fynd
     router=None,  # Fynd's router contract: from Fynd
     emergency_admin="0x467947EE34aF926cF1DCac093870f613C96B1E0c",  # Curve emergency DAO
-    default_fee=100_000_000,  # 1%: every operation without a Fynd grant
     min_fee=10**5,  # 0.1 bp, the pool's lowest fee: the lowest fee Fynd can sign
     # Resume: addresses an interrupted run printed. None deploys fresh.
     pool=None,
@@ -57,7 +56,7 @@ CONFIG = SimpleNamespace(
 POOL_PARAMS = {
     "A": 50_000,  # A = 5
     "gamma": 11_111_111_111,  # fx50 initialization magic
-    "mid_fee": 100_000_000,  # 1%: the pool's own fee, used only without a policy
+    "mid_fee": 100_000_000,  # 1%: the pool's own fee, used without a matching grant
     "out_fee": 100_000_000,
     "fee_gamma": 10**16,  # no effect while mid_fee == out_fee
     "adjustment_step_min": 0,
@@ -173,7 +172,6 @@ def policy_args(cfg, pool):
         cfg.controller,
         cfg.router,
         cfg.emergency_admin,
-        cfg.default_fee,
         cfg.min_fee,
     )
 
@@ -263,7 +261,6 @@ def check(pool, policy, policy_source, signer, cfg):
         "controller": cfg.controller,
         "router": cfg.router,
         "EMERGENCY_ADMIN": cfg.emergency_admin,
-        "default_fee": cfg.default_fee,
         "min_fee": cfg.min_fee,
         "owner": signer,
     }

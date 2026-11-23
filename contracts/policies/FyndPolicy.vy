@@ -2,9 +2,9 @@
 # pragma optimize gas
 """
 @title FyndPolicy
-@notice Twocrypto policy for Fynd-routed swaps. Every operation pays default_fee,
-        except a swap that Fynd's router arms with a grant signed by Fynd's
-        controller key: it pays the granted fee, at least min_fee.
+@notice Twocrypto policy for Fynd-routed swaps. Every operation pays the pool's
+        own fee, except a swap that Fynd's router arms with a grant signed by
+        Fynd's controller key: it pays the granted fee, at least min_fee.
 @dev Vyper port of Fynd's FyndCurvePolicy sketch (28 Oct 2026) without its Pyth
      floor and revenue share fields. The policy checks who signed a grant, not
      what the trade is worth: LPs rely on Fynd to price each grant.
@@ -13,20 +13,21 @@
          router            submit_grant, in the swap's transaction, before it
          pool              get_fee, get_price_scale, update_pool_state
          anyone            views
-         owner (Curve)     set_controller, set_router, set_fees, set_killed, ownership
+         owner (Curve)     set_controller, set_router, set_min_fee, set_killed, ownership
          emergency admin   set_killed
 
      GRANTS
      An EIP-712 Grant signed by the `controller` key (ECDSA, no contract wallets)
-     admits one swap in its direction and input range; a coin1 input can read 1
-     wei below the amount sent. The router submits it with the address that
+     gives one swap in its direction and input range the granted fee; a coin1
+     input can read 1 wei below the amount sent. A swap in the other direction
+     or outside the range pays the pool's own fee. The router submits it with the address that
      called the router, which must be the grant's taker, at most
      MAX_GRANT_WINDOW before its deadline. Each nonce works once. Arming records
      the pool's balances, which the swap's must differ from in the granted
-     direction and range. The pool's callback after the next operation clears
+     direction and range to get the granted fee. The pool's callback after the next operation clears
      the grant, as do a kill and the end of the transaction: every operation that
      changes the pool's balances or price_scale calls back. Liquidity operations
-     pay default_fee and clear it.
+     pay the pool's own fee and clear it.
 
      UNITS
      Fees in FEE_PRECISION (1e10 = 100%).
@@ -55,11 +56,11 @@ N_COINS: constant(uint256) = 2
 PRECISION: constant(uint256) = 10**18
 FEE_PRECISION: constant(uint256) = 10**10  # Twocrypto fee units: 10**10 = 100%.
 MIN_FEE: constant(uint256) = 10**5  # Twocrypto MIN_FEE (0.1 bp); a fee of 0 means the pool's own.
-MAX_DEFAULT_FEE: constant(uint256) = FEE_PRECISION // 10  # 10%
+MIN_FEE_CAP: constant(uint256) = FEE_PRECISION // 10  # 10%
+# Equal to the EIP-712 domain version. Bump both when the grant rules change.
+VERSION: public(constant(uint256)) = 1
 MAX_GRANT_WINDOW: constant(uint256) = 120  # seconds from submission to the grant's deadline
 
-# Lets Fynd's indexer tag the pool.
-IS_FYND_EXCLUSIVE: public(constant(bool)) = True
 
 GRANT_TYPEHASH: public(constant(bytes32)) = keccak256(
     "Grant(address taker,uint8 coin_in,uint256 min_amount_in,uint256 max_amount_in,uint256 fee,uint64 nonce,uint32 deadline)"
@@ -91,13 +92,17 @@ PRECISIONS: immutable(uint256[N_COINS])
 
 controller: public(address)  # Fynd's signing key
 router: public(address)  # Fynd's router, the only caller of submit_grant
-default_fee: public(uint256)  # fee of every operation without a grant
 min_fee: public(uint256)  # lowest fee of a granted swap
 is_killed: public(bool)
 used_nonces: HashMap[uint256, uint256]  # nonce // 256 => bitmap of used nonces
 
 armed: transient(bool)
 armed_grant: transient(ArmedGrant)
+
+
+event FyndPolicyCreated:
+    pool: indexed(address)
+    version: uint256
 
 
 event GrantArmed:
@@ -115,8 +120,7 @@ event SetRouter:
     router: address
 
 
-event SetFees:
-    default_fee: uint256
+event SetMinFee:
     min_fee: uint256
 
 
@@ -130,7 +134,6 @@ def __init__(
     controller: address,
     router: address,
     emergency_admin: address,
-    default_fee: uint256,
     min_fee: uint256,
 ):
     """
@@ -138,8 +141,7 @@ def __init__(
     @param controller Fynd's signing key
     @param router Fynd's router
     @param emergency_admin May kill and revive the policy, as may the owner
-    @param default_fee Fee without a grant; the deployer becomes the owner
-    @param min_fee Lowest fee of a granted swap
+    @param min_fee Lowest fee of a granted swap; the deployer becomes the owner
     """
     assert pool.is_contract, "pool"
     assert emergency_admin != empty(address), "emergency admin=0"
@@ -148,11 +150,13 @@ def __init__(
     EMERGENCY_ADMIN = emergency_admin
     PRECISIONS = staticcall Pool(pool).precisions()
 
+    log FyndPolicyCreated(pool=pool, version=VERSION)
+
     ownable.__init__()
     eip712.__init__("FyndPolicy", "1")
     self._set_controller(controller)
     self._set_router(router)
-    self._set_fees(default_fee, min_fee)
+    self._set_min_fee(min_fee)
 
 
 # ----------------------------------- Grants ------------------------------------
@@ -220,30 +224,32 @@ def is_nonce_used(nonce: uint64) -> bool:
 def get_fee(xp: uint256[N_COINS]) -> uint256:
     """
     @notice Fee of the pool operation in progress: for the swap an armed grant
-            admits, the granted fee, at least min_fee; default_fee for
-            everything else.
+            admits, the granted fee, at least min_fee; 0 for everything else,
+            so the pool charges its own fee.
     @param xp Pool balances after the operation and before its fee, coin1 scaled
            by price_scale
     @return FEE_PRECISION fee
     """
     if not self.armed:
-        return self.default_fee
+        return 0
 
     grant: ArmedGrant = self.armed_grant
     old_xp: uint256[N_COINS] = grant.xp
     # A grant admits only a swap: one balance rises and the other falls.
     if xp[0] >= old_xp[0] and xp[1] >= old_xp[1]:
-        return self.default_fee
+        return 0
     if xp[0] <= old_xp[0] and xp[1] <= old_xp[1]:
-        return self.default_fee
+        return 0
 
     coin_in: uint256 = 0 if xp[0] > old_xp[0] else 1
-    assert coin_in == grant.coin_in, "direction"
+    if coin_in != grant.coin_in:
+        return 0
     amount_in: uint256 = xp[coin_in] - old_xp[coin_in]
     if coin_in == 1:
         amount_in = amount_in * PRECISION // grant.price_scale
     amount_in //= PRECISIONS[coin_in]
-    assert amount_in >= grant.min_amount_in and amount_in <= grant.max_amount_in, "amount"
+    if amount_in < grant.min_amount_in or amount_in > grant.max_amount_in:
+        return 0
 
     return max(grant.fee, self.min_fee)
 
@@ -296,17 +302,18 @@ def set_router(router: address):
 
 
 @external
-def set_fees(default_fee: uint256, min_fee: uint256):
-    """@notice Set the fee without a grant and the lowest granted fee. Owner only."""
+def set_min_fee(min_fee: uint256):
+    """@notice Set the lowest granted fee. Owner only."""
     ownable._check_owner()
-    self._set_fees(default_fee, min_fee)
+    self._set_min_fee(min_fee)
 
 
 @external
 def set_killed(is_killed: bool):
     """
     @notice Kill (True) or revive the policy. Owner or emergency admin.
-    @dev While killed, no grant can be armed, so every operation pays default_fee.
+    @dev While killed, no grant can be armed, so every operation pays the pool's
+         own fee.
          Killing also clears a grant armed earlier in the same transaction.
     """
     assert msg.sender == EMERGENCY_ADMIN or msg.sender == ownable.owner, "access"
@@ -331,9 +338,7 @@ def _set_router(router: address):
 
 
 @internal
-def _set_fees(default_fee: uint256, min_fee: uint256):
-    assert MIN_FEE <= min_fee and min_fee <= default_fee, "min fee"
-    assert default_fee <= MAX_DEFAULT_FEE, "default fee"
-    self.default_fee = default_fee
+def _set_min_fee(min_fee: uint256):
+    assert MIN_FEE <= min_fee and min_fee <= MIN_FEE_CAP, "min fee"
     self.min_fee = min_fee
-    log SetFees(default_fee=default_fee, min_fee=min_fee)
+    log SetMinFee(min_fee=min_fee)
