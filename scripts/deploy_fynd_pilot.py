@@ -1,17 +1,20 @@
 """Deploy the Fynd pilot: a USDC/WETH pool from the Curve factory with FyndPolicy attached.
 
-Run from the repository root:
-    uv run python scripts/deploy_fynd_pilot.py --dry-run SIGNER
+Run from the repository root, with ETH_RPC_URL set (and ETHERSCAN_API_KEY to send):
+    uv run python scripts/deploy_fynd_pilot.py --dry-run
     uv run python scripts/deploy_fynd_pilot.py
 
-Every run first replays the whole deployment on a fork of the latest block, then
-sends it (unless --dry-run). Steps:
+Every run first replays the whole deployment on a fork of the latest block as
+CONFIG.deployer, without its key, then sends it (unless --dry-run). To send, the
+deployer's key opens only with a YubiKey touch and then the keystore password
+(scripts/yubi_deployers.py; the key file is ~/.config/eth/<deployer>.json.age, and
+`age` and `age-plugin-yubikey` must be on PATH). Steps:
   1. factory.deploy_pool. Gamma is fx50's magic value: it lets the deployer call
      initialize, and no one can deposit before that (StableswapMath ignores gamma).
      The pool's code, and the math and view contracts it embeds, must match this
      repository's sources.
-  2. FyndPolicy for this pool, owned by the signer.
-  3. pool.initialize: reserved profit fraction 25%, admin fee 50%, the policy, and
+  2. FyndPolicy for this pool, owned by the deployer.
+  3. pool.initialize: reserved profit fraction 50%, admin fee 50%, the policy, and
      the market price (Uniswap's USDC/WETH spot, checked against Chainlink).
 Then the policy is verified on Etherscan; the pool is a factory clone.
 Liquidity is added separately. Until the first deposit, anyone may make it, at
@@ -43,9 +46,11 @@ CONFIG = SimpleNamespace(
     coin1=WETH,
     name="fynd-pilot wethusdc",
     symbol="fynd-wethusdc",
-    # FyndPolicy. The owner (the signer) can change controller and router later.
-    controller=None,  # Fynd's signing key: from Fynd
-    router=None,  # Fynd's router contract: from Fynd
+    # The YubiKey-held key ~/.config/eth/<deployer>.json.age signs the deployment.
+    deployer="0xb101b2b0aa02b7167D238B98dc1B0b0404a760E8",
+    # FyndPolicy. The owner (the deployer) can change controller and router later.
+    controller="0x4f2826f91F74C315aaC59Eb091C4178F913D0312",  # Fynd's signing key
+    router="0xe41c726421007e133a59365432fE886a73B45126",  # TychoRouterV3 (16 Nov 2026)
     emergency_admin="0x467947EE34aF926cF1DCac093870f613C96B1E0c",  # Curve emergency DAO
     min_fee=10**5,  # 0.1 bp, the pool's lowest fee: the lowest fee Fynd can sign
     # Resume: addresses an interrupted run printed. None deploys fresh.
@@ -63,7 +68,7 @@ POOL_PARAMS = {
     "adjustment_step_max": 5_000_000_000_000_000,  # 50 bp
     "ma_exp_time": 865,  # price oracle: 600 s half-life
 }
-RPF = 2_500_000_000  # reserved profit fraction 25%
+RPF = 5_000_000_000  # reserved profit fraction 50%
 ADMIN_FEE = 5_000_000_000  # 50% of the reserved profit
 
 UNISWAP_USDC_WETH = "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640"  # Uniswap v3, 0.05%
@@ -270,12 +275,15 @@ def check(pool, policy, policy_source, signer, cfg):
             raise RuntimeError(f"Policy {name} is {actual_value}, expected {value}")
     if policy.is_killed():
         raise RuntimeError("Policy is killed")
-    print("Checked: pool settings, reserved profit 25%, admin fee 50%, policy code and settings")
+    print("Checked: pool settings, reserved profit 50%, admin fee 50%, policy code and settings")
 
 
 def main():
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from scripts.yubi_deployers import LoadError, load_account
+
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dry-run", metavar="SIGNER", help="fork rehearsal only, as SIGNER")
+    parser.add_argument("--dry-run", action="store_true", help="fork rehearsal only, no key")
     dry_run = parser.parse_args().dry_run
 
     cfg = CONFIG
@@ -284,32 +292,28 @@ def main():
     missing = [n for n in ("name", "symbol", "controller", "router") if not getattr(cfg, n)]
     if missing:
         raise ValueError(f"Set CONFIG.{', CONFIG.'.join(missing)}")
+    etherscan_api_key = os.environ.get("ETHERSCAN_API_KEY")
+    if not dry_run and not etherscan_api_key:
+        raise ValueError("ETHERSCAN_API_KEY is required to verify the policy")
+    deployer = to_checksum_address(cfg.deployer)
+    print(f"Signer: {deployer}")
 
-    signer = None
-    if not dry_run:
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
-        from eth_account import Account
-        from secure_key_utils import decrypt_private_key, getpass
-
-        encrypted_key = os.environ.get("ENCRYPTED_PK")
-        if not encrypted_key:
-            raise ValueError("ENCRYPTED_PK is required")
-        etherscan_api_key = os.environ.get("ETHERSCAN_API_KEY")
-        if not etherscan_api_key:
-            raise ValueError("ETHERSCAN_API_KEY is required to verify the policy")
-        signer = Account.from_key(decrypt_private_key(encrypted_key, getpass()))
-    sender = to_checksum_address(dry_run) if dry_run else signer.address
-    print(f"Signer: {sender}")
-
-    # Rehearsal on a fork of the latest block, sending as the signer without signing.
+    # Rehearsal on a fork of the latest block, sending as the deployer without its key.
     with boa.fork(cfg.rpc_url, block_identifier="latest", allow_dirty=True):
         if boa.env.evm.patch.chain_id != cfg.chain_id:
             raise ValueError(f"Expected chain {cfg.chain_id}")
-        boa.env.eoa = sender
-        deploy(sender)
+        boa.env.eoa = deployer
+        deploy(deployer)
     print("Fork rehearsal passed")
     if dry_run:
         return
+
+    # Touch the YubiKey, then type the keystore password. load_account refuses a
+    # key file that holds any address but CONFIG.deployer, and writes nothing.
+    try:
+        signer = load_account(deployer)
+    except LoadError as error:
+        sys.exit(f"Signer not loaded: {error}")
 
     boa.set_network_env(cfg.rpc_url)
     # Traces are diagnostics only; a lagging RPC node must not abort after a mined tx.
